@@ -16,6 +16,39 @@ from datetime import datetime
 from .constants import (
     SETTINGS_DIR, CONFIG_FILE, INDEX_FILE, CACHE_FILE
 )
+from .search.base import SearchStrategy
+from .search.ugrep import UgrepStrategy
+from .search.ripgrep import RipgrepStrategy
+from .search.ag import AgStrategy
+from .search.grep import GrepStrategy
+from .search.basic import BasicSearchStrategy
+
+
+# Prioritized list of search strategies
+SEARCH_STRATEGY_CLASSES = [
+    UgrepStrategy,
+    RipgrepStrategy,
+    AgStrategy,
+    GrepStrategy,
+    BasicSearchStrategy,
+]
+
+
+def _get_available_strategies() -> list[SearchStrategy]:
+    """
+    Detect and return a list of available search strategy instances,
+    ordered by preference.
+    """
+    available = []
+    for strategy_class in SEARCH_STRATEGY_CLASSES:
+        try:
+            strategy = strategy_class()
+            if strategy.is_available():
+                available.append(strategy)
+        except Exception as e:
+            print(f"Error initializing strategy {strategy_class.__name__}: {e}")
+    return available
+
 
 class ProjectSettings:
     """Class for managing project settings and index data"""
@@ -29,7 +62,8 @@ class ProjectSettings:
         """
         self.base_path = base_path
         self.skip_load = skip_load
-        self._search_tools_cache = None  # Lazy-loaded search tools configuration
+        self.available_strategies: list[SearchStrategy] = []
+        self.refresh_available_strategies()
 
         # Ensure the base path of the temporary directory exists
         try:
@@ -478,84 +512,31 @@ class ProjectSettings:
             }
 
     def get_search_tools_config(self):
-        """Get search tools configuration with lazy loading.
-        
-        Returns:
-            dict: Search tools configuration with preferred tool and available tools
-        """
-        if self._search_tools_cache is None:
-            print("Detecting available search tools...")
-            self._search_tools_cache = self._detect_search_tools()
-            print(f"Search tools detected. Preferred: {self._search_tools_cache.get('preferred_tool', 'basic')}")
-        
-        return self._search_tools_cache
+        """Get the configuration of available search tools.
 
-    def get_preferred_search_tool(self):
-        """Get the preferred search tool name.
-        
         Returns:
-            str: Name of preferred search tool ('ripgrep', 'ag', 'grep', or 'basic')
+            dict: A dictionary containing the list of available tool names.
         """
-        config = self.get_search_tools_config()
-        return config.get('preferred_tool', 'basic')
-
-    def _detect_search_tools(self):
-        """Detect available search tools on the system.
-        
-        Returns:
-            dict: Configuration with available tools and preferred tool
-        """
-        tools_info = {
-            'detected_at': self._get_timestamp(),
-            'available_tools': {},
-            'preferred_tool': 'basic'
+        return {
+            "available_tools": [s.name for s in self.available_strategies],
+            "preferred_tool": self.get_preferred_search_tool().name if self.available_strategies else None
         }
-        
-        # Check tools in priority order: ugrep > ripgrep > ag > grep
-        search_tools = [
-            ('ugrep', 'ug'),
-            ('ripgrep', 'rg'),
-            ('ag', 'ag'), 
-            ('grep', 'grep')
-        ]
-        
-        for tool_name, command in search_tools:
-            is_available = self._is_tool_available(command)
-            tools_info['available_tools'][tool_name] = is_available
-            
-            # Set the first available tool as preferred
-            if is_available and tools_info['preferred_tool'] == 'basic':
-                tools_info['preferred_tool'] = tool_name
-        
-        return tools_info
 
-    def _is_tool_available(self, command):
-        """Check if a search tool is available on the system.
-        
-        Args:
-            command (str): Command to check (e.g., 'rg', 'ag', 'grep')
-            
-        Returns:
-            bool: True if tool is available, False otherwise
-        """
-        try:
-            result = subprocess.run(
-                [command, '--version'], 
-                capture_output=True, 
-                timeout=3,
-                check=False
-            )
-            return result.returncode == 0
-        except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
-            return False
+    def get_preferred_search_tool(self) -> SearchStrategy | None:
+        """Get the preferred search tool based on availability and priority.
 
-    def refresh_search_tools(self):
-        """Manually refresh search tools detection.
-        
         Returns:
-            dict: Updated search tools configuration
+            SearchStrategy: An instance of the preferred search strategy, or None.
         """
-        print("Refreshing search tools detection...")
-        self._search_tools_cache = self._detect_search_tools()
-        print(f"Search tools refreshed. Preferred: {self._search_tools_cache.get('preferred_tool', 'basic')}")
-        return self._search_tools_cache
+        if not self.available_strategies:
+            self.refresh_available_strategies()
+        
+        return self.available_strategies[0] if self.available_strategies else None
+
+    def refresh_available_strategies(self):
+        """
+        Force a refresh of the available search tools list.
+        """
+        print("Refreshing available search strategies...")
+        self.available_strategies = _get_available_strategies()
+        print(f"Available strategies found: {[s.name for s in self.available_strategies]}")

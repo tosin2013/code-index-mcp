@@ -1,0 +1,141 @@
+"""
+Search Strategies for Code Indexer
+
+This module defines the abstract base class for search strategies and will contain
+concrete implementations for different search tools like ugrep, ripgrep, etc.
+"""
+import os
+import re
+import shutil
+import subprocess
+import sys
+from abc import ABC, abstractmethod
+from typing import Dict, List, Optional, Tuple, Any
+
+def parse_search_output(output: str, base_path: str) -> Dict[str, List[Tuple[int, str]]]:
+    """
+    Parse the output of command-line search tools (grep, ag, rg).
+
+    Args:
+        output: The raw output from the command-line tool.
+        base_path: The base path of the project to make file paths relative.
+
+    Returns:
+        A dictionary where keys are file paths and values are lists of (line_number, line_content) tuples.
+    """
+    results = {}
+    # Normalize base_path to ensure consistent path separation
+    normalized_base_path = os.path.normpath(base_path)
+
+    for line in output.strip().split('\n'):
+        if not line.strip():
+            continue
+        try:
+            # Handle Windows paths which might have a drive letter, e.g., C:
+            parts = line.split(':', 2)
+            if sys.platform == "win32" and len(parts[0]) == 1 and parts[1].startswith('\\'):
+                # Re-join drive letter with the rest of the path
+                file_path_abs = f"{parts[0]}:{parts[1]}"
+                line_number_str = parts[2].split(':', 1)[0]
+                content = parts[2].split(':', 1)[1]
+            else:
+                file_path_abs = parts[0]
+                line_number_str = parts[1]
+                content = parts[2]
+            
+            line_number = int(line_number_str)
+
+            # Make the file path relative to the base_path
+            relative_path = os.path.relpath(file_path_abs, normalized_base_path)
+            
+            # Normalize path separators for consistency
+            relative_path = relative_path.replace('\\', '/')
+
+            if relative_path not in results:
+                results[relative_path] = []
+            results[relative_path].append((line_number, content))
+        except (ValueError, IndexError):
+            # Silently ignore lines that don't match the expected format
+            # This can happen with summary lines or other tool-specific output
+            pass
+
+    return results
+
+
+def create_safe_fuzzy_pattern(pattern: str) -> str:
+    """
+    Create safe fuzzy search patterns that are more permissive than exact match
+    but still safe from regex injection attacks.
+    
+    Args:
+        pattern: Original search pattern
+        
+    Returns:
+        Safe fuzzy pattern for extended regex
+    """
+    # Escape any regex special characters to make them literal
+    escaped = re.escape(pattern)
+    
+    # Create fuzzy pattern that matches:
+    # 1. Word at start of word boundary (e.g., "test" in "testing")
+    # 2. Word at end of word boundary (e.g., "test" in "mytest") 
+    # 3. Whole word (e.g., "test" as standalone word)
+    if len(pattern) >= 3:  # Only for patterns of reasonable length
+        # This pattern allows partial matches at word boundaries
+        fuzzy_pattern = f"\\b{escaped}|{escaped}\\b"
+    else:
+        # For short patterns, require full word boundaries to avoid too many matches
+        fuzzy_pattern = f"\\b{escaped}\\b"
+    
+    return fuzzy_pattern
+
+
+class SearchStrategy(ABC):
+    """
+    Abstract base class for a search strategy.
+    
+    Each strategy is responsible for searching code using a specific tool or method.
+    """
+
+    @property
+    @abstractmethod
+    def name(self) -> str:
+        """The name of the search tool (e.g., 'ugrep', 'ripgrep')."""
+        pass
+
+    @abstractmethod
+    def is_available(self) -> bool:
+        """
+        Check if the search tool for this strategy is available on the system.
+        
+        Returns:
+            True if the tool is available, False otherwise.
+        """
+        pass
+
+    @abstractmethod
+    def search(
+        self,
+        pattern: str,
+        base_path: str,
+        case_sensitive: bool = True,
+        context_lines: int = 0,
+        file_pattern: Optional[str] = None,
+        fuzzy: bool = False
+    ) -> Dict[str, List[Tuple[int, str]]]:
+        """
+        Execute a search using the specific strategy.
+
+        Args:
+            pattern: The search pattern (string or regex).
+            base_path: The root directory to search in.
+            case_sensitive: Whether the search is case-sensitive.
+            context_lines: Number of context lines to show around each match.
+            file_pattern: Glob pattern to filter files (e.g., "*.py").
+            fuzzy: Whether to enable fuzzy search.
+
+        Returns:
+            A dictionary mapping filenames to lists of (line_number, line_content) tuples.
+        """
+        pass
+
