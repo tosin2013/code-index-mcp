@@ -23,8 +23,8 @@ This server integrates with the [Model Context Protocol](https://modelcontextpro
 ## Key Features
 
 - **Project Indexing**: Recursively scans directories to build a searchable index of code files
-- **Advanced Search**: Intelligent search with automatic detection of ripgrep, ag, or grep for enhanced performance
-- **Fuzzy Search**: Safe fuzzy matching with word boundaries for flexible code discovery
+- **Advanced Search**: Intelligent search with automatic detection of ugrep, ripgrep, ag, or grep for enhanced performance
+- **Fuzzy Search**: Native fuzzy matching with ugrep, or safe fuzzy patterns for other tools
 - **File Analysis**: Get detailed insights about file structure, imports, and complexity
 - **Smart Filtering**: Automatically ignores build directories, dependencies, and non-code files
 - **Persistent Storage**: Caches indexes for improved performance across sessions
@@ -113,7 +113,7 @@ After adding the configuration, restart Claude Desktop and the Code Index MCP to
 
 - **set_project_path**: Sets the base project path for indexing.
 - **search_code**: Basic search for code matches within the indexed files.
-- **search_code_advanced**: Enhanced search using external tools (ripgrep/ag/grep) with fuzzy matching support.
+- **search_code_advanced**: Enhanced search using external tools (ugrep/ripgrep/ag/grep) with fuzzy matching support.
 - **find_files**: Finds files in the project matching a given pattern.
 - **get_file_summary**: Gets a summary of a specific file, including line count, functions, imports, etc.
 - **refresh_index**: Refreshes the project index.

@@ -748,7 +748,7 @@ def refresh_search_tools(ctx: Context) -> str:
     if preferred != 'basic':
         message += f"\nAdvanced search capabilities enabled with {preferred}."
     else:
-        message += "\nOnly basic search available. Consider installing ripgrep for better performance."
+        message += "\nOnly basic search available. Consider installing ugrep (recommended for fuzzy search), ripgrep, or ag for better performance."
     
     return message
 
@@ -924,11 +924,23 @@ def _execute_advanced_search(
     """
     # Prepare search pattern
     search_pattern = pattern
-    if fuzzy:
+    if fuzzy and tool != 'ugrep':  # ugrep has native fuzzy search
         search_pattern = _create_safe_fuzzy_pattern(pattern)
     
     # Build command based on tool
-    if tool == 'ripgrep':
+    if tool == 'ugrep':
+        if fuzzy:
+            cmd = ['ug', '--line-number', '--no-heading', '--fuzzy', '--ignore-files']  # Use native fuzzy search with gitignore
+        else:
+            cmd = ['ug', '--line-number', '--no-heading', '--fixed-strings', '--ignore-files']
+        if not case_sensitive:
+            cmd.append('--ignore-case')
+        if context_lines > 0:
+            cmd.extend(['-A', str(context_lines), '-B', str(context_lines)])
+        if file_pattern:
+            cmd.extend(['--include', file_pattern])
+
+    elif tool == 'ripgrep':
         if fuzzy:
             cmd = ['rg', '--line-number', '--no-heading']  # Use regex mode for fuzzy
         else:
@@ -939,7 +951,7 @@ def _execute_advanced_search(
             cmd.extend(['-A', str(context_lines), '-B', str(context_lines)])
         if file_pattern:
             cmd.extend(['--glob', file_pattern])
-            
+
     elif tool == 'ag':
         if fuzzy:
             cmd = ['ag', '--line-numbers', '--noheading']  # Use regex mode for fuzzy

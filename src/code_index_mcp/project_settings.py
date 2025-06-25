@@ -511,8 +511,9 @@ class ProjectSettings:
             'preferred_tool': 'basic'
         }
         
-        # Check tools in priority order: ripgrep > ag > grep
+        # Check tools in priority order: ugrep > ripgrep > ag > grep
         search_tools = [
+            ('ugrep', 'ug'),
             ('ripgrep', 'rg'),
             ('ag', 'ag'), 
             ('grep', 'grep')
