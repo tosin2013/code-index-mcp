@@ -10,6 +10,10 @@ A Model Context Protocol server for code indexing, searching, and analysis.
 
 </div>
 
+<a href="https://glama.ai/mcp/servers/@johnhuang316/code-index-mcp">
+  <img width="380" height="200" src="https://glama.ai/mcp/servers/@johnhuang316/code-index-mcp/badge" alt="code-index-mcp MCP server" />
+</a>
+
 ## What is Code Index MCP?
 
 Code Index MCP is a specialized MCP server that provides intelligent code indexing and analysis capabilities. It enables Large Language Models to interact with your code repositories, offering real-time insights and navigation through complex codebases.
