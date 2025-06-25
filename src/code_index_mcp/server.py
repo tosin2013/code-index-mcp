@@ -370,28 +370,21 @@ def search_code_advanced(
     fuzzy: bool = False
 ) -> Dict[str, Any]:
     """
-    Advanced search using external tools (ripgrep, ag, grep) for better performance.
-    Falls back to basic search if no advanced tools are available.
+    Advanced search using external tools (ugrep, ripgrep, ag, grep) for better performance.
     
-    Args:
-        pattern: Search pattern
-        case_sensitive: Case sensitive search
-        context_lines: Number of context lines to show around matches
-        file_pattern: File pattern to include (e.g., "*.py", "*.js")
-        fuzzy: Enable safe fuzzy search patterns:
-               - Adds word boundary matching for better results
-               - Allows partial word matching at word boundaries
-               - Safe alternative to full regex support
-    
-    Returns:
-        Dict containing search results and metadata
+    - `pattern`: The search pattern (string or regex).
+    - `case_sensitive`: Whether the search is case-sensitive.
+    - `context_lines`: Number of context lines to show around each match.
+    - `file_pattern`: Glob pattern to filter files (e.g., "*.py").
+    - `fuzzy`: Enable fuzzy search. The behavior of this flag depends on the available tool:
+               - With `ugrep`: Performs a true, edit-distance fuzzy search (handles typos).
+               - With `ripgrep` or `ag`: Performs a word-boundary-based pattern search (handles word order and spacing).
     """
     base_path = ctx.request_context.lifespan_context.base_path
-    
-    # Check if base_path is set
+
     if not base_path:
         return {"error": "Project path not set. Please use set_project_path to set a project directory first."}
-    
+
     # Get search tool configuration
     settings = ctx.request_context.lifespan_context.settings
     preferred_tool = settings.get_preferred_search_tool()
