@@ -55,61 +55,97 @@
   - NoSQL 與現代資料庫 (.cql, .cypher, .sparql, .gql)
 - 文件/配置 (.md, .mdx, .json, .xml, .yml, .yaml)
 
-## 安裝
+## 設定與整合
 
-### 先決條件
+您可以根據不同的需求，透過以下幾種方式來設定和使用 Code Index MCP。
 
-- Python 3.8 或更高版本
-- [uv](https://github.com/astral-sh/uv) 套件管理器（建議）
+### 一般用途：與宿主應用整合（建議）
 
-### 使用 uvx（建議）
+這是最簡單也最常見的使用方式，專為希望在 AI 應用程式（如 Claude Desktop）中使用 Code Index MCP 的使用者設計。
 
-使用 uvx 安裝和使用 code-index-mcp 是最簡單的方法：
+1.  **先決條件**：請確保您已安裝 Python 3.8+ 和 [uv](https://github.com/astral-sh/uv)。
 
-```bash
-uvx code-index-mcp
-```
+2.  **設定宿主應用**：將以下設定新增到您宿主應用的 MCP 設定檔中（例如，Claude Desktop 的設定檔是 `claude_desktop_config.json`）：
 
-### 使用 pip
-
-或者，您可以透過 pip 安裝：
-
-```bash
-pip install code-index-mcp
-```
-
-安裝後，您可以以模組方式執行：
-
-```bash
-python -m code_index_mcp
-```
-
-## 與 Claude Desktop 整合
-
-將以下內容新增到您的 Claude 設定（`~/Library/Application Support/Claude/claude_desktop_config.json`）：
-
-```json
-{
-  "mcpServers": {
-    "code-index": {
-      "command": "uvx",
-      "args": [
-        "code-index-mcp"
-      ]
+    ```json
+    {
+      "mcpServers": {
+        "code-index": {
+          "command": "uvx",
+          "args": [
+            "code-index-mcp"
+          ]
+        }
+      }
     }
-  }
-}
-```
+    ```
 
-新增設定後，重新啟動 Claude Desktop，程式碼索引 MCP 工具將可使用。
+3.  **重新啟動宿主應用**：新增設定後，請重新啟動您的應用程式。`uvx` 命令會在背景自動處理 `code-index-mcp` 伺服器的安裝與執行。
+
+### 本地開發
+
+如果您想為這個專案的開發做出貢獻，請遵循以下步驟：
+
+1.  **複製儲存庫**：
+    ```bash
+    git clone https://github.com/johnhuang316/code-index-mcp.git
+    cd code-index-mcp
+    ```
+
+2.  **安裝相依套件**：使用 `uv` 安裝所需套件。
+    ```bash
+    uv sync
+    ```
+
+3.  **設定您的宿主應用以進行本地開發**：為了讓您的宿主應用程式（例如 Claude Desktop）使用您本地的原始碼，請更新其設定檔，讓它透過 `uv run` 來執行伺服器。這能確保您對程式碼所做的任何變更，在宿主應用啟動伺服器時能立即生效。
+
+    ```json
+    {
+      "mcpServers": {
+        "code-index": {
+          "command": "uv",
+          "args": [
+            "run",
+            "code_index_mcp"
+          ]
+        }
+      }
+    }
+    ```
+
+4.  **使用 MCP Inspector 進行偵錯**：要對您的本地伺服器進行偵錯，您同樣需要告訴 Inspector 使用 `uv run`。
+    ```bash
+    npx @modelcontextprotocol/inspector uv run code_index_mcp
+    ```
+
+### 手動安裝：使用 pip（替代方案）
+
+如果您習慣使用 `pip` 來手動管理您的 Python 套件，可以透過以下方式安裝。
+
+1.  **安裝套件**：
+    ```bash
+    pip install code-index-mcp
+    ```
+
+2.  **設定宿主應用**：您需要手動更新宿主應用的 MCP 設定，將命令從 `"command": "uvx"` 修改為 `"command": "code-index-mcp"`。
+
+    ```json
+    {
+      "mcpServers": {
+        "code-index": {
+          "command": "code-index-mcp",
+          "args": []
+        }
+      }
+    }
+    ```
 
 ## 可用工具
 
 ### 核心工具
 
 - **set_project_path**：設定索引的基本專案路徑。
-- **search_code**：在已索引檔案中進行基本程式碼搜尋。
-- **search_code_advanced**：使用外部工具 (ugrep/ripgrep/ag/grep) 的增強搜尋，支援模糊匹配。
+- **search_code**：使用外部工具 (ugrep/ripgrep/ag/grep) 的增強搜尋，支援模糊匹配。
 - **find_files**：尋找專案中符合給定模式的檔案。
 - **get_file_summary**：取得特定檔案的摘要，包括行數、函式、匯入等。
 - **refresh_index**：重新整理專案索引。
@@ -120,40 +156,70 @@ python -m code_index_mcp
 - **create_temp_directory**：建立用於儲存索引資料的臨時目錄。
 - **check_temp_directory**：檢查用於儲存索引資料的臨時目錄。
 - **clear_settings**：清除所有設定和快取資料。
+- **refresh_search_tools**：手動重新偵測可用的命令列搜尋工具（例如 ripgrep）。
 
-## Claude 使用範例
+## 常見工作流程與範例
 
-以下是如何與 Claude 一起使用 Code Index MCP 的一些範例：
+這是一個典型的使用場景，展示如何透過像 Claude 這樣的 AI 助理來使用 Code Index MCP。
 
-### 設定專案路徑
+### 1. 設定專案路徑與首次索引
 
+這是第一步，也是最重要的一步。當您設定專案路徑時，伺服器會自動進行首次的檔案索引，或載入先前快取的索引。
+
+**範例提示：**
 ```
-請將專案路徑設定為 C:\Users\username\projects\my-python-project
-```
-
-### 搜尋程式碼模式
-
-```
-在 Python 檔案中搜尋所有出現 "def process_data" 的地方
+請將專案路徑設定為 C:\Users\username\projects\my-react-app
 ```
 
-### 進階搜尋與模糊匹配
+### 2. 更新索引（需要時）
 
+如果您在初次設定後對專案檔案做了較大的變更，可以手動重新整理索引，以確保所有工具都能基於最新的資訊運作。
+
+**範例提示：**
 ```
-使用進階搜尋並啟用模糊匹配來尋找 "process"
+我剛新增了幾個新的元件，請幫我重新整理專案索引。
+```
+*（AI 助理會使用 `refresh_index` 工具）*
+
+### 3. 探索專案結構
+
+索引準備就緒後，您可以使用模式（glob）來尋找檔案，以了解程式碼庫的結構並找到相關檔案。
+
+**範例提示：**
+```
+尋找 'src/components' 目錄中所有的 TypeScript 元件檔案。
+```
+*（AI 助理會使用 `find_files` 工具，並搭配像 `src/components/**/*.tsx` 這樣的模式）*
+
+### 4. 分析特定檔案
+
+在深入研究一個檔案的完整內容之前，您可以先取得該檔案結構的快速摘要，包括函式、類別和匯入的模組。
+
+**範例提示：**
+```
+可以給我 'src/api/userService.ts' 這個檔案的摘要嗎？
+```
+*（AI 助理會使用 `get_file_summary` 工具）*
+
+### 5. 搜尋程式碼
+
+有了最新的索引，您就可以搜尋程式碼片段、函式名稱或任何文字模式，以找到特定邏輯的實作位置。
+
+**範例：簡單搜尋**
+```
+搜尋 "processData" 函式所有出現過的地方。
 ```
 
-### 取得檔案摘要
+**範例：模糊匹配搜尋**
+```
+我正在尋找一個與使用者驗證相關的函式，它可能叫做 'authUser'、'authenticateUser' 或類似的名稱。你可以對 'authUser' 進行模糊搜尋嗎？
+```
 
+**範例：在特定檔案中搜尋**
 ```
-給我專案中 main.py 檔案的摘要
+只在 Python 檔案中搜尋字串 "API_ENDPOINT"。
 ```
-
-### 尋找特定類型的所有檔案
-
-```
-尋找專案中所有的 JavaScript 檔案
-```
+*（AI 助理會使用 `search_code` 工具，並將 `file_pattern` 參數設定為 `*.py`）*
 
 ## 開發
 
