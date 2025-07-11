@@ -61,7 +61,7 @@ class AgStrategy(SearchStrategy):
         # Add -- to treat pattern as a literal argument, preventing injection
         cmd.append('--')
         cmd.append(search_pattern)
-        cmd.append(base_path)
+        cmd.append('.')  # Use current directory since we set cwd=base_path
         
         try:
             # ag exits with 1 if no matches are found, which is not an error.
@@ -72,7 +72,8 @@ class AgStrategy(SearchStrategy):
                 text=True, 
                 encoding='utf-8',
                 errors='replace',
-                check=False  # Do not raise CalledProcessError on non-zero exit
+                check=False,  # Do not raise CalledProcessError on non-zero exit
+                cwd=base_path  # Set working directory to project base path for proper pattern resolution
             )
             # We don't check returncode > 1 because ag's exit code behavior
             # is less standardized than rg/ug. 0 for match, 1 for no match.

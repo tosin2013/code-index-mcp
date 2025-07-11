@@ -326,13 +326,24 @@ def search_code_advanced(
         pattern: The search pattern (can be a regex if fuzzy=True).
         case_sensitive: Whether the search should be case-sensitive.
         context_lines: Number of lines to show before and after the match.
-        file_pattern: A glob pattern to filter files to search in (e.g., "*.py").
-        fuzzy: If True, treats the pattern as a regular expression. 
-               If False, performs a literal/fixed-string search.
-               For 'ugrep', this enables fuzzy matching features.
+        file_pattern: A glob pattern to filter files to search in (e.g., "*.py", "*.js", "test_*.py").
+                     IMPORTANT: Different tools handle file patterns differently:
+                     - ugrep: Uses glob patterns (*.py, *.{js,ts}) 
+                     - ripgrep: Uses glob patterns (*.py, *.{js,ts})
+                     - ag (Silver Searcher): Converts globs to regex internally (may have limitations)
+                     - grep: Basic pattern matching only
+                     For best compatibility, use simple patterns like "*.py" or "*.js".
+        fuzzy: If True, enables fuzzy/approximate matching.
+               IMPORTANT: Fuzzy matching support varies by tool:
+               - ugrep: Native fuzzy search with --fuzzy flag
+               - ripgrep: Safe fuzzy patterns using word boundaries
+               - ag: Safe fuzzy patterns using word boundaries  
+               - grep: Safe fuzzy patterns using word boundaries
+               For literal string searches, set fuzzy=False (recommended for exact matches).
                
     Returns:
         A dictionary containing the search results or an error message.
+        
     """
     base_path = ctx.request_context.lifespan_context.base_path
     if not base_path:

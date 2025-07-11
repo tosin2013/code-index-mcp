@@ -48,12 +48,12 @@ class UgrepStrategy(SearchStrategy):
             cmd.extend(['-A', str(context_lines), '-B', str(context_lines)])
             
         if file_pattern:
-            cmd.extend(['--include', file_pattern])  # Correct parameter for file patterns
+            cmd.extend(['-g', file_pattern])  # Correct parameter for file patterns
 
         # Add '--' to treat pattern as a literal argument, preventing injection
         cmd.append('--')
         cmd.append(pattern)
-        cmd.append(base_path)
+        cmd.append('.')  # Use current directory since we set cwd=base_path
 
         try:
             process = subprocess.run(
@@ -62,7 +62,8 @@ class UgrepStrategy(SearchStrategy):
                 text=True,
                 encoding='utf-8',
                 errors='ignore', # Ignore decoding errors for binary-like content
-                check=False  # Do not raise exception on non-zero exit codes
+                check=False,  # Do not raise exception on non-zero exit codes
+                cwd=base_path  # Set working directory to project base path for proper pattern resolution
             )
             
             # ugrep exits with 1 if no matches are found, which is not an error for us.

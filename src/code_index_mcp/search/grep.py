@@ -65,7 +65,7 @@ class GrepStrategy(SearchStrategy):
         # Add -- to treat pattern as a literal argument, preventing injection
         cmd.append('--')
         cmd.append(search_pattern)
-        cmd.append(base_path)
+        cmd.append('.')  # Use current directory since we set cwd=base_path
         
         try:
             # grep exits with 1 if no matches are found, which is not an error.
@@ -76,7 +76,8 @@ class GrepStrategy(SearchStrategy):
                 text=True, 
                 encoding='utf-8',
                 errors='replace',
-                check=False
+                check=False,
+                cwd=base_path  # Set working directory to project base path for proper pattern resolution
             )
             
             if process.returncode > 1:

@@ -57,7 +57,7 @@ class RipgrepStrategy(SearchStrategy):
         # Add -- to treat pattern as a literal argument, preventing injection
         cmd.append('--')
         cmd.append(search_pattern)
-        cmd.append(base_path)
+        cmd.append('.')  # Use current directory since we set cwd=base_path
         
         try:
             # ripgrep exits with 1 if no matches are found, which is not an error.
@@ -68,7 +68,8 @@ class RipgrepStrategy(SearchStrategy):
                 text=True, 
                 encoding='utf-8',
                 errors='replace',
-                check=False  # Do not raise CalledProcessError on non-zero exit
+                check=False,  # Do not raise CalledProcessError on non-zero exit
+                cwd=base_path  # Set working directory to project base path for proper glob resolution
             )
             if process.returncode > 1:
                 raise RuntimeError(f"ripgrep failed with exit code {process.returncode}: {process.stderr}")

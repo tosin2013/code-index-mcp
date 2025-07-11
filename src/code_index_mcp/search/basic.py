@@ -3,6 +3,7 @@ Basic, pure-Python search strategy.
 """
 import os
 import re
+import fnmatch
 from typing import Dict, List, Optional, Tuple
 
 from .base import SearchStrategy, create_safe_fuzzy_pattern
@@ -24,6 +25,18 @@ class BasicSearchStrategy(SearchStrategy):
     def is_available(self) -> bool:
         """This basic strategy is always available."""
         return True
+
+    def _matches_pattern(self, filename: str, pattern: str) -> bool:
+        """Check if filename matches the glob pattern."""
+        if not pattern:
+            return True
+        
+        # Handle simple cases efficiently
+        if pattern.startswith('*') and not any(c in pattern[1:] for c in '*?[]{}'):
+            return filename.endswith(pattern[1:])
+        
+        # Use fnmatch for more complex patterns
+        return fnmatch.fnmatch(filename, pattern)
 
     def search(
         self,
@@ -53,8 +66,8 @@ class BasicSearchStrategy(SearchStrategy):
 
         for root, _, files in os.walk(base_path):
             for file in files:
-                # Basic file pattern matching (not full glob support)
-                if file_pattern and not file.endswith(file_pattern.replace('*', '')):
+                # Improved file pattern matching with glob support
+                if file_pattern and not self._matches_pattern(file, file_pattern):
                     continue
 
                 file_path = os.path.join(root, file)
@@ -67,9 +80,12 @@ class BasicSearchStrategy(SearchStrategy):
                                 if rel_path not in results:
                                     results[rel_path] = []
                                 # Strip newline for consistent output
-                                results[rel_path].append((line_num, line.rstrip('\\n')))
+                                results[rel_path].append((line_num, line.rstrip('\n')))
+                except (UnicodeDecodeError, PermissionError, OSError):
+                    # Ignore files that can't be opened or read due to encoding/permission issues
+                    continue
                 except Exception:
-                    # Ignore files that can't be opened or read
+                    # Ignore any other unexpected exceptions to maintain robustness
                     continue
         
         return results 
