@@ -250,7 +250,12 @@ def set_project_path(path: str, ctx: Context) -> str:
         print(f"Attempting to load existing index and cache...")
 
         # Try to load index
-        loaded_index = ctx.request_context.lifespan_context.settings.load_index()
+        loaded_index = None
+        try:
+            loaded_index = ctx.request_context.lifespan_context.settings.load_index()
+        except Exception as e:
+            print(f"Could not load existing index, it might be an old format. A new index will be created. Error: {e}")
+
         if loaded_index:
             print(f"Existing index found and loaded successfully")
             file_index = loaded_index
@@ -719,8 +724,8 @@ def _index_project(base_path: str) -> int:
             path_parts = rel_path.replace('\\', '/').split('/')
             for part in path_parts:
                 if part not in current_dir:
-                    current_dir[part] = {}
-                current_dir = current_dir[part]
+                    current_dir[part] = {"type": "directory", "children": {}}
+                current_dir = current_dir[part]["children"]
 
         # Add files to current directory
         for file in files:
@@ -750,22 +755,23 @@ def _count_files(directory: Dict) -> int:
     count = 0
     for name, value in directory.items():
         if isinstance(value, dict):
-            if "type" in value and value["type"] == "file":
+            if value.get("type") == "file":
                 count += 1
-            else:
-                count += _count_files(value)
+            elif value.get("type") == "directory":
+                count += _count_files(value.get("children", {}))
     return count
 
 def _get_all_files(directory: Dict, prefix: str = "") -> List[Tuple[str, Dict]]:
     """Recursively get all files from the index."""
     all_files = []
     for name, item in directory.items():
-        current_path = os.path.join(prefix, name)
-        if item['type'] == 'file':
+        current_path = os.path.join(prefix, name).replace('\\', '/')
+        if item.get('type') == 'file':
             all_files.append((current_path, item))
-        elif item['type'] == 'directory':
-            all_files.extend(_get_all_files(item['children'], current_path))
+        elif item.get('type') == 'directory':
+            all_files.extend(_get_all_files(item.get('children', {}), current_path))
     return all_files
+
 
 def main():
     """Main function to run the MCP server."""
