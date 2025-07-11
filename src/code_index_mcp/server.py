@@ -314,7 +314,8 @@ def search_code_advanced(
     case_sensitive: bool = True,
     context_lines: int = 0,
     file_pattern: Optional[str] = None,
-    fuzzy: bool = False
+    fuzzy: bool = False,
+    regex: bool = False
 ) -> Dict[str, Any]:
     """
     Search for a code pattern in the project using an advanced, fast tool.
@@ -323,7 +324,7 @@ def search_code_advanced(
     (like ugrep, ripgrep, ag, or grep) for maximum performance.
     
     Args:
-        pattern: The search pattern (can be a regex if fuzzy=True).
+        pattern: The search pattern. Can be literal text or regex (see regex parameter).
         case_sensitive: Whether the search should be case-sensitive.
         context_lines: Number of lines to show before and after the match.
         file_pattern: A glob pattern to filter files to search in (e.g., "*.py", "*.js", "test_*.py").
@@ -333,13 +334,14 @@ def search_code_advanced(
                      - ag (Silver Searcher): Converts globs to regex internally (may have limitations)
                      - grep: Basic pattern matching only
                      For best compatibility, use simple patterns like "*.py" or "*.js".
-        fuzzy: If True, enables fuzzy/approximate matching.
-               IMPORTANT: Fuzzy matching support varies by tool:
-               - ugrep: Native fuzzy search with --fuzzy flag
-               - ripgrep: Safe fuzzy patterns using word boundaries
-               - ag: Safe fuzzy patterns using word boundaries  
-               - grep: Safe fuzzy patterns using word boundaries
+        fuzzy: If True, enables partial/boundary matching (not true fuzzy search).
+               IMPORTANT: This is NOT edit-distance fuzzy matching, but word boundary matching.
+               - ugrep: Native fuzzy search with --fuzzy flag (true fuzzy search)
+               - Other tools: Word boundary pattern matching
                For literal string searches, set fuzzy=False (recommended for exact matches).
+        regex: If True, enables regex pattern matching. Use this for patterns like "ERROR|WARN".
+               The pattern will be validated for safety to prevent ReDoS attacks.
+               If False (default), uses literal string search.
                
     Returns:
         A dictionary containing the search results or an error message.
@@ -364,7 +366,8 @@ def search_code_advanced(
             case_sensitive=case_sensitive,
             context_lines=context_lines,
             file_pattern=file_pattern,
-            fuzzy=fuzzy
+            fuzzy=fuzzy,
+            regex=regex
         )
         return {"results": results}
     except Exception as e:

@@ -5,7 +5,7 @@ import shutil
 import subprocess
 from typing import Dict, List, Optional, Tuple
 
-from .base import SearchStrategy, parse_search_output
+from .base import SearchStrategy, parse_search_output, create_word_boundary_pattern, is_safe_regex_pattern
 
 class UgrepStrategy(SearchStrategy):
     """Search strategy using the 'ugrep' (ug) command-line tool."""
@@ -26,10 +26,20 @@ class UgrepStrategy(SearchStrategy):
         case_sensitive: bool = True,
         context_lines: int = 0,
         file_pattern: Optional[str] = None,
-        fuzzy: bool = False
+        fuzzy: bool = False,
+        regex: bool = False
     ) -> Dict[str, List[Tuple[int, str]]]:
         """
         Execute a search using the 'ug' command-line tool.
+        
+        Args:
+            pattern: The search pattern
+            base_path: Directory to search in
+            case_sensitive: Whether search is case sensitive
+            context_lines: Number of context lines to show
+            file_pattern: File pattern to filter
+            fuzzy: Enable true fuzzy search (ugrep native support)
+            regex: Enable regex pattern matching
         """
         if not self.is_available():
             return {"error": "ugrep (ug) command not found."}
@@ -37,9 +47,16 @@ class UgrepStrategy(SearchStrategy):
         cmd = ['ug', '--line-number', '--no-heading']
 
         if fuzzy:
-            cmd.append('--fuzzy') # Enable fuzzy search (long form for clarity)
+            # ugrep has native fuzzy search support
+            cmd.append('--fuzzy')
+        elif regex:
+            # Use regex mode - check for safety first
+            if not is_safe_regex_pattern(pattern):
+                raise ValueError(f"Potentially unsafe regex pattern: {pattern}")
+            # Don't add --fixed-strings, use regex mode
         else:
-            cmd.append('--fixed-strings') # Use fixed-strings for non-fuzzy search
+            # Use literal string search
+            cmd.append('--fixed-strings')
 
         if not case_sensitive:
             cmd.append('--ignore-case')

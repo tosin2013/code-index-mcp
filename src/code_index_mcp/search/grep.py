@@ -5,7 +5,7 @@ import shutil
 import subprocess
 from typing import Dict, List, Optional, Tuple
 
-from .base import SearchStrategy, parse_search_output, create_safe_fuzzy_pattern
+from .base import SearchStrategy, parse_search_output, create_word_boundary_pattern, is_safe_regex_pattern
 
 class GrepStrategy(SearchStrategy):
     """
@@ -31,25 +31,44 @@ class GrepStrategy(SearchStrategy):
         case_sensitive: bool = True,
         context_lines: int = 0,
         file_pattern: Optional[str] = None,
-        fuzzy: bool = False
+        fuzzy: bool = False,
+        regex: bool = False
     ) -> Dict[str, List[Tuple[int, str]]]:
         """
         Execute a search using standard grep.
 
-        Note: grep does not support native fuzzy searching. When fuzzy=True, an
-        Extended Regular Expression (ERE) search is performed with safe fuzzy pattern.
-        When fuzzy=False, a literal string search is performed (-F).
+        Args:
+            pattern: The search pattern
+            base_path: Directory to search in
+            case_sensitive: Whether search is case sensitive
+            context_lines: Number of context lines to show
+            file_pattern: File pattern to filter
+            fuzzy: Enable word boundary matching
+            regex: Enable regex pattern matching
         """
         # -r: recursive, -n: line number
         cmd = ['grep', '-r', '-n']
 
         # Prepare search pattern
         search_pattern = pattern
-        if not fuzzy:
-            cmd.append('-F')  # Fixed strings, literal search
-        else:
+        
+        if regex:
+            # Use regex mode - check for safety first
+            if not is_safe_regex_pattern(pattern):
+                raise ValueError(f"Potentially unsafe regex pattern: {pattern}")
             cmd.append('-E')  # Extended Regular Expressions
-            search_pattern = create_safe_fuzzy_pattern(pattern)
+        elif fuzzy:
+            # Use word boundary pattern for partial matching
+            search_pattern = create_word_boundary_pattern(pattern)
+            cmd.append('-E')  # Extended Regular Expressions
+        else:
+            # Auto-detect if pattern looks like a safe regex
+            if is_safe_regex_pattern(pattern):
+                # Pattern contains regex chars, use extended regex mode
+                cmd.append('-E')
+            else:
+                # Use literal string search
+                cmd.append('-F')
 
         if not case_sensitive:
             cmd.append('-i')

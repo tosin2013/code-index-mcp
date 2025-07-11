@@ -5,7 +5,7 @@ import shutil
 import subprocess
 from typing import Dict, List, Optional, Tuple
 
-from .base import SearchStrategy, parse_search_output, create_safe_fuzzy_pattern
+from .base import SearchStrategy, parse_search_output, create_word_boundary_pattern, is_safe_regex_pattern
 
 class RipgrepStrategy(SearchStrategy):
     """Search strategy using the 'ripgrep' (rg) command-line tool."""
@@ -26,14 +26,20 @@ class RipgrepStrategy(SearchStrategy):
         case_sensitive: bool = True,
         context_lines: int = 0,
         file_pattern: Optional[str] = None,
-        fuzzy: bool = False
+        fuzzy: bool = False,
+        regex: bool = False
     ) -> Dict[str, List[Tuple[int, str]]]:
         """
         Execute a search using ripgrep.
         
-        Note: ripgrep does not support native fuzzy searching. When fuzzy=True, a
-        safe fuzzy pattern with word boundaries is used for regex search.
-        When fuzzy=False, a literal string search is performed with --fixed-strings.
+        Args:
+            pattern: The search pattern
+            base_path: Directory to search in
+            case_sensitive: Whether search is case sensitive
+            context_lines: Number of context lines to show
+            file_pattern: File pattern to filter
+            fuzzy: Enable word boundary matching (not true fuzzy search)
+            regex: Enable regex pattern matching
         """
         cmd = ['rg', '--line-number', '--no-heading', '--color=never']
 
@@ -42,10 +48,17 @@ class RipgrepStrategy(SearchStrategy):
 
         # Prepare search pattern
         search_pattern = pattern
-        if fuzzy:
-            # Use safe fuzzy pattern for regex search
-            search_pattern = create_safe_fuzzy_pattern(pattern)
+        
+        if regex:
+            # Use regex mode - check for safety first
+            if not is_safe_regex_pattern(pattern):
+                raise ValueError(f"Potentially unsafe regex pattern: {pattern}")
+            # Don't add --fixed-strings, use regex mode
+        elif fuzzy:
+            # Use word boundary pattern for partial matching
+            search_pattern = create_word_boundary_pattern(pattern)
         else:
+            # Use literal string search
             cmd.append('--fixed-strings')
 
         if context_lines > 0:

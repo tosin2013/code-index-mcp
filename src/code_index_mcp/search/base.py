@@ -62,32 +62,60 @@ def parse_search_output(output: str, base_path: str) -> Dict[str, List[Tuple[int
     return results
 
 
-def create_safe_fuzzy_pattern(pattern: str) -> str:
+def create_word_boundary_pattern(pattern: str) -> str:
     """
-    Create safe fuzzy search patterns that are more permissive than exact match
-    but still safe from regex injection attacks.
+    Create word boundary patterns for partial matching.
+    This is NOT true fuzzy search, but allows matching words at boundaries.
     
     Args:
         pattern: Original search pattern
         
     Returns:
-        Safe fuzzy pattern for extended regex
+        Word boundary pattern for regex matching
     """
     # Escape any regex special characters to make them literal
     escaped = re.escape(pattern)
     
-    # Create fuzzy pattern that matches:
+    # Create word boundary pattern that matches:
     # 1. Word at start of word boundary (e.g., "test" in "testing")
     # 2. Word at end of word boundary (e.g., "test" in "mytest") 
     # 3. Whole word (e.g., "test" as standalone word)
     if len(pattern) >= 3:  # Only for patterns of reasonable length
         # This pattern allows partial matches at word boundaries
-        fuzzy_pattern = f"\\b{escaped}|{escaped}\\b"
+        boundary_pattern = f"\\b{escaped}|{escaped}\\b"
     else:
         # For short patterns, require full word boundaries to avoid too many matches
-        fuzzy_pattern = f"\\b{escaped}\\b"
+        boundary_pattern = f"\\b{escaped}\\b"
     
-    return fuzzy_pattern
+    return boundary_pattern
+
+
+def is_safe_regex_pattern(pattern: str) -> bool:
+    """
+    Check if a pattern appears to be a safe regex pattern.
+    
+    Args:
+        pattern: The search pattern to check
+        
+    Returns:
+        True if the pattern looks like a safe regex, False otherwise
+    """
+    # Allow basic regex operators that are commonly used and safe
+    safe_regex_chars = ['|', '(', ')', '[', ']', '^', '$']
+    
+    # Check if pattern contains any regex metacharacters
+    has_regex_chars = any(char in pattern for char in safe_regex_chars)
+    
+    # Basic safety check - avoid obviously dangerous patterns
+    dangerous_patterns = [
+        r'(.+)+',  # Nested quantifiers
+        r'(.*)*',  # Nested stars
+        r'(.{0,})+',  # Potential ReDoS patterns
+    ]
+    
+    has_dangerous_patterns = any(dangerous in pattern for dangerous in dangerous_patterns)
+    
+    return has_regex_chars and not has_dangerous_patterns
 
 
 class SearchStrategy(ABC):
@@ -121,18 +149,20 @@ class SearchStrategy(ABC):
         case_sensitive: bool = True,
         context_lines: int = 0,
         file_pattern: Optional[str] = None,
-        fuzzy: bool = False
+        fuzzy: bool = False,
+        regex: bool = False
     ) -> Dict[str, List[Tuple[int, str]]]:
         """
         Execute a search using the specific strategy.
 
         Args:
-            pattern: The search pattern (string or regex).
+            pattern: The search pattern.
             base_path: The root directory to search in.
             case_sensitive: Whether the search is case-sensitive.
             context_lines: Number of context lines to show around each match.
             file_pattern: Glob pattern to filter files (e.g., "*.py").
-            fuzzy: Whether to enable fuzzy search.
+            fuzzy: Whether to enable fuzzy/partial matching.
+            regex: Whether to enable regex pattern matching.
 
         Returns:
             A dictionary mapping filenames to lists of (line_number, line_content) tuples.

@@ -43,3 +43,7 @@ test_*.py
 
 # Claude Code generated files
 CLAUDE.md
+.claude/
+.claude_chat/
+claude_*
+COMMIT_MESSAGE.txt
