@@ -1,9 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(python:*)",
-      "Bash(npx @modelcontextprotocol/inspector --cli:*)"
-    ],
-    "deny": []
-  }
-}
