@@ -328,17 +328,18 @@ def search_code_advanced(
         case_sensitive: Whether the search should be case-sensitive.
         context_lines: Number of lines to show before and after the match.
         file_pattern: A glob pattern to filter files to search in (e.g., "*.py", "*.js", "test_*.py").
-                     IMPORTANT: Different tools handle file patterns differently:
+                     All search tools now handle glob patterns consistently:
                      - ugrep: Uses glob patterns (*.py, *.{js,ts}) 
                      - ripgrep: Uses glob patterns (*.py, *.{js,ts})
-                     - ag (Silver Searcher): Converts globs to regex internally (may have limitations)
-                     - grep: Basic pattern matching only
-                     For best compatibility, use simple patterns like "*.py" or "*.js".
-        fuzzy: If True, enables partial/boundary matching (not true fuzzy search).
-               IMPORTANT: This is NOT edit-distance fuzzy matching, but word boundary matching.
-               - ugrep: Native fuzzy search with --fuzzy flag (true fuzzy search)
-               - Other tools: Word boundary pattern matching
-               For literal string searches, set fuzzy=False (recommended for exact matches).
+                     - ag (Silver Searcher): Automatically converts globs to regex patterns
+                     - grep: Basic glob pattern matching
+                     All common glob patterns like "*.py", "test_*.js", "src/*.ts" are supported.
+        fuzzy: If True, enables fuzzy/partial matching behavior varies by search tool:
+               - ugrep: Native fuzzy search with --fuzzy flag (true edit-distance fuzzy search)
+               - ripgrep, ag, grep, basic: Word boundary pattern matching (not true fuzzy search)
+               IMPORTANT: Only ugrep provides true fuzzy search. Other tools use word boundary 
+               matching which allows partial matches at word boundaries.
+               For exact literal matches, set fuzzy=False (default and recommended).
         regex: If True, enables regex pattern matching. Use this for patterns like "ERROR|WARN".
                The pattern will be validated for safety to prevent ReDoS attacks.
                If False (default), uses literal string search.
