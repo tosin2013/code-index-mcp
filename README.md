@@ -3,7 +3,7 @@
 <div align="center">
 
 [![MCP Server](https://img.shields.io/badge/MCP-Server-blue)](https://modelcontextprotocol.io)
-[![Python](https://img.shields.io/badge/Python-3.8%2B-green)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/Python-3.10%2B-green)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
 
 A Model Context Protocol server for code indexing, searching, and analysis.
@@ -24,8 +24,11 @@ This server integrates with the [Model Context Protocol](https://modelcontextpro
 
 - **Project Indexing**: Recursively scans directories to build a searchable index of code files
 - **Advanced Search**: Intelligent search with automatic detection of ugrep, ripgrep, ag, or grep for enhanced performance
-- **Fuzzy Search**: Native fuzzy matching with ugrep, or safe fuzzy patterns for other tools
-- **File Analysis**: Get detailed insights about file structure, imports, and complexity
+- **Regex Search**: Full regex pattern matching with safety validation to prevent ReDoS attacks
+- **Fuzzy Search**: Native fuzzy matching with ugrep, or word boundary patterns for other tools
+- **File Analysis**: Get detailed insights about file structure, imports, classes, methods, and complexity
+  - **Java Support**: Comprehensive analysis including packages, classes, interfaces, enums, and methods
+  - **Python/JavaScript Support**: Functions, classes, and import analysis
 - **Smart Filtering**: Automatically ignores build directories, dependencies, and non-code files
 - **Persistent Storage**: Caches indexes for improved performance across sessions
 - **Lazy Loading**: Search tools are detected only when needed for optimal startup performance
@@ -67,7 +70,7 @@ There are several ways to set up and use Code Index MCP, depending on your needs
 
 This is the easiest and most common way to use the server. It's designed for users who want to use Code Index MCP within an AI application like Claude Desktop.
 
-1.  **Prerequisite**: Make sure you have Python 3.8+ and [uv](https://github.com/astral-sh/uv) installed.
+1.  **Prerequisite**: Make sure you have Python 3.10+ and [uv](https://github.com/astral-sh/uv) installed.
 
 2.  **Configure the Host App**: Add the following to your host application's MCP configuration file.
     
@@ -153,7 +156,7 @@ If you prefer to manage your Python packages manually with `pip`, you can instal
 ### Core Tools
 
 - **set_project_path**: Sets the base project path for indexing.
-- **search_code**: Enhanced search using external tools (ugrep/ripgrep/ag/grep) with fuzzy matching support.
+- **search_code_advanced**: Enhanced search using external tools (ugrep/ripgrep/ag/grep) with regex and fuzzy matching support.
 - **find_files**: Finds files in the project matching a given pattern.
 - **get_file_summary**: Gets a summary of a specific file, including line count, functions, imports, etc.
 - **refresh_index**: Refreshes the project index.
@@ -223,11 +226,16 @@ Search for all occurrences of the "processData" function.
 I'm looking for a function related to user authentication, it might be named 'authUser', 'authenticateUser', or something similar. Can you do a fuzzy search for 'authUser'?
 ```
 
+**Example: Search with Regular Expressions**
+```
+Search for all function calls that match the pattern "get.*Data" using regex.
+```
+
 **Example: Search within Specific Files**
 ```
 Search for the string "API_ENDPOINT" only in Python files.
 ```
-*(The assistant would use the `search_code` tool with the `file_pattern` parameter set to `*.py`)*
+*(The assistant would use the `search_code_advanced` tool with the `file_pattern` parameter set to `*.py`)*
 
 ## Development
 

@@ -3,7 +3,7 @@
 <div align="center">
 
 [![MCP Server](https://img.shields.io/badge/MCP-Server-blue)](https://modelcontextprotocol.io)
-[![Python](https://img.shields.io/badge/Python-3.8%2B-green)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/Python-3.10%2B-green)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
 
 一個用於程式碼索引、搜尋和分析的模型上下文協定(Model Context Protocol)伺服器。
@@ -20,8 +20,11 @@
 
 - **專案索引**：遞迴掃描目錄以建構可搜尋的程式碼檔案索引
 - **進階搜尋**：智慧搜尋，自動偵測 ugrep、ripgrep、ag 或 grep 以提升效能
-- **模糊搜尋**：ugrep 的原生模糊匹配功能提供卓越的搜尋結果，或其他工具的安全模糊模式
-- **檔案分析**：取得有關檔案結構、匯入和複雜性的詳細資訊
+- **正規表達式搜尋**：完整的正規表達式模式匹配，具備安全驗證以防範 ReDoS 攻擊
+- **模糊搜尋**：ugrep 的原生模糊匹配功能，或其他工具的詞邊界模式匹配
+- **檔案分析**：取得有關檔案結構、匯入、類別、方法和複雜性的詳細資訊
+  - **Java 支援**：全面分析包括套件、類別、介面、列舉和方法
+  - **Python/JavaScript 支援**：函式、類別和匯入分析
 - **智慧篩選**：自動忽略建構目錄、相依套件和非程式碼檔案
 - **持久儲存**：快取索引以提高跨工作階段的效能
 - **延遲載入**：僅在需要時偵測搜尋工具，優化啟動效能
@@ -63,7 +66,7 @@
 
 這是最簡單也最常見的使用方式，專為希望在 AI 應用程式（如 Claude Desktop）中使用 Code Index MCP 的使用者設計。
 
-1.  **先決條件**：請確保您已安裝 Python 3.8+ 和 [uv](https://github.com/astral-sh/uv)。
+1.  **先決條件**：請確保您已安裝 Python 3.10+ 和 [uv](https://github.com/astral-sh/uv)。
 
 2.  **設定宿主應用**：將以下設定新增到您宿主應用的 MCP 設定檔中（例如，Claude Desktop 的設定檔是 `claude_desktop_config.json`）：
 
@@ -145,7 +148,7 @@
 ### 核心工具
 
 - **set_project_path**：設定索引的基本專案路徑。
-- **search_code**：使用外部工具 (ugrep/ripgrep/ag/grep) 的增強搜尋，支援模糊匹配。
+- **search_code_advanced**：使用外部工具 (ugrep/ripgrep/ag/grep) 的增強搜尋，支援正規表達式和模糊匹配。
 - **find_files**：尋找專案中符合給定模式的檔案。
 - **get_file_summary**：取得特定檔案的摘要，包括行數、函式、匯入等。
 - **refresh_index**：重新整理專案索引。
@@ -215,11 +218,16 @@
 我正在尋找一個與使用者驗證相關的函式，它可能叫做 'authUser'、'authenticateUser' 或類似的名稱。你可以對 'authUser' 進行模糊搜尋嗎？
 ```
 
+**範例：正規表達式搜尋**
+```
+使用正規表達式搜尋所有符合模式 "get.*Data" 的函式呼叫。
+```
+
 **範例：在特定檔案中搜尋**
 ```
 只在 Python 檔案中搜尋字串 "API_ENDPOINT"。
 ```
-*（AI 助理會使用 `search_code` 工具，並將 `file_pattern` 參數設定為 `*.py`）*
+*（AI 助理會使用 `search_code_advanced` 工具，並將 `file_pattern` 參數設定為 `*.py`）*
 
 ## 開發
 
