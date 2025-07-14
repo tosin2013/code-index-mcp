@@ -68,8 +68,30 @@ class AgStrategy(SearchStrategy):
             cmd.extend(['--after', str(context_lines)])
             
         if file_pattern:
-            # Use -G to filter files by regex pattern
-            cmd.extend(['-G', file_pattern])
+            # Convert glob pattern to regex pattern for ag's -G parameter
+            # ag's -G expects regex, not glob patterns
+            regex_pattern = file_pattern
+            if '*' in file_pattern and not file_pattern.startswith('^') and not file_pattern.endswith('$'):
+                # Convert common glob patterns to regex
+                if file_pattern.startswith('*.'):
+                    # Pattern like "*.py" -> "\.py$"
+                    extension = file_pattern[2:]  # Remove "*."
+                    regex_pattern = f'\\.{extension}$'
+                elif file_pattern.endswith('*'):
+                    # Pattern like "test_*" -> "^test_.*"
+                    prefix = file_pattern[:-1]  # Remove "*"
+                    regex_pattern = f'^{prefix}.*'
+                elif '*' in file_pattern:
+                    # Pattern like "test_*.py" -> "^test_.*\.py$"
+                    # First escape dots, then replace * with .*
+                    regex_pattern = file_pattern.replace('.', '\\.')
+                    regex_pattern = regex_pattern.replace('*', '.*')
+                    if not regex_pattern.startswith('^'):
+                        regex_pattern = '^' + regex_pattern
+                    if not regex_pattern.endswith('$'):
+                        regex_pattern = regex_pattern + '$'
+            
+            cmd.extend(['-G', regex_pattern])
 
         # Add -- to treat pattern as a literal argument, preventing injection
         cmd.append('--')
