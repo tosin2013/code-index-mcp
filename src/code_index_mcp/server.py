@@ -39,6 +39,8 @@ supported_extensions = [
     '.hbs', '.handlebars', '.ejs', '.pug',
     # Modern frontend
     '.astro', '.mdx',
+    # Objective-C
+    '.m', '.mm',
     # Database and SQL
     '.sql', '.ddl', '.dml', '.mysql', '.postgresql', '.psql', '.sqlite',
     '.mssql', '.oracle', '.ora', '.db2',
@@ -600,6 +602,90 @@ def get_file_summary(file_path: str, ctx: Context) -> Dict[str, Any]:
                 "interface_count": len(interfaces),
                 "method_count": len(methods),
                 "enum_count": len(enums),
+            })
+
+        elif ext in ['.m', '.mm']:
+            # Objective-C/Objective-C++ analysis
+            imports = []
+            interfaces = []
+            implementations = []
+            methods = []
+            properties = []
+            protocols = []
+            categories = []
+
+            for i, line in enumerate(lines):
+                line = line.strip()
+
+                # Check for imports
+                if line.startswith('#import ') or line.startswith('#include '):
+                    imports.append(line)
+
+                # Check for @interface declarations
+                if line.startswith('@interface '):
+                    interface_name = line.replace('@interface ', '').split(':')[0].split('<')[0].strip()
+                    interfaces.append({
+                        "line": i + 1,
+                        "name": interface_name
+                    })
+                    
+                    # Check if it's a category
+                    if '(' in line and ')' in line:
+                        category_name = line[line.find('(')+1:line.find(')')]
+                        categories.append({
+                            "line": i + 1,
+                            "name": f"{interface_name} ({category_name})"
+                        })
+
+                # Check for @implementation declarations
+                if line.startswith('@implementation '):
+                    impl_name = line.replace('@implementation ', '').split(':')[0].split('<')[0].strip()
+                    implementations.append({
+                        "line": i + 1,
+                        "name": impl_name
+                    })
+
+                # Check for @protocol declarations
+                if line.startswith('@protocol '):
+                    protocol_name = line.replace('@protocol ', '').split('<')[0].split(':')[0].strip()
+                    protocols.append({
+                        "line": i + 1,
+                        "name": protocol_name
+                    })
+
+                # Check for @property declarations
+                if line.startswith('@property '):
+                    property_def = line.replace('@property ', '').split(';')[0].strip()
+                    properties.append({
+                        "line": i + 1,
+                        "definition": property_def
+                    })
+
+                # Check for method declarations and definitions
+                if line.startswith('- (') or line.startswith('+ ('):
+                    method_type = "instance" if line.startswith('- (') else "class"
+                    method_content = line.strip()
+                    methods.append({
+                        "line": i + 1,
+                        "type": method_type,
+                        "signature": method_content
+                    })
+
+            summary.update({
+                "imports": imports,
+                "interfaces": interfaces,
+                "implementations": implementations,
+                "methods": methods,
+                "properties": properties,
+                "protocols": protocols,
+                "categories": categories,
+                "import_count": len(imports),
+                "interface_count": len(interfaces),
+                "implementation_count": len(implementations),
+                "method_count": len(methods),
+                "property_count": len(properties),
+                "protocol_count": len(protocols),
+                "category_count": len(categories),
             })
 
         return summary

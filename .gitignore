@@ -47,3 +47,5 @@ CLAUDE.md
 .claude_chat/
 claude_*
 COMMIT_MESSAGE.txt
+
+.llm-context/

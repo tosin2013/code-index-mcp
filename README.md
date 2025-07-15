@@ -27,8 +27,9 @@ This server integrates with the [Model Context Protocol](https://modelcontextpro
 - **Regex Search**: Full regex pattern matching with safety validation to prevent ReDoS attacks
 - **Fuzzy Search**: Native fuzzy matching with ugrep, or word boundary patterns for other tools
 - **File Analysis**: Get detailed insights about file structure, imports, classes, methods, and complexity
-  - **Java Support**: Comprehensive analysis including packages, classes, interfaces, enums, and methods
-  - **Python/JavaScript Support**: Functions, classes, and import analysis
+- **Java Support**: Comprehensive analysis including packages, classes, interfaces, enums, and methods
+- **Objective-C Support**: Full analysis including interfaces, implementations, methods, properties, protocols, and categories
+- **Python/JavaScript Support**: Functions, classes, and import analysis
 - **Smart Filtering**: Automatically ignores build directories, dependencies, and non-code files
 - **Persistent Storage**: Caches indexes for improved performance across sessions
 - **Lazy Loading**: Search tools are detected only when needed for optimal startup performance
@@ -52,6 +53,7 @@ The server supports multiple programming languages and file extensions including
 - Scala (.scala)
 - Shell scripts (.sh, .bash)
 - Zig (.zig)
+- **Objective-C/Objective-C++** (.m, .mm)
 - Web files (.html, .css, .scss, .less, .sass, .stylus, .styl)
 - Template engines (.hbs, .handlebars, .ejs, .pug)
 - **Database & SQL**:

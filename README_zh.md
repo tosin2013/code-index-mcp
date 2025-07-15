@@ -24,7 +24,8 @@
 - **模糊搜尋**：ugrep 的原生模糊匹配功能，或其他工具的詞邊界模式匹配
 - **檔案分析**：取得有關檔案結構、匯入、類別、方法和複雜性的詳細資訊
   - **Java 支援**：全面分析包括套件、類別、介面、列舉和方法
-  - **Python/JavaScript 支援**：函式、類別和匯入分析
+- **Objective-C 支援**：完整分析包括介面、實作、方法、屬性、協定和分類
+- **Python/JavaScript 支援**：函式、類別和匯入分析
 - **智慧篩選**：自動忽略建構目錄、相依套件和非程式碼檔案
 - **持久儲存**：快取索引以提高跨工作階段的效能
 - **延遲載入**：僅在需要時偵測搜尋工具，優化啟動效能
@@ -48,6 +49,7 @@
 - Scala (.scala)
 - Shell 指令碼 (.sh, .bash)
 - Zig (.zig)
+- **Objective-C/Objective-C++** (.m, .mm)
 - Web 檔案 (.html, .css, .scss, .less, .sass, .stylus, .styl)
 - 模板引擎 (.hbs, .handlebars, .ejs, .pug)
 - **資料庫與 SQL**：
