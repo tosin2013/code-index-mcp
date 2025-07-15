@@ -4,25 +4,26 @@ Code Index MCP Server
 This MCP server allows LLMs to index, search, and analyze code from a project directory.
 It provides tools for file discovery, content retrieval, and code analysis.
 """
+# Standard library imports
+import fnmatch
+import json
+import os
+import sys
+import tempfile
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import AsyncIterator, Dict, List, Optional, Tuple, Any
-import os
-import pathlib
-import json
-import fnmatch
-import sys
-import tempfile
-import subprocess
-from mcp.server.fastmcp import FastMCP, Context, Image
+
+# Third-party imports
 from mcp import types
+from mcp.server.fastmcp import FastMCP, Context
 
-# Import the ProjectSettings class and constants - using relative import
-from .project_settings import ProjectSettings
+# Local imports
+from .analyzers.analyzer_factory import AnalyzerFactory
 from .constants import SETTINGS_DIR
+from .project_settings import ProjectSettings
 
-# Create the MCP server
-mcp = FastMCP("CodeIndexer", dependencies=["pathlib"])
+# MCP server will be created after lifespan manager is defined
 
 # In-memory references (will be loaded from persistent storage)
 file_index = {}
@@ -95,8 +96,8 @@ async def indexer_lifespan(server: FastMCP) -> AsyncIterator[CodeIndexerContext]
             print(f"Saving cache for project: {context.base_path}")
             settings.save_cache(code_content_cache)
 
-# Initialize the server with our lifespan manager
-mcp = FastMCP("CodeIndexer", lifespan=indexer_lifespan)
+# Create the MCP server with lifespan manager
+mcp = FastMCP("CodeIndexer", lifespan=indexer_lifespan, dependencies=["pathlib"])
 
 # ----- RESOURCES -----
 
@@ -175,7 +176,7 @@ def get_file_content(file_path: str) -> str:
         return content
     except UnicodeDecodeError:
         return f"Error: File {file_path} appears to be a binary file or uses unsupported encoding."
-    except Exception as e:
+    except (FileNotFoundError, PermissionError, OSError) as e:
         return f"Error reading file: {e}"
 
 @mcp.resource("structure://project")
@@ -306,7 +307,7 @@ def set_project_path(path: str, ctx: Context) -> str:
             search_info = f" Advanced search enabled ({search_tool.name})."
 
         return f"Project path set to: {abs_path}. Indexed {file_count} files.{search_info}"
-    except Exception as e:
+    except (OSError, ValueError, RuntimeError) as e:
         return f"Error setting project path: {e}"
 
 @mcp.tool()
@@ -392,7 +393,7 @@ def find_files(pattern: str, ctx: Context) -> List[str]:
         ctx.request_context.lifespan_context.settings.save_index(file_index)
 
     matching_files = []
-    for file_path, _info in _get_all_files(file_index):
+    for file_path, _ in _get_all_files(file_index):
         if fnmatch.fnmatch(file_path, pattern):
             matching_files.append(file_path)
 
@@ -445,251 +446,24 @@ def get_file_summary(file_path: str, ctx: Context) -> Dict[str, Any]:
             "extension": ext,
         }
 
-        # Language-specific analysis
-        if ext == '.py':
-            # Python analysis
-            imports = []
-            classes = []
-            functions = []
-
-            for i, line in enumerate(lines):
-                line = line.strip()
-
-                # Check for imports
-                if line.startswith('import ') or line.startswith('from '):
-                    imports.append(line)
-
-                # Check for class definitions
-                if line.startswith('class '):
-                    classes.append({
-                        "line": i + 1,
-                        "name": line.replace('class ', '').split('(')[0].split(':')[0].strip()
-                    })
-
-                # Check for function definitions
-                if line.startswith('def '):
-                    functions.append({
-                        "line": i + 1,
-                        "name": line.replace('def ', '').split('(')[0].strip()
-                    })
-
-            summary.update({
-                "imports": imports,
-                "classes": classes,
-                "functions": functions,
-                "import_count": len(imports),
-                "class_count": len(classes),
-                "function_count": len(functions),
-            })
-
-        elif ext in ['.js', '.jsx', '.ts', '.tsx']:
-            # JavaScript/TypeScript analysis
-            imports = []
-            classes = []
-            functions = []
-
-            for i, line in enumerate(lines):
-                line = line.strip()
-
-                # Check for imports
-                if line.startswith('import ') or line.startswith('require('):
-                    imports.append(line)
-
-                # Check for class definitions
-                if line.startswith('class ') or 'class ' in line:
-                    class_name = ""
-                    if 'class ' in line:
-                        parts = line.split('class ')[1]
-                        class_name = parts.split(' ')[0].split('{')[0].split('extends')[0].strip()
-                    classes.append({
-                        "line": i + 1,
-                        "name": class_name
-                    })
-
-                # Check for function definitions
-                if 'function ' in line or '=>' in line:
-                    functions.append({
-                        "line": i + 1,
-                        "content": line
-                    })
-
-            summary.update({
-                "imports": imports,
-                "classes": classes,
-                "functions": functions,
-                "import_count": len(imports),
-                "class_count": len(classes),
-                "function_count": len(functions),
-            })
-
-        elif ext == '.java':
-            # Java analysis
-            package = ""
-            imports = []
-            classes = []
-            interfaces = []
-            methods = []
-            enums = []
-
-            for i, line in enumerate(lines):
-                line = line.strip()
-
-                # Check for package declaration
-                if line.startswith('package '):
-                    package = line.replace('package ', '').rstrip(';')
-
-                # Check for imports
-                if line.startswith('import '):
-                    imports.append(line)
-
-                # Check for class definitions
-                if line.startswith('public class ') or line.startswith('private class ') or line.startswith('protected class ') or line.startswith('class '):
-                    class_name = ""
-                    if 'class ' in line:
-                        parts = line.split('class ')[1]
-                        class_name = parts.split(' ')[0].split('{')[0].split('<')[0].strip()
-                    classes.append({
-                        "line": i + 1,
-                        "name": class_name
-                    })
-
-                # Check for interface definitions
-                if line.startswith('public interface ') or line.startswith('private interface ') or line.startswith('protected interface ') or line.startswith('interface '):
-                    interface_name = ""
-                    if 'interface ' in line:
-                        parts = line.split('interface ')[1]
-                        interface_name = parts.split(' ')[0].split('{')[0].split('<')[0].strip()
-                    interfaces.append({
-                        "line": i + 1,
-                        "name": interface_name
-                    })
-
-                # Check for enum definitions
-                if line.startswith('public enum ') or line.startswith('private enum ') or line.startswith('protected enum ') or line.startswith('enum '):
-                    enum_name = ""
-                    if 'enum ' in line:
-                        parts = line.split('enum ')[1]
-                        enum_name = parts.split(' ')[0].split('{')[0].strip()
-                    enums.append({
-                        "line": i + 1,
-                        "name": enum_name
-                    })
-
-                # Check for method definitions
-                if ('public ' in line or 'private ' in line or 'protected ' in line) and '(' in line and ')' in line:
-                    # Skip constructor calls and other non-method patterns
-                    if not line.startswith('//') and not line.startswith('*') and not line.startswith('/*'):
-                        # Extract method name
-                        method_parts = line.split('(')[0].strip().split()
-                        if len(method_parts) >= 2:
-                            method_name = method_parts[-1]
-                            # Filter out common non-method patterns
-                            if not method_name.startswith('new ') and not method_name.endswith('='):
-                                methods.append({
-                                    "line": i + 1,
-                                    "name": method_name
-                                })
-
-            summary.update({
-                "package": package,
-                "imports": imports,
-                "classes": classes,
-                "interfaces": interfaces,
-                "methods": methods,
-                "enums": enums,
-                "import_count": len(imports),
-                "class_count": len(classes),
-                "interface_count": len(interfaces),
-                "method_count": len(methods),
-                "enum_count": len(enums),
-            })
-
-        elif ext in ['.m', '.mm']:
-            # Objective-C/Objective-C++ analysis
-            imports = []
-            interfaces = []
-            implementations = []
-            methods = []
-            properties = []
-            protocols = []
-            categories = []
-
-            for i, line in enumerate(lines):
-                line = line.strip()
-
-                # Check for imports
-                if line.startswith('#import ') or line.startswith('#include '):
-                    imports.append(line)
-
-                # Check for @interface declarations
-                if line.startswith('@interface '):
-                    interface_name = line.replace('@interface ', '').split(':')[0].split('<')[0].strip()
-                    interfaces.append({
-                        "line": i + 1,
-                        "name": interface_name
-                    })
-                    
-                    # Check if it's a category
-                    if '(' in line and ')' in line:
-                        category_name = line[line.find('(')+1:line.find(')')]
-                        categories.append({
-                            "line": i + 1,
-                            "name": f"{interface_name} ({category_name})"
-                        })
-
-                # Check for @implementation declarations
-                if line.startswith('@implementation '):
-                    impl_name = line.replace('@implementation ', '').split(':')[0].split('<')[0].strip()
-                    implementations.append({
-                        "line": i + 1,
-                        "name": impl_name
-                    })
-
-                # Check for @protocol declarations
-                if line.startswith('@protocol '):
-                    protocol_name = line.replace('@protocol ', '').split('<')[0].split(':')[0].strip()
-                    protocols.append({
-                        "line": i + 1,
-                        "name": protocol_name
-                    })
-
-                # Check for @property declarations
-                if line.startswith('@property '):
-                    property_def = line.replace('@property ', '').split(';')[0].strip()
-                    properties.append({
-                        "line": i + 1,
-                        "definition": property_def
-                    })
-
-                # Check for method declarations and definitions
-                if line.startswith('- (') or line.startswith('+ ('):
-                    method_type = "instance" if line.startswith('- (') else "class"
-                    method_content = line.strip()
-                    methods.append({
-                        "line": i + 1,
-                        "type": method_type,
-                        "signature": method_content
-                    })
-
-            summary.update({
-                "imports": imports,
-                "interfaces": interfaces,
-                "implementations": implementations,
-                "methods": methods,
-                "properties": properties,
-                "protocols": protocols,
-                "categories": categories,
-                "import_count": len(imports),
-                "interface_count": len(interfaces),
-                "implementation_count": len(implementations),
-                "method_count": len(methods),
-                "property_count": len(properties),
-                "protocol_count": len(protocols),
-                "category_count": len(categories),
-            })
-
-        return summary
-    except Exception as e:
+        # Use the new analyzer framework for language-specific analysis
+        try:
+            analyzer = AnalyzerFactory.get_analyzer(ext)
+            if analyzer is None:
+                summary["error"] = "No analyzer available for this file type"
+                summary["basic_info"] = True
+                return summary
+                
+            analysis_result = analyzer.analyze(content, norm_path, full_path)
+            
+            # Convert to dict for backwards compatibility
+            return analysis_result.to_dict()
+        except Exception as e:
+            # Fallback to basic summary if analyzer fails
+            summary["error"] = f"Analysis failed: {str(e)}"
+            summary["basic_info"] = True
+            return summary
+    except (OSError, UnicodeDecodeError, ValueError) as e:
         return {"error": f"Error analyzing file: {e}"}
 
 @mcp.tool()
@@ -808,7 +582,7 @@ def check_temp_directory() -> Dict[str, Any]:
                         "contents": os.listdir(item_path) if os.path.exists(item_path) else []
                     }
                     result["subdirectories"].append(subdir_info)
-        except Exception as e:
+        except (OSError, PermissionError) as e:
             result["error"] = str(e)
 
     return result
@@ -832,6 +606,7 @@ def refresh_search_tools(ctx: Context) -> str:
     config = settings.get_search_tools_config()
     
     return f"Search tools refreshed. Available: {config['available_tools']}. Preferred: {config['preferred_tool']}."
+
 
 # ----- PROMPTS -----
 
