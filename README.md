@@ -6,7 +6,9 @@
 [![Python](https://img.shields.io/badge/Python-3.10%2B-green)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
 
-A Model Context Protocol server for code indexing, searching, and analysis.
+**Intelligent code indexing and analysis for Large Language Models**
+
+Transform how AI understands your codebase with advanced search, analysis, and navigation capabilities.
 
 </div>
 
@@ -14,270 +16,296 @@ A Model Context Protocol server for code indexing, searching, and analysis.
   <img width="380" height="200" src="https://glama.ai/mcp/servers/@johnhuang316/code-index-mcp/badge" alt="code-index-mcp MCP server" />
 </a>
 
-## What is Code Index MCP?
+## Overview
 
-Code Index MCP is a specialized MCP server that provides intelligent code indexing and analysis capabilities. It enables Large Language Models to interact with your code repositories, offering real-time insights and navigation through complex codebases.
+Code Index MCP is a [Model Context Protocol](https://modelcontextprotocol.io) server that bridges the gap between AI models and complex codebases. It provides intelligent indexing, advanced search capabilities, and detailed code analysis to help AI assistants understand and navigate your projects effectively.
 
-This server integrates with the [Model Context Protocol](https://modelcontextprotocol.io) (MCP), a standardized way for AI models to interact with external tools and data sources.
+**Perfect for:** Code review, refactoring, documentation generation, debugging assistance, and architectural analysis.
 
 ## Key Features
 
-- **Project Indexing**: Recursively scans directories to build a searchable index of code files
-- **Advanced Search**: Intelligent search with automatic detection of ugrep, ripgrep, ag, or grep for enhanced performance
-- **Regex Search**: Full regex pattern matching with safety validation to prevent ReDoS attacks
-- **Fuzzy Search**: Native fuzzy matching with ugrep, or word boundary patterns for other tools
-- **File Analysis**: Get detailed insights about file structure, imports, classes, methods, and complexity
-- **Java Support**: Comprehensive analysis including packages, classes, interfaces, enums, and methods
-- **Objective-C Support**: Full analysis including interfaces, implementations, methods, properties, protocols, and categories
-- **Python/JavaScript Support**: Functions, classes, and import analysis
-- **Smart Filtering**: Automatically ignores build directories, dependencies, and non-code files
-- **Persistent Storage**: Caches indexes for improved performance across sessions
-- **Lazy Loading**: Search tools are detected only when needed for optimal startup performance
+### 🔍 **Intelligent Search & Analysis**
+- **Advanced Search**: Auto-detects and uses the best available tool (ugrep, ripgrep, ag, or grep)
+- **Regex Support**: Full regex pattern matching with ReDoS attack prevention
+- **Fuzzy Search**: True fuzzy matching with edit distance (ugrep) or word boundary patterns
+- **File Analysis**: Deep insights into structure, imports, classes, methods, and complexity metrics
+
+### 🗂️ **Multi-Language Support**
+- **Mainstream Languages**: Java, Python, JavaScript/TypeScript, C/C++, Go, Rust, C#
+- **Mobile Development**: Swift, Kotlin, Objective-C/C++, React Native
+- **Web Frontend**: Vue, React, Svelte, Astro, HTML, CSS, SCSS
+- **Database**: SQL (MySQL, PostgreSQL, SQLite), NoSQL, stored procedures, migrations
+- **Scripting**: Ruby, PHP, Shell, PowerShell, Bash
+- **Systems**: C/C++, Rust, Go, Zig
+- **JVM Ecosystem**: Java, Kotlin, Scala, Groovy
+- **Others**: Lua, Perl, R, MATLAB, configuration files
+- **50+ File Types Total** - [View complete list](#supported-file-types)
+
+### ⚡ **Performance & Efficiency**
+- **Smart Indexing**: Recursively scans with intelligent filtering of build directories
+- **Persistent Caching**: Stores indexes for lightning-fast subsequent access
+- **Lazy Loading**: Tools detected only when needed for optimal startup
+- **Memory Efficient**: Intelligent caching strategies for large codebases
 
 ## Supported File Types
 
-The server supports multiple programming languages and file extensions including:
+<details>
+<summary><strong>📁 Programming Languages (Click to expand)</strong></summary>
 
-- Python (.py)
-- JavaScript/TypeScript (.js, .ts, .jsx, .tsx, .mjs, .cjs)
-- Frontend Frameworks (.vue, .svelte, .astro)
-- Java (.java)
-- C/C++ (.c, .cpp, .h, .hpp)
-- C# (.cs)
-- Go (.go)
-- Ruby (.rb)
-- PHP (.php)
-- Swift (.swift)
-- Kotlin (.kt)
-- Rust (.rs)
-- Scala (.scala)
-- Shell scripts (.sh, .bash)
-- Zig (.zig)
-- **Objective-C/Objective-C++** (.m, .mm)
-- Web files (.html, .css, .scss, .less, .sass, .stylus, .styl)
-- Template engines (.hbs, .handlebars, .ejs, .pug)
-- **Database & SQL**:
-  - SQL files (.sql, .ddl, .dml)
-  - Database-specific (.mysql, .postgresql, .psql, .sqlite, .mssql, .oracle, .ora, .db2)
-  - Database objects (.proc, .procedure, .func, .function, .view, .trigger, .index)
-  - Migration & tools (.migration, .seed, .fixture, .schema, .liquibase, .flyway)
-  - NoSQL & modern (.cql, .cypher, .sparql, .gql)
-- Documentation/Config (.md, .mdx, .json, .xml, .yml, .yaml)
+**System & Low-Level:**
+- C/C++ (`.c`, `.cpp`, `.h`, `.hpp`)
+- Rust (`.rs`)
+- Zig (`.zig`)
+- Go (`.go`)
 
-## Setup and Integration
+**Object-Oriented:**
+- Java (`.java`)
+- C# (`.cs`)
+- Kotlin (`.kt`)
+- Scala (`.scala`)
+- Objective-C/C++ (`.m`, `.mm`)
+- Swift (`.swift`)
 
-There are several ways to set up and use Code Index MCP, depending on your needs.
+**Scripting & Dynamic:**
+- Python (`.py`)
+- JavaScript/TypeScript (`.js`, `.ts`, `.jsx`, `.tsx`, `.mjs`, `.cjs`)
+- Ruby (`.rb`)
+- PHP (`.php`)
+- Shell (`.sh`, `.bash`)
 
-### For General Use with Host Applications (Recommended)
+</details>
 
-This is the easiest and most common way to use the server. It's designed for users who want to use Code Index MCP within an AI application like Claude Desktop.
+<details>
+<summary><strong>🌐 Web & Frontend (Click to expand)</strong></summary>
 
-1.  **Prerequisite**: Make sure you have Python 3.10+ and [uv](https://github.com/astral-sh/uv) installed.
+**Frameworks & Libraries:**
+- Vue (`.vue`)
+- Svelte (`.svelte`)
+- Astro (`.astro`)
 
-2.  **Configure the Host App**: Add the following to your host application's MCP configuration file.
-    
-    *Claude Desktop*  ->  `claude_desktop_config.json` 
+**Styling:**
+- CSS (`.css`, `.scss`, `.less`, `.sass`, `.stylus`, `.styl`)
+- HTML (`.html`)
 
-    *Claude Code* -> `~/.claude.json`.  There is one `mcpServers` for each project and one global 
+**Templates:**
+- Handlebars (`.hbs`, `.handlebars`)
+- EJS (`.ejs`)
+- Pug (`.pug`)
 
-    ```json
-    {
-      "mcpServers": {
-        "code-index": {
-          "command": "uvx",
-          "args": [
-            "code-index-mcp"
-          ]
-        }
-      }
+</details>
+
+<details>
+<summary><strong>🗄️ Database & SQL (Click to expand)</strong></summary>
+
+**SQL Variants:**
+- Standard SQL (`.sql`, `.ddl`, `.dml`)
+- Database-specific (`.mysql`, `.postgresql`, `.psql`, `.sqlite`, `.mssql`, `.oracle`, `.ora`, `.db2`)
+
+**Database Objects:**
+- Procedures & Functions (`.proc`, `.procedure`, `.func`, `.function`)
+- Views & Triggers (`.view`, `.trigger`, `.index`)
+
+**Migration & Tools:**
+- Migration files (`.migration`, `.seed`, `.fixture`, `.schema`)
+- Tool-specific (`.liquibase`, `.flyway`)
+
+**NoSQL & Modern:**
+- Graph & Query (`.cql`, `.cypher`, `.sparql`, `.gql`)
+
+</details>
+
+<details>
+<summary><strong>📄 Documentation & Config (Click to expand)</strong></summary>
+
+- Markdown (`.md`, `.mdx`)
+- Configuration (`.json`, `.xml`, `.yml`, `.yaml`)
+
+</details>
+
+## Quick Start
+
+### 🚀 **Recommended Setup (Most Users)**
+
+The easiest way to get started with any MCP-compatible application:
+
+**Prerequisites:** Python 3.10+ and [uv](https://github.com/astral-sh/uv) installed
+
+1. **Add to your MCP configuration** (e.g., `claude_desktop_config.json` or `~/.claude.json`):
+   ```json
+   {
+     "mcpServers": {
+       "code-index": {
+         "command": "uvx",
+         "args": ["code-index-mcp"]
+       }
+     }
+   }
+   ```
+
+2. **Restart your application** – `uvx` automatically handles installation and execution
+
+### 🛠️ **Development Setup**
+
+For contributing or local development:
+
+1. **Clone and install:**
+   ```bash
+   git clone https://github.com/johnhuang316/code-index-mcp.git
+   cd code-index-mcp
+   uv sync
+   ```
+
+2. **Configure for local development:**
+   ```json
+   {
+     "mcpServers": {
+       "code-index": {
+         "command": "uv",
+         "args": ["run", "code_index_mcp"]
+       }
+     }
+   }
+   ```
+
+3. **Debug with MCP Inspector:**
+   ```bash
+   npx @modelcontextprotocol/inspector uv run code_index_mcp
+   ```
+
+<details>
+<summary><strong>Alternative: Manual pip Installation</strong></summary>
+
+If you prefer traditional pip management:
+
+```bash
+pip install code-index-mcp
+```
+
+Then configure:
+```json
+{
+  "mcpServers": {
+    "code-index": {
+      "command": "code-index-mcp",
+      "args": []
     }
-    ```
+  }
+}
+```
 
-4.  **Restart the Host App**: After adding the configuration, restart the application. The `uvx` command will automatically handle the installation and execution of the `code-index-mcp` server in the background.
-
-### For Local Development
-
-If you want to contribute to the development of this project, follow these steps:
-
-1.  **Clone the repository**:
-    ```bash
-    git clone https://github.com/johnhuang316/code-index-mcp.git
-    cd code-index-mcp
-    ```
-
-2.  **Install dependencies** using `uv`:
-    ```bash
-    uv sync
-    ```
-
-3.  **Configure Your Host App for Local Development**: To make your host application (e.g., Claude Desktop) use your local source code, update its configuration file to execute the server via `uv run`. This ensures any changes you make to the code are reflected immediately when the host app starts the server.
-
-    ```json
-    {
-      "mcpServers": {
-        "code-index": {
-          "command": "uv",
-          "args": [
-            "run",
-            "code_index_mcp"
-          ]
-        }
-      }
-    }
-    ```
-
-4.  **Debug with the MCP Inspector**: To debug your local server, you also need to tell the inspector to use `uv run`.
-    ```bash
-    npx @modelcontextprotocol/inspector uv run code_index_mcp
-    ```
-
-### Manual Installation via pip (Alternative)
-
-If you prefer to manage your Python packages manually with `pip`, you can install the server directly.
-
-1.  **Install the package**:
-    ```bash
-    pip install code-index-mcp
-    ```
-
-2.  **Configure the Host App**: You will need to manually update your host application's MCP configuration to point to the installed script. Replace `"command": "uvx"` with `"command": "code-index-mcp"`.
-
-    ```json
-    {
-      "mcpServers": {
-        "code-index": {
-          "command": "code-index-mcp",
-          "args": []
-        }
-      }
-    }
-    ```
+</details>
 
 ## Available Tools
 
-### Core Tools
+### 🏗️ **Project Management**
+| Tool | Description |
+|------|-------------|
+| **`set_project_path`** | Initialize indexing for a project directory |
+| **`refresh_index`** | Rebuild the project index after file changes |
+| **`get_settings_info`** | View current project configuration and status |
 
-- **set_project_path**: Sets the base project path for indexing.
-- **search_code_advanced**: Enhanced search using external tools (ugrep/ripgrep/ag/grep) with regex and fuzzy matching support.
-- **find_files**: Finds files in the project matching a given pattern.
-- **get_file_summary**: Gets a summary of a specific file, including line count, functions, imports, etc.
-- **refresh_index**: Refreshes the project index.
-- **get_settings_info**: Gets information about the project settings.
+### 🔍 **Search & Discovery**
+| Tool | Description |
+|------|-------------|
+| **`search_code_advanced`** | Smart search with regex, fuzzy matching, and file filtering |
+| **`find_files`** | Locate files using glob patterns (e.g., `**/*.py`) |
+| **`get_file_summary`** | Analyze file structure, functions, imports, and complexity |
 
-### Utility Tools
+### 🛠️ **System & Maintenance**
+| Tool | Description |
+|------|-------------|
+| **`create_temp_directory`** | Set up storage directory for index data |
+| **`check_temp_directory`** | Verify index storage location and permissions |
+| **`clear_settings`** | Reset all cached data and configurations |
+| **`refresh_search_tools`** | Re-detect available search tools (ugrep, ripgrep, etc.) |
 
-- **create_temp_directory**: Creates the temporary directory used for storing index data.
-- **check_temp_directory**: Checks the temporary directory used for storing index data.
-- **clear_settings**: Clears all settings and cached data.
-- **refresh_search_tools**: Manually re-detect available command-line search tools (e.g., ripgrep).
+## Usage Examples
 
-## Common Workflows and Examples
+### 🎯 **Quick Start Workflow**
 
-Here’s a typical workflow for using Code Index MCP with an AI assistant like Claude.
-
-### 1. Set Project Path & Initial Indexing
-
-This is the first and most important step. When you set the project path, the server automatically creates a file index for the first time or loads a previously cached one.
-
-**Example Prompt:**
+**1. Initialize Your Project**
 ```
-Please set the project path to C:\Users\username\projects\my-react-app
+Set the project path to /Users/dev/my-react-app
 ```
+*Automatically indexes your codebase and creates searchable cache*
 
-### 2. Refresh the Index (When Needed)
-
-If you make significant changes to your project files after the initial setup, you can manually refresh the index to ensure all tools are working with the latest information.
-
-**Example Prompt:**
+**2. Explore Project Structure**
 ```
-I've just added a few new components, please refresh the project index.
+Find all TypeScript component files in src/components
 ```
-*(The assistant would use the `refresh_index` tool)*
+*Uses: `find_files` with pattern `src/components/**/*.tsx`*
 
-### 3. Explore the Project Structure
-
-Once the index is ready, you can find files using patterns (globs) to understand the codebase and locate relevant files.
-
-**Example Prompt:**
+**3. Analyze Key Files**
 ```
-Find all TypeScript component files in the 'src/components' directory.
+Give me a summary of src/api/userService.ts
 ```
-*(The assistant would use the `find_files` tool with a pattern like `src/components/**/*.tsx`)*
+*Uses: `get_file_summary` to show functions, imports, and complexity*
 
-### 4. Analyze a Specific File
+### 🔍 **Advanced Search Examples**
 
-Before diving into the full content of a file, you can get a quick summary of its structure, including functions, classes, and imports.
+<details>
+<summary><strong>Code Pattern Search</strong></summary>
 
-**Example Prompt:**
 ```
-Can you give me a summary of the 'src/api/userService.ts' file?
+Search for all function calls matching "get.*Data" using regex
 ```
-*(The assistant would use the `get_file_summary` tool)*
+*Finds: `getData()`, `getUserData()`, `getFormData()`, etc.*
 
-### 5. Search for Code
+</details>
 
-With an up-to-date index, you can search for code snippets, function names, or any text pattern to find where specific logic is implemented.
+<details>
+<summary><strong>Fuzzy Function Search</strong></summary>
 
-**Example: Simple Search**
 ```
-Search for all occurrences of the "processData" function.
+Find authentication-related functions with fuzzy search for 'authUser'
 ```
+*Matches: `authenticateUser`, `authUserToken`, `userAuthCheck`, etc.*
 
-**Example: Search with Fuzzy Matching**
+</details>
+
+<details>
+<summary><strong>Language-Specific Search</strong></summary>
+
 ```
-I'm looking for a function related to user authentication, it might be named 'authUser', 'authenticateUser', or something similar. Can you do a fuzzy search for 'authUser'?
+Search for "API_ENDPOINT" only in Python files
 ```
+*Uses: `search_code_advanced` with `file_pattern: "*.py"`*
 
-**Example: Search with Regular Expressions**
+</details>
+
+<details>
+<summary><strong>Project Maintenance</strong></summary>
+
 ```
-Search for all function calls that match the pattern "get.*Data" using regex.
+I added new components, please refresh the project index
 ```
+*Uses: `refresh_index` to update the searchable cache*
 
-**Example: Search within Specific Files**
-```
-Search for the string "API_ENDPOINT" only in Python files.
-```
-*(The assistant would use the `search_code_advanced` tool with the `file_pattern` parameter set to `*.py`)*
+</details>
 
-## Development
+## Development & Contributing
 
-### Building from Source
-
-1. Clone the repository:
-
+### 🔧 **Building from Source**
 ```bash
-git clone https://github.com/username/code-index-mcp.git
+git clone https://github.com/johnhuang316/code-index-mcp.git
 cd code-index-mcp
-```
-
-2. Install dependencies:
-
-```bash
 uv sync
-```
-
-3. Run the server locally:
-
-```bash
 uv run code_index_mcp
 ```
 
-## Debugging
-
-You can use the MCP inspector to debug the server:
-
+### 🐛 **Debugging**
 ```bash
 npx @modelcontextprotocol/inspector uvx code-index-mcp
 ```
 
-## License
-
-[MIT License](LICENSE)
-
-## Contributing
-
+### 🤝 **Contributing**
 Contributions are welcome! Please feel free to submit a Pull Request.
 
-## Languages
+---
 
+### 📜 **License**
+[MIT License](LICENSE)
+
+### 🌐 **Translations**
 - [繁體中文](README_zh.md)
+- [日本語](README_ja.md)

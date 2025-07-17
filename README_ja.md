@@ -6,7 +6,9 @@
 [![Python](https://img.shields.io/badge/Python-3.10%2B-green)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
 
-コードのインデックス作成、検索、解析のためのModel Context Protocol（MCP）サーバー。
+**大規模言語モデルのためのインテリジェントコードインデックス作成と解析**
+
+高度な検索、解析、ナビゲーション機能で、AIのコードベース理解を根本的に変革します。
 
 </div>
 
@@ -14,273 +16,296 @@
   <img width="380" height="200" src="https://glama.ai/mcp/servers/@johnhuang316/code-index-mcp/badge" alt="code-index-mcp MCP server" />
 </a>
 
-## Code Index MCPとは？
+## 概要
 
-Code Index MCPは、インテリジェントなコードインデックス作成と解析機能を提供する専用のMCPサーバーです。大規模言語モデルがあなたのコードリポジトリと対話し、複雑なコードベースに対するリアルタイムの洞察とナビゲーションを提供することを可能にします。
+Code Index MCPは、AIモデルと複雑なコードベースの橋渡しをする[Model Context Protocol](https://modelcontextprotocol.io)サーバーです。インテリジェントなインデックス作成、高度な検索機能、詳細なコード解析を提供し、AIアシスタントがプロジェクトを効果的に理解しナビゲートできるようにします。
 
-このサーバーは、AIモデルが外部ツールやデータソースと対話するための標準化された方法である[Model Context Protocol](https://modelcontextprotocol.io)（MCP）と統合されています。
+**最適な用途：**コードレビュー、リファクタリング、ドキュメント生成、デバッグ支援、アーキテクチャ解析。
 
 ## 主な機能
 
-- **プロジェクトインデックス作成**: ディレクトリを再帰的にスキャンして、検索可能なコードファイルのインデックスを構築
-- **高度な検索**: ugrep、ripgrep、ag、grepの自動検出による高性能なインテリジェント検索
-- **正規表現検索**: ReDoS攻撃を防ぐための安全性検証を備えた完全な正規表現パターンマッチング
-- **ファジー検索**: ugrepのネイティブファジーマッチング、または他のツールでの単語境界パターンマッチング
-- **ファイル解析**: ファイル構造、インポート、クラス、メソッド、複雑さに関する詳細な洞察を取得
-  - **Javaサポート**: パッケージ、クラス、インターフェース、列挙型、メソッドを含む包括的な解析
-  - **Python/JavaScriptサポート**: 関数、クラス、インポートの解析
-- **スマートフィルタリング**: ビルドディレクトリ、依存関係、非コードファイルを自動的に無視
-- **永続ストレージ**: セッション間でのパフォーマンス向上のためにインデックスをキャッシュ
-- **遅延ロード**: 最適な起動パフォーマンスのために、必要な時のみ検索ツールを検出
+### 🔍 **インテリジェント検索・解析**
+- **高度な検索**：最適なツール（ugrep、ripgrep、ag、grep）を自動検出・使用
+- **正規表現サポート**：ReDoS攻撃防御付きの完全な正規表現パターンマッチング
+- **ファジー検索**：真の編集距離ファジーマッチング（ugrep）または単語境界パターンマッチング
+- **ファイル解析**：構造、インポート、クラス、メソッド、複雑度メトリクスへの深い洞察
+
+### 🗂️ **多言語サポート**
+- **主流言語**：Java、Python、JavaScript/TypeScript、C/C++、Go、Rust、C#
+- **モバイル開発**：Swift、Kotlin、Objective-C/C++、React Native
+- **Webフロントエンド**：Vue、React、Svelte、Astro、HTML、CSS、SCSS
+- **データベース**：SQL (MySQL、PostgreSQL、SQLite)、NoSQL、ストアドプロシージャ、マイグレーション
+- **スクリプト言語**：Ruby、PHP、Shell、PowerShell、Bash
+- **システム言語**：C/C++、Rust、Go、Zig
+- **JVMエコシステム**：Java、Kotlin、Scala、Groovy
+- **その他の言語**：Lua、Perl、R、MATLAB、設定ファイル
+- **合計50+ファイルタイプ** - [完全なリストを表示](#サポートされているファイルタイプ)
+
+### ⚡ **パフォーマンス・効率性**
+- **スマートインデックス作成**：ビルドディレクトリをインテリジェントにフィルタリングしながら再帰的スキャン
+- **永続キャッシュ**：超高速な後続アクセスのためのインデックス保存
+- **遅延ロード**：最適化された起動のため必要時のみツール検出
+- **メモリ効率**：大規模コードベース向けのインテリジェントキャッシュ戦略
 
 ## サポートされているファイルタイプ
 
-サーバーは複数のプログラミング言語とファイル拡張子をサポートしています：
+<details>
+<summary><strong>📁 プログラミング言語（クリックで展開）</strong></summary>
 
-- Python (.py)
-- JavaScript/TypeScript (.js, .ts, .jsx, .tsx, .mjs, .cjs)
-- フロントエンドフレームワーク (.vue, .svelte, .astro)
-- Java (.java)
-- C/C++ (.c, .cpp, .h, .hpp)
-- C# (.cs)
-- Go (.go)
-- Ruby (.rb)
-- PHP (.php)
-- Swift (.swift)
-- Kotlin (.kt)
-- Rust (.rs)
-- Scala (.scala)
-- シェルスクリプト (.sh, .bash)
-- Zig (.zig)
-- Webファイル (.html, .css, .scss, .less, .sass, .stylus, .styl)
-- テンプレートエンジン (.hbs, .handlebars, .ejs, .pug)
-- **データベース & SQL**:
-  - SQLファイル (.sql, .ddl, .dml)
-  - データベース固有 (.mysql, .postgresql, .psql, .sqlite, .mssql, .oracle, .ora, .db2)
-  - データベースオブジェクト (.proc, .procedure, .func, .function, .view, .trigger, .index)
-  - マイグレーション & ツール (.migration, .seed, .fixture, .schema, .liquibase, .flyway)
-  - NoSQL & モダン (.cql, .cypher, .sparql, .gql)
-- ドキュメント/設定 (.md, .mdx, .json, .xml, .yml, .yaml)
+**システム・低レベル言語：**
+- C/C++ (`.c`, `.cpp`, `.h`, `.hpp`)
+- Rust (`.rs`)
+- Zig (`.zig`)
+- Go (`.go`)
 
-## セットアップと統合
+**オブジェクト指向言語：**
+- Java (`.java`)
+- C# (`.cs`)
+- Kotlin (`.kt`)
+- Scala (`.scala`)
+- Objective-C/C++ (`.m`, `.mm`)
+- Swift (`.swift`)
 
-ニーズに応じて、Code Index MCPをセットアップして使用する方法がいくつかあります。
+**スクリプト・動的言語：**
+- Python (`.py`)
+- JavaScript/TypeScript (`.js`, `.ts`, `.jsx`, `.tsx`, `.mjs`, `.cjs`)
+- Ruby (`.rb`)
+- PHP (`.php`)
+- Shell (`.sh`, `.bash`)
 
-### ホストアプリケーションでの一般使用（推奨）
+</details>
 
-これは最も簡単で一般的な使用方法です。Claude DesktopなどのAIアプリケーション内でCode Index MCPを使用したいユーザー向けに設計されています。
+<details>
+<summary><strong>🌐 Web・フロントエンド（クリックで展開）</strong></summary>
 
-1.  **前提条件**: Python 3.10+と[uv](https://github.com/astral-sh/uv)がインストールされていることを確認してください。
+**フレームワーク・ライブラリ：**
+- Vue (`.vue`)
+- Svelte (`.svelte`)
+- Astro (`.astro`)
 
-2.  **ホストアプリの設定**: ホストアプリケーションのMCP設定ファイルに以下を追加してください。
-    
-    *Claude Desktop* -> `claude_desktop_config.json`
-    
-    *Claude Code* -> `~/.claude.json`。プロジェクトごとに1つの`mcpServers`とグローバルに1つがあります
+**スタイリング：**
+- CSS (`.css`, `.scss`, `.less`, `.sass`, `.stylus`, `.styl`)
+- HTML (`.html`)
 
-    ```json
-    {
-      "mcpServers": {
-        "code-index": {
-          "command": "uvx",
-          "args": [
-            "code-index-mcp"
-          ]
-        }
-      }
+**テンプレート：**
+- Handlebars (`.hbs`, `.handlebars`)
+- EJS (`.ejs`)
+- Pug (`.pug`)
+
+</details>
+
+<details>
+<summary><strong>🗄️ データベース・SQL（クリックで展開）</strong></summary>
+
+**SQL バリアント：**
+- 標準SQL (`.sql`, `.ddl`, `.dml`)
+- データベース固有 (`.mysql`, `.postgresql`, `.psql`, `.sqlite`, `.mssql`, `.oracle`, `.ora`, `.db2`)
+
+**データベースオブジェクト：**
+- プロシージャ・関数 (`.proc`, `.procedure`, `.func`, `.function`)
+- ビュー・トリガー (`.view`, `.trigger`, `.index`)
+
+**マイグレーション・ツール：**
+- マイグレーションファイル (`.migration`, `.seed`, `.fixture`, `.schema`)
+- ツール固有 (`.liquibase`, `.flyway`)
+
+**NoSQL・モダンDB：**
+- グラフ・クエリ (`.cql`, `.cypher`, `.sparql`, `.gql`)
+
+</details>
+
+<details>
+<summary><strong>📄 ドキュメント・設定（クリックで展開）</strong></summary>
+
+- Markdown (`.md`, `.mdx`)
+- 設定 (`.json`, `.xml`, `.yml`, `.yaml`)
+
+</details>
+
+## クイックスタート
+
+### 🚀 **推奨セットアップ（ほとんどのユーザー向け）**
+
+任意のMCP対応アプリケーションで開始する最も簡単な方法：
+
+**前提条件：** Python 3.10+ と [uv](https://github.com/astral-sh/uv) がインストール済み
+
+1. **MCP設定に追加**（例：`claude_desktop_config.json` または `~/.claude.json`）：
+   ```json
+   {
+     "mcpServers": {
+       "code-index": {
+         "command": "uvx",
+         "args": ["code-index-mcp"]
+       }
+     }
+   }
+   ```
+
+2. **アプリケーションを再起動** – `uvx` が自動的にインストールと実行を処理
+
+### 🛠️ **開発セットアップ**
+
+貢献やローカル開発用：
+
+1. **クローンとインストール：**
+   ```bash
+   git clone https://github.com/johnhuang316/code-index-mcp.git
+   cd code-index-mcp
+   uv sync
+   ```
+
+2. **ローカル開発用設定：**
+   ```json
+   {
+     "mcpServers": {
+       "code-index": {
+         "command": "uv",
+         "args": ["run", "code_index_mcp"]
+       }
+     }
+   }
+   ```
+
+3. **MCP Inspectorでデバッグ：**
+   ```bash
+   npx @modelcontextprotocol/inspector uv run code_index_mcp
+   ```
+
+<details>
+<summary><strong>代替案：手動pipインストール</strong></summary>
+
+従来のpip管理を好む場合：
+
+```bash
+pip install code-index-mcp
+```
+
+そして設定：
+```json
+{
+  "mcpServers": {
+    "code-index": {
+      "command": "code-index-mcp",
+      "args": []
     }
-    ```
+  }
+}
+```
 
-3.  **ホストアプリの再起動**: 設定を追加した後、アプリケーションを再起動してください。`uvx`コマンドがバックグラウンドで`code-index-mcp`サーバーのインストールと実行を自動的に処理します。
-
-### ローカル開発用
-
-このプロジェクトの開発に貢献したい場合は、以下の手順に従ってください：
-
-1.  **リポジトリをクローン**:
-    ```bash
-    git clone https://github.com/johnhuang316/code-index-mcp.git
-    cd code-index-mcp
-    ```
-
-2.  **依存関係をインストール** `uv`を使用:
-    ```bash
-    uv sync
-    ```
-
-3.  **ローカル開発用にホストアプリを設定**: ホストアプリケーション（例：Claude Desktop）がローカルのソースコードを使用するように、設定ファイルを更新して`uv run`経由でサーバーを実行します。これにより、コードに加えた変更がホストアプリがサーバーを起動する際に即座に反映されます。
-
-    ```json
-    {
-      "mcpServers": {
-        "code-index": {
-          "command": "uv",
-          "args": [
-            "run",
-            "code_index_mcp"
-          ]
-        }
-      }
-    }
-    ```
-
-4.  **MCP Inspectorでデバッグ**: ローカルサーバーをデバッグするには、インスペクターにも`uv run`を使用するよう指示する必要があります。
-    ```bash
-    npx @modelcontextprotocol/inspector uv run code_index_mcp
-    ```
-
-### pipによる手動インストール（代替方法）
-
-`pip`でPythonパッケージを手動管理したい場合は、サーバーを直接インストールできます。
-
-1.  **パッケージをインストール**:
-    ```bash
-    pip install code-index-mcp
-    ```
-
-2.  **ホストアプリを設定**: ホストアプリケーションのMCP設定を手動で更新して、インストールされたスクリプトを指すようにする必要があります。`"command": "uvx"`を`"command": "code-index-mcp"`に置き換えてください。
-
-    ```json
-    {
-      "mcpServers": {
-        "code-index": {
-          "command": "code-index-mcp",
-          "args": []
-        }
-      }
-    }
-    ```
+</details>
 
 ## 利用可能なツール
 
-### コアツール
+### 🏗️ **プロジェクト管理**
+| ツール | 説明 |
+|--------|------|
+| **`set_project_path`** | プロジェクトディレクトリのインデックス作成を初期化 |
+| **`refresh_index`** | ファイル変更後にプロジェクトインデックスを再構築 |
+| **`get_settings_info`** | 現在のプロジェクト設定と状態を表示 |
 
-- **set_project_path**: インデックス作成用のベースプロジェクトパスを設定します。
-- **search_code_advanced**: 外部ツール（ugrep/ripgrep/ag/grep）を使用した拡張検索で、正規表現とファジーマッチングをサポート。
-- **find_files**: プロジェクト内で指定されたパターンにマッチするファイルを検索します。
-- **get_file_summary**: 行数、関数、インポートなどを含む特定ファイルの要約を取得します。
-- **refresh_index**: プロジェクトインデックスを更新します。
-- **get_settings_info**: プロジェクト設定に関する情報を取得します。
+### 🔍 **検索・発見**
+| ツール | 説明 |
+|--------|------|
+| **`search_code_advanced`** | 正規表現、ファジーマッチング、ファイルフィルタリング対応のスマート検索 |
+| **`find_files`** | globパターンを使用したファイル検索（例：`**/*.py`） |
+| **`get_file_summary`** | ファイル構造、関数、インポート、複雑度の解析 |
 
-### ユーティリティツール
+### 🛠️ **システム・メンテナンス**
+| ツール | 説明 |
+|--------|------|
+| **`create_temp_directory`** | インデックスデータの保存ディレクトリをセットアップ |
+| **`check_temp_directory`** | インデックス保存場所と権限を確認 |
+| **`clear_settings`** | すべてのキャッシュデータと設定をリセット |
+| **`refresh_search_tools`** | 利用可能な検索ツール（ugrep、ripgrep等）を再検出 |
 
-- **create_temp_directory**: インデックスデータの保存に使用される一時ディレクトリを作成します。
-- **check_temp_directory**: インデックスデータの保存に使用される一時ディレクトリをチェックします。
-- **clear_settings**: すべての設定とキャッシュデータをクリアします。
-- **refresh_search_tools**: 利用可能なコマンドライン検索ツール（ripgrepなど）を手動で再検出します。
+## 使用例
 
-## 一般的なワークフローと例
+### 🎯 **クイックスタートワークフロー**
 
-ClaudeなどのAIアシスタントでCode Index MCPを使用する典型的なワークフローです。
-
-### 1. プロジェクトパスの設定と初期インデックス作成
-
-これは最初の最も重要なステップです。プロジェクトパスを設定すると、サーバーは初回のファイルインデックスを自動的に作成するか、以前にキャッシュされたものを読み込みます。
-
-**プロンプト例:**
+**1. プロジェクトの初期化**
 ```
-プロジェクトパスを C:\Users\username\projects\my-react-app に設定してください
+プロジェクトパスを /Users/dev/my-react-app に設定してください
 ```
+*コードベースを自動インデックス作成し、検索可能なキャッシュを構築*
 
-### 2. インデックスの更新（必要に応じて）
-
-初期設定後にプロジェクトファイルに大幅な変更を加えた場合、手動でインデックスを更新して、すべてのツールが最新の情報で動作するようにできます。
-
-**プロンプト例:**
+**2. プロジェクト構造の探索**
 ```
-いくつかの新しいコンポーネントを追加したので、プロジェクトインデックスを更新してください。
+src/components で全てのTypeScriptコンポーネントファイルを見つけてください
 ```
-*（アシスタントは`refresh_index`ツールを使用します）*
+*使用ツール：`find_files`、パターン `src/components/**/*.tsx`*
 
-### 3. プロジェクト構造の探索
-
-インデックスの準備ができたら、パターン（グロブ）を使用してファイルを検索し、コードベースを理解して関連ファイルを見つけることができます。
-
-**プロンプト例:**
+**3. キーファイルの解析**
 ```
-'src/components'ディレクトリ内のすべてのTypeScriptコンポーネントファイルを検索してください。
+src/api/userService.ts の要約を教えてください
 ```
-*（アシスタントは`src/components/**/*.tsx`のようなパターンで`find_files`ツールを使用します）*
+*使用ツール：`get_file_summary` で関数、インポート、複雑度を表示*
 
-### 4. 特定ファイルの解析
+### 🔍 **高度な検索例**
 
-ファイルの完全な内容に詳しく入る前に、関数、クラス、インポートを含む構造の簡単な要約を取得できます。
+<details>
+<summary><strong>コードパターン検索</strong></summary>
 
-**プロンプト例:**
 ```
-'src/api/userService.ts'ファイルの要約を教えてください。
+正規表現を使って "get.*Data" にマッチする全ての関数呼び出しを検索してください
 ```
-*（アシスタントは`get_file_summary`ツールを使用します）*
+*発見：`getData()`、`getUserData()`、`getFormData()` など*
 
-### 5. コードの検索
+</details>
 
-最新のインデックスがあれば、コードスニペット、関数名、または任意のテキストパターンを検索して、特定のロジックが実装されている場所を見つけることができます。
+<details>
+<summary><strong>ファジー関数検索</strong></summary>
 
-**例: シンプル検索**
 ```
-"processData"関数のすべての出現箇所を検索してください。
+'authUser' でファジー検索して認証関連の関数を見つけてください
 ```
+*マッチ：`authenticateUser`、`authUserToken`、`userAuthCheck` など*
 
-**例: ファジーマッチング検索**
+</details>
+
+<details>
+<summary><strong>言語固有検索</strong></summary>
+
 ```
-ユーザー認証に関連する関数を探しています。'authUser'、'authenticateUser'、または類似の名前かもしれません。'authUser'でファジー検索できますか？
+Pythonファイルのみで "API_ENDPOINT" を検索してください
 ```
+*使用ツール：`search_code_advanced`、`file_pattern: "*.py"`*
 
-**例: 正規表現検索**
+</details>
+
+<details>
+<summary><strong>プロジェクトメンテナンス</strong></summary>
+
 ```
-正規表現を使用して、パターン"get.*Data"にマッチするすべての関数呼び出しを検索してください。
+新しいコンポーネントを追加したので、プロジェクトインデックスを更新してください
 ```
+*使用ツール：`refresh_index` で検索可能なキャッシュを更新*
 
-**例: 特定ファイル内の検索**
-```
-Pythonファイル内のみで文字列"API_ENDPOINT"を検索してください。
-```
-*（アシスタントは`file_pattern`パラメータを`*.py`に設定して`search_code_advanced`ツールを使用します）*
+</details>
 
-## 開発
+## 開発・貢献
 
-### ソースからのビルド
-
-1. リポジトリをクローン:
-
+### 🔧 **ソースからのビルド**
 ```bash
-git clone https://github.com/username/code-index-mcp.git
+git clone https://github.com/johnhuang316/code-index-mcp.git
 cd code-index-mcp
-```
-
-2. 依存関係をインストール:
-
-```bash
 uv sync
-```
-
-3. サーバーをローカルで実行:
-
-```bash
 uv run code_index_mcp
 ```
 
-## デバッグ
-
-MCP inspectorを使用してサーバーをデバッグできます：
-
+### 🐛 **デバッグ**
 ```bash
 npx @modelcontextprotocol/inspector uvx code-index-mcp
 ```
 
-## ライセンス
-
-[MIT License](LICENSE)
-
-## 貢献
-
-貢献を歓迎します！プルリクエストをお気軽に提出してください。
-
-## 言語
-
-- [English](README.md)
-- [繁體中文](README_zh.md)
+### 🤝 **貢献**
+貢献を歓迎します！お気軽にプルリクエストを提出してください。
 
 ---
 
-*この日本語READMEは[Claude Code](https://claude.ai/code)で作成されました 🤖*
+### 📜 **ライセンス**
+[MIT License](LICENSE)
+
+### 🌐 **翻訳**
+- [English](README.md)
+- [繁體中文](README_zh.md)
