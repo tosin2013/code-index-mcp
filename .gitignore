@@ -49,3 +49,4 @@ claude_*
 COMMIT_MESSAGE.txt
 
 .llm-context/
+.kiro/

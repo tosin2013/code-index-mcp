@@ -10,6 +10,7 @@ import json
 import os
 import sys
 import tempfile
+import time
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import AsyncIterator, Dict, List, Optional, Tuple, Any
@@ -217,6 +218,51 @@ def get_settings_stats() -> str:
 
     return json.dumps(stats, indent=2)
 
+# ----- AUTO-REFRESH HELPERS -----
+
+REFRESH_RATE_LIMIT_SECONDS = 30
+
+# Memory cache for refresh time (loaded once per server session)
+_cached_last_refresh_time = None
+
+def _get_last_refresh_time(ctx: Context) -> float:
+    """Get last refresh time, with memory cache for performance."""
+    global _cached_last_refresh_time
+    
+    # Load from config only once per server session
+    if _cached_last_refresh_time is None:
+        config = ctx.request_context.lifespan_context.settings.load_config()
+        _cached_last_refresh_time = config.get('last_auto_refresh_time', 0.0)
+    
+    return _cached_last_refresh_time
+
+def _should_auto_refresh(ctx: Context) -> bool:
+    """Check if auto-refresh is allowed based on 30-second rate limit."""
+    last_refresh_time = _get_last_refresh_time(ctx)
+    current_time = time.time()
+    return (current_time - last_refresh_time) >= REFRESH_RATE_LIMIT_SECONDS
+
+def _update_last_refresh_time(ctx: Context) -> None:
+    """Update refresh time in both memory cache and persistent config."""
+    global _cached_last_refresh_time
+    current_time = time.time()
+    
+    # Update memory cache immediately for performance
+    _cached_last_refresh_time = current_time
+    
+    # Persist to config for stateless client support
+    config = ctx.request_context.lifespan_context.settings.load_config()
+    config['last_auto_refresh_time'] = current_time
+    ctx.request_context.lifespan_context.settings.save_config(config)
+
+def _get_remaining_refresh_time(ctx: Context) -> int:
+    """Get remaining seconds until next refresh is allowed."""
+    last_refresh_time = _get_last_refresh_time(ctx)
+    current_time = time.time()
+    elapsed = current_time - last_refresh_time
+    remaining = max(0, REFRESH_RATE_LIMIT_SECONDS - elapsed)
+    return int(remaining)
+
 # ----- TOOLS -----
 
 @mcp.tool()
@@ -378,26 +424,87 @@ def search_code_advanced(
         return {"error": f"Search failed using '{strategy.name}': {e}"}
 
 @mcp.tool()
-def find_files(pattern: str, ctx: Context) -> List[str]:
-    """Find files in the project matching a specific glob pattern."""
+def find_files(pattern: str, ctx: Context) -> Dict[str, Any]:
+    """
+    Find files matching a glob pattern. Auto-refreshes index if no results found.
+    
+    Use when:
+    - Looking for files by pattern (e.g., "*.py", "test_*.js", "src/**/*.ts")
+    - Checking if specific files exist in the project
+    - Getting file lists for further analysis
+    
+    Auto-refresh behavior:
+    - If no files found, automatically refreshes index once and retries
+    - Rate limited to once every 30 seconds to avoid excessive refreshes
+    - Manual refresh_index tool is always available without rate limits
+    
+    Args:
+        pattern: Glob pattern to match files (e.g., "*.py", "test_*.js")
+        
+    Returns:
+        Dictionary with files list and status information
+    """
     base_path = ctx.request_context.lifespan_context.base_path
 
     # Check if base_path is set
     if not base_path:
-        return ["Error: Project path not set. Please use set_project_path to set a project directory first."]
+        return {
+            "error": "Project path not set. Please use set_project_path to set a project directory first.",
+            "files": []
+        }
 
-    # Check if we need to index the project
+    # Check if we need to index the project initially
     if not file_index:
         _index_project(base_path)
         ctx.request_context.lifespan_context.file_count = _count_files(file_index)
         ctx.request_context.lifespan_context.settings.save_index(file_index)
 
+    # First search attempt
     matching_files = []
     for file_path, _ in _get_all_files(file_index):
         if fnmatch.fnmatch(file_path, pattern):
             matching_files.append(file_path)
 
-    return matching_files
+    # If no results found, try auto-refresh once (with rate limiting)
+    if not matching_files:
+        if _should_auto_refresh(ctx):
+            # Perform full re-index
+            file_index.clear()
+            _index_project(base_path)
+            ctx.request_context.lifespan_context.file_count = _count_files(file_index)
+            ctx.request_context.lifespan_context.settings.save_index(file_index)
+            
+            # Update last refresh time
+            _update_last_refresh_time(ctx)
+            
+            # Search again after refresh
+            for file_path, _ in _get_all_files(file_index):
+                if fnmatch.fnmatch(file_path, pattern):
+                    matching_files.append(file_path)
+            
+            if matching_files:
+                return {
+                    "files": matching_files,
+                    "status": f"✅ Found {len(matching_files)} files after refresh"
+                }
+            else:
+                return {
+                    "files": [],
+                    "status": "⚠️ No files found even after refresh"
+                }
+        else:
+            # Rate limited
+            remaining_time = _get_remaining_refresh_time(ctx)
+            return {
+                "files": [],
+                "status": f"⚠️ No files found - Rate limited. Try again in {remaining_time} seconds"
+            }
+
+    # Return successful results
+    return {
+        "files": matching_files,
+        "status": f"✅ Found {len(matching_files)} files"
+    }
 
 @mcp.tool()
 def get_file_summary(file_path: str, ctx: Context) -> Dict[str, Any]:
@@ -468,7 +575,24 @@ def get_file_summary(file_path: str, ctx: Context) -> Dict[str, Any]:
 
 @mcp.tool()
 def refresh_index(ctx: Context) -> str:
-    """Refresh the project index."""
+    """
+    Manually refresh the project index when files have been added/removed/moved.
+    
+    Use when:
+    - Files were added, deleted, or moved outside the editor
+    - After git operations (checkout, merge, pull) that change files
+    - When find_files results seem incomplete or outdated
+    - For immediate refresh without waiting for auto-refresh rate limits
+    
+    Important notes for LLMs:
+    - This tool bypasses the 30-second rate limit that applies to auto-refresh
+    - Always available for immediate use when you know files have changed
+    - Performs full project re-indexing for complete accuracy
+    - Use when you suspect the index is stale after file system changes
+    
+    Returns:
+        Success message with total file count
+    """
     base_path = ctx.request_context.lifespan_context.base_path
 
     # Check if base_path is set
@@ -492,6 +616,9 @@ def refresh_index(ctx: Context) -> str:
         **config,
         'last_indexed': ctx.request_context.lifespan_context.settings._get_timestamp()
     })
+    
+    # Update auto-refresh timer to prevent immediate auto-refresh after manual refresh
+    _update_last_refresh_time(ctx)
 
     return f"Project re-indexed. Found {file_count} files."
 
