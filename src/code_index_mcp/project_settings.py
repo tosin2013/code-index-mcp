@@ -14,7 +14,7 @@ import subprocess
 from datetime import datetime
 
 from .constants import (
-    SETTINGS_DIR, CONFIG_FILE, INDEX_FILE, CACHE_FILE
+    SETTINGS_DIR, CONFIG_FILE, INDEX_FILE
 )
 from .search.base import SearchStrategy
 from .search.ugrep import UgrepStrategy
@@ -182,17 +182,7 @@ class ProjectSettings:
             # If error occurs, use file in current directory as fallback
             return os.path.join(os.getcwd(), INDEX_FILE)
 
-    def get_cache_path(self):
-        """Get the path to the cache file"""
-        try:
-            path = os.path.join(self.settings_path, CACHE_FILE)
-            # Ensure directory exists
-            os.makedirs(os.path.dirname(path), exist_ok=True)
-            return path
-        except Exception as e:
-            print(f"Error getting cache path: {e}")
-            # If error occurs, use file in current directory as fallback
-            return os.path.join(os.getcwd(), CACHE_FILE)
+    # get_cache_path method removed - no longer needed with new indexing system
 
     def _get_timestamp(self):
         """Get current timestamp"""
@@ -250,11 +240,11 @@ class ProjectSettings:
             print(f"Error loading config: {e}")
             return {}
 
-    def save_index(self, file_index):
-        """Save file index
+    def save_index(self, index_data):
+        """Save code index in JSON format
 
         Args:
-            file_index (dict): File index data
+            index_data: CodeIndex object or JSON string
         """
         try:
             index_path = self.get_index_path()
@@ -273,8 +263,17 @@ class ProjectSettings:
                 index_path = os.path.join(os.getcwd(), INDEX_FILE)
                 print(f"Using fallback path: {index_path}")
 
-            with open(index_path, 'wb') as f:
-                pickle.dump(file_index, f)
+            # Convert to JSON string if it's a CodeIndex object
+            if hasattr(index_data, 'to_json'):
+                json_data = index_data.to_json()
+            elif isinstance(index_data, str):
+                json_data = index_data
+            else:
+                # Assume it's a dictionary and convert to JSON
+                json_data = json.dumps(index_data, indent=2, default=str)
+
+            with open(index_path, 'w', encoding='utf-8') as f:
+                f.write(json_data)
 
             print(f"Index saved successfully to: {index_path}")
         except Exception as e:
@@ -283,141 +282,174 @@ class ProjectSettings:
             try:
                 fallback_path = os.path.join(os.getcwd(), INDEX_FILE)
                 print(f"Trying fallback path: {fallback_path}")
-                with open(fallback_path, 'wb') as f:
-                    pickle.dump(file_index, f)
+                
+                # Convert to JSON string if it's a CodeIndex object
+                if hasattr(index_data, 'to_json'):
+                    json_data = index_data.to_json()
+                elif isinstance(index_data, str):
+                    json_data = index_data
+                else:
+                    json_data = json.dumps(index_data, indent=2, default=str)
+                
+                with open(fallback_path, 'w', encoding='utf-8') as f:
+                    f.write(json_data)
                 print(f"Index saved to fallback path: {fallback_path}")
             except Exception as e2:
                 print(f"Error saving index to fallback path: {e2}")
 
     def load_index(self):
-        """Load file index
+        """Load code index from JSON format
 
         Returns:
-            dict: File index data, or empty dict if file doesn't exist
+            dict: Index data, or None if file doesn't exist or has errors
         """
-        # If skip_load is set, return empty dict directly
+        # If skip_load is set, return None directly
         if self.skip_load:
-            return {}
+            return None
 
         try:
             index_path = self.get_index_path()
 
             if os.path.exists(index_path):
                 try:
-                    with open(index_path, 'rb') as f:
-                        index = pickle.load(f)
+                    with open(index_path, 'r', encoding='utf-8') as f:
+                        index_data = json.load(f)
                     print(f"Index loaded successfully from: {index_path}")
-                    return index
-                except (pickle.PickleError, EOFError) as e:
+                    return index_data
+                except (json.JSONDecodeError, UnicodeDecodeError) as e:
                     print(f"Error parsing index file: {e}")
-                    # If file is corrupted, return empty dict
-                    return {}
+                    # If file is corrupted, return None
+                    return None
                 except Exception as e:
                     print(f"Unexpected error loading index: {e}")
-                    return {}
+                    return None
             else:
                 # Try loading from current directory
                 fallback_path = os.path.join(os.getcwd(), INDEX_FILE)
                 if os.path.exists(fallback_path):
                     print(f"Trying fallback path: {fallback_path}")
                     try:
-                        with open(fallback_path, 'rb') as f:
-                            index = pickle.load(f)
+                        with open(fallback_path, 'r', encoding='utf-8') as f:
+                            index_data = json.load(f)
                         print(f"Index loaded from fallback path: {fallback_path}")
-                        return index
+                        return index_data
                     except Exception as e:
                         print(f"Error loading index from fallback path: {e}")
 
-            return {}
+            return None
         except Exception as e:
             print(f"Error in load_index: {e}")
-            return {}
+            return None
 
-    def save_cache(self, content_cache):
-        """Save content cache
-
-        Args:
-            content_cache (dict): Content cache data
-        """
-        try:
-            cache_path = self.get_cache_path()
-            print(f"Saving cache to: {cache_path}")
-
-            # Ensure directory exists
-            dir_path = os.path.dirname(cache_path)
-            if not os.path.exists(dir_path):
-                print(f"Creating directory: {dir_path}")
-                os.makedirs(dir_path, exist_ok=True)
-
-            # Check if directory is writable
-            if not os.access(dir_path, os.W_OK):
-                print(f"Warning: Directory is not writable: {dir_path}")
-                # Use current directory as fallback
-                cache_path = os.path.join(os.getcwd(), CACHE_FILE)
-                print(f"Using fallback path: {cache_path}")
-
-            with open(cache_path, 'wb') as f:
-                pickle.dump(content_cache, f)
-
-            print(f"Cache saved successfully to: {cache_path}")
-        except Exception as e:
-            print(f"Error saving cache: {e}")
-            # Try saving to current directory
-            try:
-                fallback_path = os.path.join(os.getcwd(), CACHE_FILE)
-                print(f"Trying fallback path: {fallback_path}")
-                with open(fallback_path, 'wb') as f:
-                    pickle.dump(content_cache, f)
-                print(f"Cache saved to fallback path: {fallback_path}")
-            except Exception as e2:
-                print(f"Error saving cache to fallback path: {e2}")
-
-    def load_cache(self):
-        """Load content cache
-
+    # save_cache and load_cache methods removed - no longer needed with new indexing system
+    
+    def detect_index_version(self):
+        """Detect the version of the existing index
+        
         Returns:
-            dict: Content cache data, or empty dict if file doesn't exist
+            str: Version string ('legacy', '3.0', or None if no index exists)
         """
-        # If skip_load is set, return empty dict directly
-        if self.skip_load:
-            return {}
-
         try:
-            cache_path = self.get_cache_path()
-
-            if os.path.exists(cache_path):
+            # Check for new JSON format first
+            index_path = self.get_index_path()
+            if os.path.exists(index_path):
                 try:
-                    with open(cache_path, 'rb') as f:
-                        cache = pickle.load(f)
-                    print(f"Cache loaded successfully from: {cache_path}")
-                    return cache
-                except (pickle.PickleError, EOFError) as e:
-                    print(f"Error parsing cache file: {e}")
-                    # If file is corrupted, return empty dict
-                    return {}
-                except Exception as e:
-                    print(f"Unexpected error loading cache: {e}")
-                    return {}
-            else:
-                # Try loading from current directory
-                fallback_path = os.path.join(os.getcwd(), CACHE_FILE)
-                if os.path.exists(fallback_path):
-                    print(f"Trying fallback path: {fallback_path}")
-                    try:
-                        with open(fallback_path, 'rb') as f:
-                            cache = pickle.load(f)
-                        print(f"Cache loaded from fallback path: {fallback_path}")
-                        return cache
-                    except Exception as e:
-                        print(f"Error loading cache from fallback path: {e}")
-
-            return {}
+                    with open(index_path, 'r', encoding='utf-8') as f:
+                        index_data = json.load(f)
+                    
+                    # Check if it has the new structure
+                    if isinstance(index_data, dict) and 'index_metadata' in index_data:
+                        version = index_data.get('index_metadata', {}).get('version', '3.0')
+                        print(f"Detected index version: {version}")
+                        return version
+                    else:
+                        print("Detected legacy JSON index format")
+                        return 'legacy'
+                except (json.JSONDecodeError, UnicodeDecodeError):
+                    print("Index file exists but is not valid JSON")
+                    return 'legacy'
+            
+            # Check for old pickle format
+            old_pickle_path = os.path.join(self.settings_path, "file_index.pickle")
+            if os.path.exists(old_pickle_path):
+                print("Detected legacy pickle index format")
+                return 'legacy'
+            
+            # Check fallback locations
+            fallback_json = os.path.join(os.getcwd(), INDEX_FILE)
+            fallback_pickle = os.path.join(os.getcwd(), "file_index.pickle")
+            
+            if os.path.exists(fallback_json):
+                try:
+                    with open(fallback_json, 'r', encoding='utf-8') as f:
+                        index_data = json.load(f)
+                    if isinstance(index_data, dict) and 'index_metadata' in index_data:
+                        version = index_data.get('index_metadata', {}).get('version', '3.0')
+                        print(f"Detected index version in fallback location: {version}")
+                        return version
+                    else:
+                        return 'legacy'
+                except:
+                    return 'legacy'
+            
+            if os.path.exists(fallback_pickle):
+                print("Detected legacy pickle index in fallback location")
+                return 'legacy'
+            
+            print("No existing index found")
+            return None
+            
         except Exception as e:
-            print(f"Error in load_cache: {e}")
-            return {}
+            print(f"Error detecting index version: {e}")
+            return None
+    
+    def migrate_legacy_index(self):
+        """Migrate legacy index format to new format
+        
+        Returns:
+            bool: True if migration was successful or not needed, False if failed
+        """
+        try:
+            version = self.detect_index_version()
+            
+            if version is None:
+                print("No index to migrate")
+                return True
+            
+            if version == '3.0' or (isinstance(version, str) and version >= '3.0'):
+                print("Index is already in current format")
+                return True
+            
+            if version == 'legacy':
+                print("Legacy index detected, but automatic migration is not implemented")
+                print("Please rebuild the index using the new system")
+                
+                # Clean up legacy files
+                legacy_files = [
+                    os.path.join(self.settings_path, "file_index.pickle"),
+                    os.path.join(self.settings_path, "content_cache.pickle"),
+                    os.path.join(os.getcwd(), "file_index.pickle"),
+                    os.path.join(os.getcwd(), "content_cache.pickle")
+                ]
+                
+                for legacy_file in legacy_files:
+                    if os.path.exists(legacy_file):
+                        try:
+                            os.remove(legacy_file)
+                            print(f"Removed legacy file: {legacy_file}")
+                        except Exception as e:
+                            print(f"Could not remove legacy file {legacy_file}: {e}")
+                
+                return False  # Indicate that manual rebuild is needed
+            
+            return True
+            
+        except Exception as e:
+            print(f"Error during migration: {e}")
+            return False
 
     def clear(self):
-        """Clear all settings and cache files"""
+        """Clear config and index files"""
         try:
             print(f"Clearing settings directory: {self.settings_path}")
 
@@ -427,23 +459,19 @@ class ProjectSettings:
                     print(f"Warning: Directory is not writable: {self.settings_path}")
                     return
 
-                # Delete all files in the directory
-                try:
-                    for filename in os.listdir(self.settings_path):
-                        file_path = os.path.join(self.settings_path, filename)
-                        try:
-                            if os.path.isfile(file_path):
-                                os.unlink(file_path)
-                                print(f"Deleted file: {file_path}")
-                            elif os.path.isdir(file_path):
-                                shutil.rmtree(file_path)
-                                print(f"Deleted directory: {file_path}")
-                        except Exception as e:
-                            print(f"Error deleting {file_path}: {e}")
-                except Exception as e:
-                    print(f"Error listing directory: {e}")
+                # Delete specific files only (config.json and index.json)
+                files_to_delete = [CONFIG_FILE, INDEX_FILE]
+                
+                for filename in files_to_delete:
+                    file_path = os.path.join(self.settings_path, filename)
+                    try:
+                        if os.path.isfile(file_path):
+                            os.unlink(file_path)
+                            print(f"Deleted file: {file_path}")
+                    except Exception as e:
+                        print(f"Error deleting {file_path}: {e}")
 
-                print(f"Settings directory cleared successfully")
+                print(f"Settings files cleared successfully")
             else:
                 print(f"Settings directory does not exist: {self.settings_path}")
         except Exception as e:
@@ -475,7 +503,7 @@ class ProjectSettings:
                     stats['all_files'] = all_files
 
                     # Get details for specific files
-                    for filename in [CONFIG_FILE, INDEX_FILE, CACHE_FILE]:
+                    for filename in [CONFIG_FILE, INDEX_FILE]:
                         file_path = os.path.join(self.settings_path, filename)
                         if os.path.exists(file_path):
                             try:

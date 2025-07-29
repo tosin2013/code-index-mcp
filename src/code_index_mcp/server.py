@@ -23,38 +23,16 @@ from mcp.server.fastmcp import FastMCP, Context
 from .analyzers.analyzer_factory import AnalyzerFactory
 from .constants import SETTINGS_DIR
 from .project_settings import ProjectSettings
+from .indexing.builder import IndexBuilder
+from .indexing.models import CodeIndex
 
 # MCP server will be created after lifespan manager is defined
 
 # In-memory references (will be loaded from persistent storage)
 file_index = {}
-code_content_cache = {}
-supported_extensions = [
-    '.py', '.js', '.ts', '.jsx', '.tsx', '.java', '.c', '.cpp', '.h', '.hpp',
-    '.cs', '.go', '.rb', '.php', '.swift', '.kt', '.rs', '.scala', '.sh',
-    '.bash', '.html', '.css', '.scss', '.md', '.json', '.xml', '.yml', '.yaml', '.zig',
-    # Frontend frameworks
-    '.vue', '.svelte', '.mjs', '.cjs',
-    # Style languages
-    '.less', '.sass', '.stylus', '.styl',
-    # Template engines
-    '.hbs', '.handlebars', '.ejs', '.pug',
-    # Modern frontend
-    '.astro', '.mdx',
-    # Objective-C
-    '.m', '.mm',
-    # Database and SQL
-    '.sql', '.ddl', '.dml', '.mysql', '.postgresql', '.psql', '.sqlite',
-    '.mssql', '.oracle', '.ora', '.db2',
-    # Database objects
-    '.proc', '.procedure', '.func', '.function', '.view', '.trigger', '.index',
-    # Database frameworks and tools
-    '.migration', '.seed', '.fixture', '.schema',
-    # NoSQL and modern databases
-    '.cql', '.cypher', '.sparql', '.gql',
-    # Database migration tools
-    '.liquibase', '.flyway'
-]
+index_cache = {}  # New index cache to replace code_content_cache
+# Import supported extensions from constants
+from .constants import SUPPORTED_EXTENSIONS as supported_extensions
 
 @dataclass
 class CodeIndexerContext:
@@ -81,21 +59,17 @@ async def indexer_lifespan(server: FastMCP) -> AsyncIterator[CodeIndexerContext]
     )
 
     # Initialize global variables
-    global file_index, code_content_cache
+    global file_index, index_cache
 
     try:
         print("Server ready. Waiting for user to set project path...")
         # Provide context to the server
         yield context
     finally:
-        # Only save index and cache if project path has been set
-        if context.base_path and file_index:
+        # Only save index if project path has been set
+        if context.base_path and index_cache:
             print(f"Saving index for project: {context.base_path}")
-            settings.save_index(file_index)
-
-        if context.base_path and code_content_cache:
-            print(f"Saving cache for project: {context.base_path}")
-            settings.save_cache(code_content_cache)
+            settings.save_index(index_cache)
 
 # Create the MCP server with lifespan manager
 mcp = FastMCP("CodeIndexer", lifespan=indexer_lifespan, dependencies=["pathlib"])
@@ -171,9 +145,8 @@ def get_file_content(file_path: str) -> str:
         with open(full_path, 'r', encoding='utf-8') as f:
             content = f.read()
 
-        # Cache the content for faster retrieval later
-        code_content_cache[norm_path] = content
-
+        # Note: With the new indexing system, we don't cache file content
+        # Instead, we rely on the structured index for metadata and read files on demand
         return content
     except UnicodeDecodeError:
         return f"Error: File {file_path} appears to be a binary file or uses unsupported encoding."
@@ -196,14 +169,16 @@ def get_project_structure() -> str:
         }, indent=2)
 
     # Check if we need to refresh the index
-    if not file_index:
-        _index_project(base_path)
-        # Update file count in context
-        ctx.request_context.lifespan_context.file_count = _count_files(file_index)
-        # Save updated index
-        ctx.request_context.lifespan_context.settings.save_index(file_index)
+    if not index_cache:
+        _index_project(base_path, ctx)
 
-    return json.dumps(file_index, indent=2)
+    # Return the directory tree from the new index format
+    if index_cache and 'directory_tree' in index_cache:
+        return json.dumps(index_cache['directory_tree'], indent=2)
+    else:
+        return json.dumps({
+            "error": "No directory tree available in index"
+        }, indent=2)
 
 @mcp.resource("settings://stats")
 def get_settings_stats() -> str:
@@ -280,9 +255,9 @@ def set_project_path(path: str, ctx: Context) -> str:
             return f"Error: Path is not a directory: {abs_path}"
 
         # Clear existing in-memory index and cache
-        global file_index, code_content_cache
+        global file_index, index_cache
         file_index.clear()
-        code_content_cache.clear()
+        index_cache.clear()
 
         # Update the base path in context
         ctx.request_context.lifespan_context.base_path = abs_path
@@ -294,47 +269,49 @@ def set_project_path(path: str, ctx: Context) -> str:
         settings_path = ctx.request_context.lifespan_context.settings.settings_path
         print(f"Project settings path: {settings_path}")
 
-        # Try to load existing index and cache
+        # Check for version migration
+        print(f"Checking for index version and migration...")
+        migration_result = ctx.request_context.lifespan_context.settings.migrate_legacy_index()
+        if not migration_result:
+            print("Legacy index detected, will rebuild with new system")
+
+        # Try to load existing index
         print(f"Project path set to: {abs_path}")
-        print(f"Attempting to load existing index and cache...")
+        print(f"Attempting to load existing index...")
 
-        # Try to load index
-        loaded_index = None
+        loaded_index_data = None
         try:
-            loaded_index = ctx.request_context.lifespan_context.settings.load_index()
+            loaded_index_data = ctx.request_context.lifespan_context.settings.load_index()
         except Exception as e:
-            print(f"Could not load existing index, it might be an old format. A new index will be created. Error: {e}")
+            print(f"Could not load existing index: {e}")
 
-        if loaded_index:
-            print(f"Existing index found and loaded successfully")
-            file_index = loaded_index
-            file_count = _count_files(file_index)
-            ctx.request_context.lifespan_context.file_count = file_count
+        if loaded_index_data and isinstance(loaded_index_data, dict):
+            # Check if it's the new format
+            if 'index_metadata' in loaded_index_data and loaded_index_data.get('index_metadata', {}).get('version', '') >= '3.0':
+                print(f"Existing new-format index found and loaded successfully")
+                index_cache = loaded_index_data
+                file_index = loaded_index_data  # Keep backward compatibility
+                file_count = loaded_index_data.get('project_metadata', {}).get('total_files', 0)
+                ctx.request_context.lifespan_context.file_count = file_count
 
-            # Try to load cache
-            loaded_cache = ctx.request_context.lifespan_context.settings.load_cache()
-            if loaded_cache:
-                print(f"Existing cache found and loaded successfully")
-                code_content_cache.update(loaded_cache)
-
-            # Get search capabilities info
-            search_tool = ctx.request_context.lifespan_context.settings.get_preferred_search_tool()
-            
-            if search_tool is None:
-                search_info = " Basic search available."
+                # Get search capabilities info
+                search_tool = ctx.request_context.lifespan_context.settings.get_preferred_search_tool()
+                
+                if search_tool is None:
+                    search_info = " Basic search available."
+                else:
+                    search_info = f" Advanced search enabled ({search_tool.name})."
+                
+                return f"Project path set to: {abs_path}. Loaded existing index with {file_count} files.{search_info}"
             else:
-                search_info = f" Advanced search enabled ({search_tool.name})."
-            
-            return f"Project path set to: {abs_path}. Loaded existing index with {file_count} files.{search_info}"
-        else:
-            print(f"No existing index found, creating new index...")
+                print(f"Old format index detected, will rebuild with new system")
 
-        # If no existing index, create a new one
-        file_count = _index_project(abs_path)
-        ctx.request_context.lifespan_context.file_count = file_count
-
-        # Save the new index
-        ctx.request_context.lifespan_context.settings.save_index(file_index)
+        # Build new index
+        try:
+            file_count = _index_project(abs_path, ctx)
+        except Exception as e:
+            print(f"Error building index: {e}")
+            return f"Error building index: {e}"
 
         # Save project config
         config = {
@@ -454,33 +431,32 @@ def find_files(pattern: str, ctx: Context) -> Dict[str, Any]:
         }
 
     # Check if we need to index the project initially
-    if not file_index:
-        _index_project(base_path)
-        ctx.request_context.lifespan_context.file_count = _count_files(file_index)
-        ctx.request_context.lifespan_context.settings.save_index(file_index)
+    if not index_cache:
+        _index_project(base_path, ctx)
 
-    # First search attempt
+    # First search attempt using new index format
     matching_files = []
-    for file_path, _ in _get_all_files(file_index):
-        if fnmatch.fnmatch(file_path, pattern):
-            matching_files.append(file_path)
+    if index_cache and 'files' in index_cache:
+        for file_entry in index_cache['files']:
+            file_path = file_entry.get('path', '')
+            if fnmatch.fnmatch(file_path, pattern):
+                matching_files.append(file_path)
 
     # If no results found, try auto-refresh once (with rate limiting)
     if not matching_files:
         if _should_auto_refresh(ctx):
             # Perform full re-index
-            file_index.clear()
-            _index_project(base_path)
-            ctx.request_context.lifespan_context.file_count = _count_files(file_index)
-            ctx.request_context.lifespan_context.settings.save_index(file_index)
+            _index_project(base_path, ctx)
             
             # Update last refresh time
             _update_last_refresh_time(ctx)
             
             # Search again after refresh
-            for file_path, _ in _get_all_files(file_index):
-                if fnmatch.fnmatch(file_path, pattern):
-                    matching_files.append(file_path)
+            if index_cache and 'files' in index_cache:
+                for file_entry in index_cache['files']:
+                    file_path = file_entry.get('path', '')
+                    if fnmatch.fnmatch(file_path, pattern):
+                        matching_files.append(file_path)
             
             if matching_files:
                 return {
@@ -529,22 +505,34 @@ def get_file_summary(file_path: str, ctx: Context) -> Dict[str, Any]:
     full_path = os.path.join(base_path, norm_path)
 
     try:
-        # Get file content
-        if norm_path in code_content_cache:
-            content = code_content_cache[norm_path]
-        else:
-            with open(full_path, 'r', encoding='utf-8') as f:
-                content = f.read()
-            code_content_cache[norm_path] = content
-            # Save the updated cache
-            ctx.request_context.lifespan_context.settings.save_cache(code_content_cache)
+        # File extension for language-specific analysis (define early)
+        _, ext = os.path.splitext(norm_path)
+        
+        # Get file content (no longer cached, read on demand)
+        with open(full_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+        
+        # Try to get cached analysis from index if available
+        if index_cache and 'files' in index_cache:
+            for file_entry in index_cache['files']:
+                if file_entry.get('path') == norm_path:
+                    # Return structured data from the new index
+                    return {
+                        "file_path": norm_path,
+                        "line_count": file_entry.get('line_count', len(content.splitlines())),
+                        "size_bytes": file_entry.get('size', os.path.getsize(full_path)),
+                        "extension": ext,
+                        "language": file_entry.get('language', 'unknown'),
+                        "functions": file_entry.get('functions', []),
+                        "classes": file_entry.get('classes', []),
+                        "imports": file_entry.get('imports', []),
+                        "language_specific": file_entry.get('language_specific', {}),
+                        "from_index": True
+                    }
 
         # Basic file info
         lines = content.splitlines()
         line_count = len(lines)
-
-        # File extension for language-specific analysis
-        _, ext = os.path.splitext(norm_path)
 
         summary = {
             "file_path": norm_path,
@@ -600,15 +588,12 @@ def refresh_index(ctx: Context) -> str:
         return "Error: Project path not set. Please use set_project_path to set a project directory first."
 
     # Clear existing index
-    global file_index
+    global file_index, index_cache
     file_index.clear()
+    index_cache.clear()
 
     # Re-index the project
-    file_count = _index_project(base_path)
-    ctx.request_context.lifespan_context.file_count = file_count
-
-    # Save the updated index
-    ctx.request_context.lifespan_context.settings.save_index(file_index)
+    file_count = _index_project(base_path, ctx)
 
     # Update the last indexed timestamp in config
     config = ctx.request_context.lifespan_context.settings.load_config()
@@ -786,57 +771,49 @@ def set_project() -> list[types.PromptMessage]:
 
 # ----- HELPER FUNCTIONS -----
 
-def _index_project(base_path: str) -> int:
+def _index_project(base_path: str, ctx: Context) -> int:
     """
-    Create an index of the project files.
+    Build the project index using the new IndexBuilder system.
     Returns the number of files indexed.
     """
-    file_count = 0
-    file_index.clear()
+    global file_index, index_cache
+    
+    print(f"Building index for project: {base_path}")
+    
+    # Import here to avoid circular imports
+    from .indexing import IndexBuilder
+    
+    builder = IndexBuilder()
+    code_index = builder.build_index(base_path)
+    
+    # Convert to dictionary for storage
+    index_json = code_index.to_json()
+    index_data = json.loads(index_json)
+    
+    # Store in cache
+    index_cache = index_data
+    file_index = index_data  # Keep for any legacy references
+    
+    file_count = code_index.project_metadata.get('total_files', 0)
+    ctx.request_context.lifespan_context.file_count = file_count
 
-    for root, dirs, files in os.walk(base_path):
-        # Skip hidden directories and common build/dependency directories
-        dirs[:] = [d for d in dirs if not d.startswith('.') and
-                 d not in ['node_modules', 'venv', '__pycache__', 'build', 'dist']]
-
-        # Create relative path from base_path
-        rel_path = os.path.relpath(root, base_path)
-        current_dir = file_index
-
-        # Skip the '.' directory (base_path itself)
-        if rel_path != '.':
-            # Split the path and navigate/create the tree
-            path_parts = rel_path.replace('\\', '/').split('/')
-            for part in path_parts:
-                if part not in current_dir:
-                    current_dir[part] = {"type": "directory", "children": {}}
-                current_dir = current_dir[part]["children"]
-
-        # Add files to current directory
-        for file in files:
-            # Skip hidden files and files with unsupported extensions
-            _, ext = os.path.splitext(file)
-            if file.startswith('.') or ext not in supported_extensions:
-                continue
-
-            # Store file information
-            file_path = os.path.join(rel_path, file).replace('\\', '/')
-            if rel_path == '.':
-                file_path = file
-
-            current_dir[file] = {
-                "type": "file",
-                "path": file_path,
-                "ext": ext
-            }
-            file_count += 1
-
+    # Save the index
+    ctx.request_context.lifespan_context.settings.save_index(code_index)
+    
+    print(f"Index built successfully with {file_count} files")
     return file_count
+
+
 
 def _count_files(directory: Dict) -> int:
     """
-    Count the number of files in the index.
+    Count the number of files in the index (supports both old and new formats).
     """
+    # New format: check if it has project_metadata
+    if isinstance(directory, dict) and 'project_metadata' in directory:
+        return directory['project_metadata'].get('total_files', 0)
+    
+    # Old format: recursive count
     count = 0
     for name, value in directory.items():
         if isinstance(value, dict):
@@ -847,7 +824,16 @@ def _count_files(directory: Dict) -> int:
     return count
 
 def _get_all_files(directory: Dict, prefix: str = "") -> List[Tuple[str, Dict]]:
-    """Recursively get all files from the index."""
+    """Get all files from the index (supports both old and new formats)."""
+    # New format: extract from files array
+    if isinstance(directory, dict) and 'files' in directory:
+        all_files = []
+        for file_entry in directory['files']:
+            file_path = file_entry.get('path', '')
+            all_files.append((file_path, file_entry))
+        return all_files
+    
+    # Old format: recursive extraction
     all_files = []
     for name, item in directory.items():
         current_path = os.path.join(prefix, name).replace('\\', '/')
