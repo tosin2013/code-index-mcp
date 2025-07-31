@@ -42,7 +42,7 @@ Thumbs.db
 test_*.py
 
 # Claude Code generated files
-CLAUDE.md
+CLAUDE.local.md
 .claude/
 .claude_chat/
 claude_*
