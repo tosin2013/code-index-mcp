@@ -5,10 +5,11 @@ This service handles index building, management, file discovery,
 and index refresh operations.
 """
 
+import asyncio
 import fnmatch
 import json
 import time
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Callable
 from mcp.server.fastmcp import Context
 
 from .base_service import BaseService
@@ -26,8 +27,6 @@ class IndexService(BaseService):
     - Index statistics and metadata
     """
 
-    REFRESH_RATE_LIMIT_SECONDS = 5
-
     def __init__(self, ctx: Context):
         """
         Initialize the index service.
@@ -36,7 +35,8 @@ class IndexService(BaseService):
             ctx: The MCP Context object
         """
         super().__init__(ctx)
-        self._cached_last_refresh_time: Optional[float] = None
+        self.is_rebuilding = False
+        self.rebuild_in_progress_lock = asyncio.Lock()
 
     def rebuild_index(self) -> str:
         """
@@ -66,8 +66,6 @@ class IndexService(BaseService):
                 'last_indexed': time.time()
             })
 
-            # Update auto-refresh timer
-            self._update_last_refresh_time()
 
         return f"Project re-indexed. Found {file_count} files."
 
@@ -75,7 +73,7 @@ class IndexService(BaseService):
         """
         Find files matching a glob pattern.
 
-        Handles the logic for find_files MCP tool with auto-refresh capability.
+        Simplified version - file watcher handles all index updates proactively.
 
         Args:
             pattern: Glob pattern to match files against
@@ -97,7 +95,7 @@ class IndexService(BaseService):
         if not self.index_cache:
             self._index_project(self.base_path)
 
-        # First search attempt using index
+        # Search using current index
         matching_files = []
         if self.index_cache and 'files' in self.index_cache:
             for file_entry in self.index_cache['files']:
@@ -105,41 +103,7 @@ class IndexService(BaseService):
                 if fnmatch.fnmatch(file_path, pattern):
                     matching_files.append(file_path)
 
-        # If no results found, try auto-refresh once (with rate limiting)
-        if not matching_files:
-            if self._should_auto_refresh():
-                # Perform full re-index
-                self._index_project(self.base_path)
-
-                # Update last refresh time
-                self._update_last_refresh_time()
-
-                # Search again after refresh
-                if self.index_cache and 'files' in self.index_cache:
-                    for file_entry in self.index_cache['files']:
-                        file_path = file_entry.get('path', '')
-                        if fnmatch.fnmatch(file_path, pattern):
-                            matching_files.append(file_path)
-
-                if matching_files:
-                    return ResponseFormatter.file_list_response(
-                        matching_files,
-                        f"✅ Found {len(matching_files)} files after refresh"
-                    )
-                else:
-                    return ResponseFormatter.file_list_response(
-                        [],
-                        "⚠️ No files found even after refresh"
-                    )
-            else:
-                # Rate limited
-                remaining_time = self._get_remaining_refresh_time()
-                return ResponseFormatter.file_list_response(
-                    [],
-                    f"⚠️ No files found - Rate limited. Try again in {remaining_time} seconds"
-                )
-
-        # Return successful results
+        # Return results - file watcher now handles all index updates proactively
         return ResponseFormatter.file_list_response(
             matching_files,
             f"✅ Found {len(matching_files)} files"
@@ -209,42 +173,63 @@ class IndexService(BaseService):
         print(f"Index built successfully with {file_count} files")
         return file_count
 
-    def _get_last_refresh_time(self) -> float:
-        """Get last refresh time from config."""
-        if not self.settings:
-            return 0.0
-
-        # Use cached value if available
-        if hasattr(self, '_cached_last_refresh_time'):
-            return self._cached_last_refresh_time
-
-        config = self.settings.load_config()
-        self._cached_last_refresh_time = config.get('last_auto_refresh_time', 0.0)
-        return self._cached_last_refresh_time
-
-    def _should_auto_refresh(self) -> bool:
-        """Check if auto-refresh is allowed based on rate limit."""
-        last_refresh_time = self._get_last_refresh_time()
-        current_time = time.time()
-        return (current_time - last_refresh_time) >= self.REFRESH_RATE_LIMIT_SECONDS
-
-    def _update_last_refresh_time(self) -> None:
-        """Update refresh time in both memory cache and persistent config."""
-        current_time = time.time()
-
-        # Update memory cache
-        self._cached_last_refresh_time = current_time
-
-        # Persist to config
-        if self.settings:
-            config = self.settings.load_config()
-            config['last_auto_refresh_time'] = current_time
-            self.settings.save_config(config)
-
-    def _get_remaining_refresh_time(self) -> int:
-        """Get remaining seconds until next refresh is allowed."""
-        last_refresh_time = self._get_last_refresh_time()
-        current_time = time.time()
-        elapsed = current_time - last_refresh_time
-        remaining = max(0, self.REFRESH_RATE_LIMIT_SECONDS - elapsed)
-        return int(remaining)
+    def start_background_rebuild(self) -> bool:
+        """
+        Start index rebuild in background without blocking searches.
+        
+        Returns:
+            True if rebuild started, False if already in progress
+        """
+        if self.is_rebuilding:
+            return False
+        
+        # Create background task
+        task = asyncio.create_task(self._background_rebuild())
+        task.add_done_callback(self._on_rebuild_complete)
+        
+        return True
+    
+    async def _background_rebuild(self) -> None:
+        """
+        Perform index rebuild asynchronously.
+        """
+        async with self.rebuild_in_progress_lock:
+            try:
+                self.is_rebuilding = True
+                start_time = time.time()
+                
+                # Build new index using existing logic
+                file_count = self._index_project(self.base_path)
+                
+                duration = time.time() - start_time
+                print(f"Background rebuild completed in {duration:.2f}s with {file_count} files")
+                
+            except Exception as e:
+                print(f"Background rebuild failed: {e}")
+                raise
+            finally:
+                self.is_rebuilding = False
+    
+    def _on_rebuild_complete(self, task: asyncio.Task) -> None:
+        """
+        Handle rebuild completion or failure.
+        
+        Args:
+            task: The completed asyncio task
+        """
+        try:
+            task.result()  # Raise any exceptions that occurred
+        except Exception as e:
+            print(f"Background rebuild task failed: {e}")
+    
+    def get_rebuild_status(self) -> dict:
+        """
+        Get current rebuild status information.
+        
+        Returns:
+            Dictionary with rebuild status
+        """
+        return {
+            "is_rebuilding": self.is_rebuilding,
+            "index_cache_size": len(self.index_cache.get('files', [])) if self.index_cache else 0
+        }

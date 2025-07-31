@@ -5,6 +5,7 @@ This service handles project initialization, configuration management,
 and project structure operations.
 """
 
+import asyncio
 import os
 import json
 from mcp.server.fastmcp import Context
@@ -107,6 +108,9 @@ class ProjectService(BaseService):
                 search_info = (" Basic search available." if search_tool is None 
                              else f" Advanced search enabled ({search_tool.name}).")
                 
+                # Start file watcher service
+                self._start_file_watcher(abs_path)
+                
                 return f"Project path set to: {abs_path}. Loaded existing index with {file_count} files.{search_info}"
             else:
                 print("Old format index detected, will rebuild with new system")
@@ -122,7 +126,21 @@ class ProjectService(BaseService):
         config = {
             "base_path": abs_path,
             "supported_extensions": SUPPORTED_EXTENSIONS,
-            "last_indexed": new_settings.load_config().get('last_indexed', None)
+            "last_indexed": new_settings.load_config().get('last_indexed', None),
+            "file_watcher": {
+                "enabled": True,
+                "debounce_seconds": 3.0,
+                "additional_exclude_patterns": [],
+                "monitored_extensions": [],  # Empty = use all supported extensions
+                "exclude_patterns": [
+                    ".git", ".svn", ".hg",
+                    "node_modules", "__pycache__", ".venv", "venv",
+                    ".DS_Store", "Thumbs.db",
+                    "dist", "build", "target", ".idea", ".vscode",
+                    ".pytest_cache", ".coverage", ".tox",
+                    "bin", "obj"
+                ]
+            }
         }
         new_settings.save_config(config)
         
@@ -130,6 +148,9 @@ class ProjectService(BaseService):
         search_tool = new_settings.get_preferred_search_tool()
         search_info = (" Basic search available." if search_tool is None 
                      else f" Advanced search enabled ({search_tool.name}).")
+        
+        # Start file watcher service
+        self._start_file_watcher(abs_path)
         
         return f"Project path set to: {abs_path}. Indexed {file_count} files.{search_info}"
     
@@ -235,3 +256,53 @@ class ProjectService(BaseService):
         
         print(f"Index built successfully with {file_count} files")
         return file_count
+    
+    def _start_file_watcher(self, base_path: str) -> None:
+        """
+        Initialize and start the file watcher service for the project.
+        
+        Args:
+            base_path: The project base path to monitor
+        """
+        try:
+            # Import FileWatcherService locally to avoid circular imports
+            from .file_watcher_service import FileWatcherService
+            from .index_service import IndexService
+            
+            # Initialize file watcher service
+            file_watcher = FileWatcherService(self.ctx)
+            
+            # Create index service for rebuild callback
+            index_service = IndexService(self.ctx)
+            
+            # Store file watcher service in context for cleanup
+            if hasattr(self.ctx.request_context.lifespan_context, 'file_watcher_service'):
+                self.ctx.request_context.lifespan_context.file_watcher_service = file_watcher
+            
+            # Start monitoring with background rebuild callback
+            # We need to run this in an async context, so we'll create a task
+            async def start_monitoring():
+                success = await file_watcher.start_monitoring(
+                    rebuild_callback=index_service.start_background_rebuild
+                )
+                if success:
+                    print("File watcher service started successfully")
+                else:
+                    print("File watcher service failed to start - manual refresh required")
+            
+            # Schedule the async task
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    # If event loop is running, create task
+                    asyncio.create_task(start_monitoring())
+                else:
+                    # If no event loop is running, run it
+                    asyncio.run(start_monitoring())
+            except RuntimeError:
+                # If we can't get the loop, create a new one
+                asyncio.run(start_monitoring())
+                
+        except Exception as e:
+            print(f"Failed to initialize file watcher: {e}")
+            print("Continuing without file watcher - manual refresh will be required")

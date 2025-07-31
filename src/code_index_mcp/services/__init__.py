@@ -24,6 +24,7 @@ from .index_service import IndexService
 from .search_service import SearchService
 from .file_service import FileService
 from .settings_service import SettingsService
+from .file_watcher_service import FileWatcherService
 
 __all__ = [
     'BaseService',
@@ -31,5 +32,6 @@ __all__ = [
     'IndexService', 
     'SearchService',
     'FileService',
-    'SettingsService'
+    'SettingsService',
+    'FileWatcherService'
 ]

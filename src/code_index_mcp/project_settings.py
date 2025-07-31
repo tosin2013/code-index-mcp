@@ -568,3 +568,48 @@ class ProjectSettings:
         print("Refreshing available search strategies...")
         self.available_strategies = _get_available_strategies()
         print(f"Available strategies found: {[s.name for s in self.available_strategies]}")
+    
+    def get_file_watcher_config(self) -> dict:
+        """
+        Get file watcher specific configuration.
+        
+        Returns:
+            dict: File watcher configuration with defaults
+        """
+        config = self.load_config()
+        default_config = {
+            "enabled": True,
+            "debounce_seconds": 3.0,
+            "additional_exclude_patterns": [],
+            "monitored_extensions": [],  # Empty = use all supported extensions
+            "exclude_patterns": [
+                ".git", ".svn", ".hg",
+                "node_modules", "__pycache__", ".venv", "venv",
+                ".DS_Store", "Thumbs.db",
+                "dist", "build", "target", ".idea", ".vscode",
+                ".pytest_cache", ".coverage", ".tox",
+                "bin", "obj"
+            ]
+        }
+        
+        # Merge with loaded config
+        file_watcher_config = config.get("file_watcher", {})
+        for key, default_value in default_config.items():
+            if key not in file_watcher_config:
+                file_watcher_config[key] = default_value
+        
+        return file_watcher_config
+    
+    def update_file_watcher_config(self, updates: dict) -> None:
+        """
+        Update file watcher configuration.
+        
+        Args:
+            updates: Dictionary of configuration updates
+        """
+        config = self.load_config()
+        if "file_watcher" not in config:
+            config["file_watcher"] = self.get_file_watcher_config()
+        
+        config["file_watcher"].update(updates)
+        self.save_config(config)

@@ -22,7 +22,7 @@ from mcp.server.fastmcp import FastMCP, Context
 from .project_settings import ProjectSettings
 from .services import (
     ProjectService, IndexService, SearchService,
-    FileService, SettingsService
+    FileService, SettingsService, FileWatcherService
 )
 from .services.settings_service import manage_temp_directory
 from .utils import (
@@ -37,6 +37,7 @@ class CodeIndexerContext:
     file_count: int = 0
     file_index: dict = field(default_factory=dict)
     index_cache: dict = field(default_factory=dict)
+    file_watcher_service: FileWatcherService = None
 
 @asynccontextmanager
 async def indexer_lifespan(_server: FastMCP) -> AsyncIterator[CodeIndexerContext]:
@@ -49,10 +50,11 @@ async def indexer_lifespan(_server: FastMCP) -> AsyncIterator[CodeIndexerContext
     # Initialize settings manager with skip_load=True to skip loading files
     settings = ProjectSettings(base_path, skip_load=True)
 
-    # Initialize context
+    # Initialize context - file watcher will be initialized later when project path is set
     context = CodeIndexerContext(
         base_path=base_path,
-        settings=settings
+        settings=settings,
+        file_watcher_service=None
     )
 
     try:
@@ -60,6 +62,11 @@ async def indexer_lifespan(_server: FastMCP) -> AsyncIterator[CodeIndexerContext
         # Provide context to the server
         yield context
     finally:
+        # Stop file watcher if it was started
+        if context.file_watcher_service:
+            print("Stopping file watcher service...")
+            await context.file_watcher_service.stop_monitoring()
+
         # Only save index if project path has been set
         if context.base_path and context.index_cache:
             print(f"Saving index for project: {context.base_path}")
@@ -203,18 +210,18 @@ def refresh_index(ctx: Context) -> str:
     Manually refresh the project index when files have been added/removed/moved.
 
     Use when:
-    - After AI/LLM has created, modified, or deleted files
-    - After git operations (checkout, merge, pull) that change files
+    - File watcher is disabled or unavailable
+    - After large-scale operations (git checkout, merge, pull) that change many files
+    - When you want immediate index rebuild without waiting for file watcher debounce
     - When find_files results seem incomplete or outdated
-    - For immediate refresh without waiting for auto-refresh rate limits
+    - For troubleshooting suspected index synchronization issues
 
     Important notes for LLMs:
-    - This tool bypasses the 5-second rate limit that applies to auto-refresh
-    - Always available for immediate use when you know files have changed
+    - Always available as backup when file watcher is not working
     - Performs full project re-indexing for complete accuracy
     - Use when you suspect the index is stale after file system changes
-    - **Always call this after modifying files programmatically**
-    - Essential for find_files tool to see new/changed files
+    - **Call this after programmatic file modifications if file watcher seems unresponsive**
+    - Complements the automatic file watcher system
 
     Returns:
         Success message with total file count
@@ -253,6 +260,75 @@ def refresh_search_tools(ctx: Context) -> str:
     This is useful if you have installed a new tool (like ripgrep) after starting the server.
     """
     return SearchService(ctx).refresh_search_tools()
+
+@mcp.tool()
+@handle_mcp_tool_errors(return_type='dict')
+def get_file_watcher_status(ctx: Context) -> Dict[str, Any]:
+    """Get file watcher service status and statistics."""
+    try:
+        # Get file watcher service from context
+        file_watcher_service = None
+        if hasattr(ctx.request_context.lifespan_context, 'file_watcher_service'):
+            file_watcher_service = ctx.request_context.lifespan_context.file_watcher_service
+        
+        if not file_watcher_service:
+            return {"status": "not_initialized", "message": "File watcher service not initialized"}
+        
+        # Get status from file watcher service
+        status = file_watcher_service.get_status()
+        
+        # Add index service status
+        index_service = IndexService(ctx)
+        rebuild_status = index_service.get_rebuild_status()
+        status["rebuild_status"] = rebuild_status
+        
+        # Add configuration
+        if hasattr(ctx.request_context.lifespan_context, 'settings') and ctx.request_context.lifespan_context.settings:
+            file_watcher_config = ctx.request_context.lifespan_context.settings.get_file_watcher_config()
+            status["configuration"] = file_watcher_config
+        
+        return status
+        
+    except Exception as e:
+        return {"status": "error", "message": f"Failed to get file watcher status: {e}"}
+
+@mcp.tool()
+@handle_mcp_tool_errors(return_type='str')
+def configure_file_watcher(
+    ctx: Context,
+    enabled: bool = None,
+    debounce_seconds: float = None,
+    additional_exclude_patterns: list = None
+) -> str:
+    """Configure file watcher service settings."""
+    try:
+        # Get settings from context
+        if not hasattr(ctx.request_context.lifespan_context, 'settings') or not ctx.request_context.lifespan_context.settings:
+            return "Settings not available - project path not set"
+        
+        settings = ctx.request_context.lifespan_context.settings
+        
+        # Build updates dictionary
+        updates = {}
+        if enabled is not None:
+            updates["enabled"] = enabled
+        if debounce_seconds is not None:
+            updates["debounce_seconds"] = debounce_seconds
+        if additional_exclude_patterns is not None:
+            updates["additional_exclude_patterns"] = additional_exclude_patterns
+        
+        if not updates:
+            return "No configuration changes specified"
+        
+        # Update configuration
+        settings.update_file_watcher_config(updates)
+        
+        # If file watcher is running, we would need to restart it for changes to take effect
+        # For now, just return success message with note about restart
+        return f"File watcher configuration updated: {updates}. Restart may be required for changes to take effect."
+        
+    except Exception as e:
+        return f"Failed to update file watcher configuration: {e}"
 
 # ----- PROMPTS -----
 
