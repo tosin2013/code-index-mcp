@@ -91,9 +91,16 @@ def demo_indexing():
     if index.lookups['function_to_file_id']:
         print(f"   Sample functions:")
         for func_name in list(index.lookups['function_to_file_id'].keys())[:5]:
-            file_id = index.lookups['function_to_file_id'][func_name]
-            file_path = next(f['path'] for f in index.files if f['id'] == file_id)
-            print(f"      {func_name} → {file_path}")
+            file_ids = index.lookups['function_to_file_id'][func_name]  # Now a List[int]
+            file_paths = []
+            for file_id in file_ids:
+                file_path = next((f['path'] for f in index.files if f['id'] == file_id), f"unknown_file_{file_id}")
+                file_paths.append(file_path)
+            
+            if len(file_paths) == 1:
+                print(f"      {func_name} → {file_paths[0]}")
+            else:
+                print(f"      {func_name} → [{len(file_paths)} files] {', '.join(file_paths)}")
     
     # Display relationship examples
     print(f"\n🔗 Relationships:")

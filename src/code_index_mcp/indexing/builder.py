@@ -183,7 +183,9 @@ class IndexBuilder:
 
         # Create index metadata
         index_metadata = {
-            'version': '3.0'
+            'version': '4.0',  # Updated for duplicate names support
+            'duplicate_names_support': True,
+            'qualified_names_support': True
         }
 
         return CodeIndex(
@@ -232,27 +234,51 @@ class IndexBuilder:
         }
 
     def _build_lookup_tables(self, analysis_results: List[FileAnalysisResult]) -> Dict[str, Any]:
-        """Build forward lookup tables."""
+        """Build forward lookup tables with support for duplicate names."""
         lookups = {
             'path_to_id': {},
             'function_to_file_id': {},
             'class_to_file_id': {}
         }
 
+        duplicate_functions = set()
+        duplicate_classes = set()
+
         for result in analysis_results:
             file_id = result.file_info.id
             file_path = result.file_info.path
 
-            # Path to ID lookup
+            # Path to ID lookup (unchanged)
             lookups['path_to_id'][file_path] = file_id
 
-            # Function to file ID lookup
+            # Function to file ID lookup - support multiple files per function name
             for func in result.functions:
-                lookups['function_to_file_id'][func.name] = file_id
+                if func.name not in lookups['function_to_file_id']:
+                    lookups['function_to_file_id'][func.name] = []
+                else:
+                    duplicate_functions.add(func.name)
+                
+                # Avoid duplicate file IDs for the same function name
+                if file_id not in lookups['function_to_file_id'][func.name]:
+                    lookups['function_to_file_id'][func.name].append(file_id)
 
-            # Class to file ID lookup
+            # Class to file ID lookup - support multiple files per class name
             for cls in result.classes:
-                lookups['class_to_file_id'][cls.name] = file_id
+                if cls.name not in lookups['class_to_file_id']:
+                    lookups['class_to_file_id'][cls.name] = []
+                else:
+                    duplicate_classes.add(cls.name)
+                
+                # Avoid duplicate file IDs for the same class name
+                if file_id not in lookups['class_to_file_id'][cls.name]:
+                    lookups['class_to_file_id'][cls.name].append(file_id)
+
+        # Log duplicate detection statistics
+        if duplicate_functions:
+            print(f"Detected {len(duplicate_functions)} duplicate function names: {sorted(list(duplicate_functions))[:5]}{'...' if len(duplicate_functions) > 5 else ''}")
+        
+        if duplicate_classes:
+            print(f"Detected {len(duplicate_classes)} duplicate class names: {sorted(list(duplicate_classes))[:5]}{'...' if len(duplicate_classes) > 5 else ''}")
 
         return lookups
 
@@ -327,8 +353,23 @@ class IndexBuilder:
 
         # Check version
         version = index.index_metadata.get('version')
-        if not version or version < '3.0':
+        if not version or version < '4.0':
             warnings.append(f"Index version {version} may be outdated")
+        
+        # Validate duplicate names support in lookup tables
+        if 'function_to_file_id' in index.lookups:
+            for func_name, file_ids in index.lookups['function_to_file_id'].items():
+                if not isinstance(file_ids, list):
+                    errors.append(f"Function lookup for '{func_name}' should be a list, got {type(file_ids)}")
+                elif not all(isinstance(fid, int) for fid in file_ids):
+                    errors.append(f"All file IDs in function lookup for '{func_name}' should be integers")
+        
+        if 'class_to_file_id' in index.lookups:
+            for class_name, file_ids in index.lookups['class_to_file_id'].items():
+                if not isinstance(file_ids, list):
+                    errors.append(f"Class lookup for '{class_name}' should be a list, got {type(file_ids)}")
+                elif not all(isinstance(fid, int) for fid in file_ids):
+                    errors.append(f"All file IDs in class lookup for '{class_name}' should be integers")
 
         return ValidationResult(
             is_valid=len(errors) == 0,
@@ -368,7 +409,9 @@ class IndexBuilder:
                 'build_files': []
             },
             index_metadata={
-                'version': '3.0',
+                'version': '4.0',
+                'duplicate_names_support': True,
+                'qualified_names_support': True,
                 'build_error': error_message,
                 'analysis_time_ms': 0,
                 'files_with_errors': [],

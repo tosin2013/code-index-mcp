@@ -126,15 +126,15 @@ class CodeIndex:
     
     def is_current_version(self) -> bool:
         """Check if this index uses the current version format."""
-        return self.get_version() >= '3.0'
+        return self.get_version() >= '4.0'
 
 
 @dataclass
 class LookupTables:
     """Forward lookup tables for efficient querying."""
     path_to_id: Dict[str, int]
-    function_to_file_id: Dict[str, int]
-    class_to_file_id: Dict[str, int]
+    function_to_file_id: Dict[str, List[int]]  # Changed: now supports multiple files per function name
+    class_to_file_id: Dict[str, List[int]]     # Changed: now supports multiple files per class name
 
 
 @dataclass
