@@ -9,6 +9,7 @@ from typing import Dict, Any, Optional
 
 from .base_service import BaseService
 from ..utils import ValidationHelper, ResponseFormatter
+from ..search.base import is_safe_regex_pattern
 
 
 class SearchService(BaseService):
@@ -30,7 +31,7 @@ class SearchService(BaseService):
         context_lines: int = 0,
         file_pattern: Optional[str] = None,
         fuzzy: bool = False,
-        regex: bool = False
+        regex: Optional[bool] = None
     ) -> Dict[str, Any]:
         """
         Search for code patterns in the project.
@@ -43,7 +44,7 @@ class SearchService(BaseService):
             context_lines: Number of context lines to show
             file_pattern: Glob pattern to filter files
             fuzzy: Whether to enable fuzzy matching
-            regex: Whether pattern is a regex
+            regex: Regex mode - True/False to force, None for auto-detection
 
         Returns:
             Dictionary with search results or error information
@@ -52,6 +53,12 @@ class SearchService(BaseService):
             ValueError: If project is not set up or search parameters are invalid
         """
         self._require_project_setup()
+
+        # Smart regex detection if regex parameter is None
+        if regex is None:
+            regex = is_safe_regex_pattern(pattern)
+            if regex:
+                print(f"Auto-detected regex pattern: {pattern}")
 
         # Validate search pattern
         error = ValidationHelper.validate_search_pattern(pattern, regex)

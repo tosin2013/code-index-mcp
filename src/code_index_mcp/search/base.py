@@ -100,22 +100,45 @@ def is_safe_regex_pattern(pattern: str) -> bool:
     Returns:
         True if the pattern looks like a safe regex, False otherwise
     """
-    # Allow basic regex operators that are commonly used and safe
-    safe_regex_chars = ['|', '(', ')', '[', ']', '^', '$']
+    # Strong indicators of regex intent
+    strong_regex_indicators = ['|', '(', ')', '[', ']', '^', '$']
     
-    # Check if pattern contains any regex metacharacters
-    has_regex_chars = any(char in pattern for char in safe_regex_chars)
+    # Weaker indicators that need context
+    weak_regex_indicators = ['.', '*', '+', '?']
     
-    # Basic safety check - avoid obviously dangerous patterns
-    dangerous_patterns = [
-        r'(.+)+',  # Nested quantifiers
-        r'(.*)*',  # Nested stars
-        r'(.{0,})+',  # Potential ReDoS patterns
-    ]
+    # Check for strong regex indicators
+    has_strong_regex = any(char in pattern for char in strong_regex_indicators)
     
-    has_dangerous_patterns = any(dangerous in pattern for dangerous in dangerous_patterns)
+    # Check for weak indicators with context
+    has_weak_regex = any(char in pattern for char in weak_regex_indicators)
     
-    return has_regex_chars and not has_dangerous_patterns
+    # If has strong indicators, likely regex
+    if has_strong_regex:
+        # Still check for dangerous patterns
+        dangerous_patterns = [
+            r'(.+)+',  # Nested quantifiers
+            r'(.*)*',  # Nested stars
+            r'(.{0,})+',  # Potential ReDoS patterns
+        ]
+        
+        has_dangerous_patterns = any(dangerous in pattern for dangerous in dangerous_patterns)
+        return not has_dangerous_patterns
+    
+    # If only weak indicators, need more context
+    if has_weak_regex:
+        # Patterns like ".*", ".+", "file.*py" look like regex
+        # But "file.txt", "test.py" look like literal filenames
+        regex_like_patterns = [
+            r'\.\*',  # .*
+            r'\.\+',  # .+
+            r'\.\w*\*',  # .something*
+            r'\*\.',  # *.
+            r'\w+\.\*\w*',  # word.*word
+        ]
+        
+        return any(re.search(regex_pattern, pattern) for regex_pattern in regex_like_patterns)
+    
+    return False
 
 
 class SearchStrategy(ABC):

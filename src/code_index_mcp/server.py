@@ -115,7 +115,7 @@ def search_code_advanced(
     context_lines: int = 0,
     file_pattern: str = None,
     fuzzy: bool = False,
-    regex: bool = False
+    regex: bool = None
 ) -> Dict[str, Any]:
     """
     Search for a code pattern in the project using an advanced, fast tool.
@@ -141,9 +141,11 @@ def search_code_advanced(
                IMPORTANT: Only ugrep provides true fuzzy search. Other tools use word boundary
                matching which allows partial matches at word boundaries.
                For exact literal matches, set fuzzy=False (default and recommended).
-        regex: If True, enables regex pattern matching. Use this for patterns like "ERROR|WARN".
-               The pattern will be validated for safety to prevent ReDoS attacks.
-               If False (default), uses literal string search.
+        regex: Controls regex pattern matching behavior:
+               - If True, enables regex pattern matching
+               - If False, forces literal string search
+               - If None (default), automatically detects regex patterns and enables regex for patterns like "ERROR|WARN"
+               The pattern will always be validated for safety to prevent ReDoS attacks.
 
     Returns:
         A dictionary containing the search results or an error message.
