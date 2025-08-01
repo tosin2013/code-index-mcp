@@ -270,12 +270,12 @@ def get_file_watcher_status(ctx: Context) -> Dict[str, Any]:
         file_watcher_error = None
         if hasattr(ctx.request_context.lifespan_context, 'file_watcher_error'):
             file_watcher_error = ctx.request_context.lifespan_context.file_watcher_error
-        
+
         # Get file watcher service from context
         file_watcher_service = None
         if hasattr(ctx.request_context.lifespan_context, 'file_watcher_service'):
             file_watcher_service = ctx.request_context.lifespan_context.file_watcher_service
-        
+
         # If there's an error, return error status with recommendation
         if file_watcher_error:
             status = {
@@ -285,39 +285,39 @@ def get_file_watcher_status(ctx: Context) -> Dict[str, Any]:
                 "recommendation": "Use refresh_index tool for manual updates",
                 "manual_refresh_required": True
             }
-            
+
             # Add basic configuration if available
             if hasattr(ctx.request_context.lifespan_context, 'settings') and ctx.request_context.lifespan_context.settings:
                 file_watcher_config = ctx.request_context.lifespan_context.settings.get_file_watcher_config()
                 status["configuration"] = file_watcher_config
-            
+
             return status
-        
+
         # If no service and no error, it's not initialized
         if not file_watcher_service:
             return {
                 "available": True,
                 "active": False,
-                "status": "not_initialized", 
+                "status": "not_initialized",
                 "message": "File watcher service not initialized. Set project path to enable auto-refresh.",
                 "recommendation": "Use set_project_path tool to initialize file watcher"
             }
-        
+
         # Get status from file watcher service
         status = file_watcher_service.get_status()
-        
+
         # Add index service status
         index_service = IndexService(ctx)
         rebuild_status = index_service.get_rebuild_status()
         status["rebuild_status"] = rebuild_status
-        
+
         # Add configuration
         if hasattr(ctx.request_context.lifespan_context, 'settings') and ctx.request_context.lifespan_context.settings:
             file_watcher_config = ctx.request_context.lifespan_context.settings.get_file_watcher_config()
             status["configuration"] = file_watcher_config
-        
+
         return status
-        
+
     except Exception as e:
         return {"status": "error", "message": f"Failed to get file watcher status: {e}"}
 
@@ -334,9 +334,9 @@ def configure_file_watcher(
         # Get settings from context
         if not hasattr(ctx.request_context.lifespan_context, 'settings') or not ctx.request_context.lifespan_context.settings:
             return "Settings not available - project path not set"
-        
+
         settings = ctx.request_context.lifespan_context.settings
-        
+
         # Build updates dictionary
         updates = {}
         if enabled is not None:
@@ -345,17 +345,17 @@ def configure_file_watcher(
             updates["debounce_seconds"] = debounce_seconds
         if additional_exclude_patterns is not None:
             updates["additional_exclude_patterns"] = additional_exclude_patterns
-        
+
         if not updates:
             return "No configuration changes specified"
-        
+
         # Update configuration
         settings.update_file_watcher_config(updates)
-        
+
         # If file watcher is running, we would need to restart it for changes to take effect
         # For now, just return success message with note about restart
         return f"File watcher configuration updated: {updates}. Restart may be required for changes to take effect."
-        
+
     except Exception as e:
         return f"Failed to update file watcher configuration: {e}"
 
@@ -419,22 +419,6 @@ def set_project() -> list[types.PromptMessage]:
 
 def main():
     """Main function to run the MCP server."""
-    # Configure logging for debugging
-    import logging
-    logging.basicConfig(
-        level=logging.DEBUG,
-        format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
-        handlers=[
-            logging.StreamHandler(),
-            logging.FileHandler('mcp_server_debug.log', mode='w')
-        ]
-    )
-    
-    # Enable debug logging for file watcher and index services
-    logging.getLogger('code_index_mcp.services.file_watcher_service').setLevel(logging.DEBUG)
-    logging.getLogger('code_index_mcp.services.index_service').setLevel(logging.DEBUG)
-    
-    # Run the server. Tools are discovered automatically via decorators.
     mcp.run()
 
 if __name__ == '__main__':

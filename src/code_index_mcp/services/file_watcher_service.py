@@ -111,7 +111,7 @@ class FileWatcherService(BaseService):
 
             # Log detailed Observer setup
             watch_path = str(self.base_path)
-            self.logger.info(f"Scheduling Observer for path: {watch_path}")
+            self.logger.debug(f"Scheduling Observer for path: {watch_path}")
             
             self.observer.schedule(
                 self.event_handler,
@@ -120,7 +120,7 @@ class FileWatcherService(BaseService):
             )
 
             # Log Observer start
-            self.logger.info("Starting Observer...")
+            self.logger.debug("Starting Observer...")
             self.observer.start()
             self.is_monitoring = True
             self.restart_attempts = 0
@@ -128,12 +128,12 @@ class FileWatcherService(BaseService):
             # Log Observer thread info
             if hasattr(self.observer, '_thread'):
                 thread_info = f"Observer thread: {self.observer._thread}"
-                self.logger.info(thread_info)
+                self.logger.debug(thread_info)
 
             # Verify observer is actually running
             if self.observer.is_alive():
                 self.logger.info(
-                    "File watcher started successfully - Observer is alive",
+                    "File watcher started successfully",
                     extra={
                         "debounce_seconds": debounce_seconds,
                         "monitored_path": str(self.base_path),
@@ -143,14 +143,14 @@ class FileWatcherService(BaseService):
                 
                 # Add diagnostic test - create a test event to verify Observer works
                 import os
-                self.logger.info(f"Observer thread is alive: {self.observer.is_alive()}")
-                self.logger.info(f"Monitored path exists: {os.path.exists(str(self.base_path))}")
-                self.logger.info(f"Event handler is set: {self.event_handler is not None}")
+                self.logger.debug(f"Observer thread is alive: {self.observer.is_alive()}")
+                self.logger.debug(f"Monitored path exists: {os.path.exists(str(self.base_path))}")
+                self.logger.debug(f"Event handler is set: {self.event_handler is not None}")
                 
                 # Log current directory for comparison
                 current_dir = os.getcwd()
-                self.logger.info(f"Current working directory: {current_dir}")
-                self.logger.info(f"Are paths same: {os.path.normpath(current_dir) == os.path.normpath(str(self.base_path))}")
+                self.logger.debug(f"Current working directory: {current_dir}")
+                self.logger.debug(f"Are paths same: {os.path.normpath(current_dir) == os.path.normpath(str(self.base_path))}")
                 
                 return True
             else:
@@ -350,7 +350,7 @@ class DebounceEventHandler(FileSystemEventHandler):
         
         if should_process:
             process_msg = f"Processing file system event: {event.event_type} - {event.src_path}"
-            self.logger.info(process_msg)
+            self.logger.debug(process_msg)
             self.reset_debounce_timer()
         else:
             filter_msg = f"Event filtered out: {event.event_type} - {event.src_path}"
@@ -399,7 +399,7 @@ class DebounceEventHandler(FileSystemEventHandler):
         if is_temp:
             return False
 
-        self.logger.info(f"Event will be processed: {event.src_path}")
+        self.logger.debug(f"Event will be processed: {event.src_path}")
         return True
 
     def is_excluded_path(self, path: Path) -> bool:
@@ -473,7 +473,7 @@ class DebounceEventHandler(FileSystemEventHandler):
             self.logger.debug("Previous debounce timer cancelled")
 
         timer_msg = f"Starting debounce timer for {self.debounce_seconds} seconds"
-        self.logger.info(timer_msg)
+        self.logger.debug(timer_msg)
         
         self.debounce_timer = Timer(
             self.debounce_seconds,
@@ -491,12 +491,12 @@ class DebounceEventHandler(FileSystemEventHandler):
         if self.rebuild_callback:
             try:
                 callback_msg = "Calling rebuild callback..."
-                self.logger.info(callback_msg)
+                self.logger.debug(callback_msg)
                 
                 result = self.rebuild_callback()
                 
                 result_msg = f"Rebuild callback completed with result: {result}"
-                self.logger.info(result_msg)
+                self.logger.debug(result_msg)
             except Exception as e:
                 error_msg = f"Rebuild callback failed: {e}"
                 self.logger.error(error_msg)

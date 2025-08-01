@@ -8,6 +8,7 @@ and index refresh operations.
 import fnmatch
 import json
 import logging
+import threading
 import time
 from typing import Dict, Any, Optional, Callable
 from mcp.server.fastmcp import Context
@@ -37,6 +38,8 @@ class IndexService(BaseService):
         super().__init__(ctx)
         self.logger = logging.getLogger(__name__)
         self.is_rebuilding = False
+        self._rebuild_lock = threading.Lock()
+        self._executor = None
 
     def rebuild_index(self) -> str:
         """
@@ -178,30 +181,40 @@ class IndexService(BaseService):
         Start index rebuild in background without blocking searches.
         
         This method can be called from any thread (including file watcher threads).
-        Uses ThreadPoolExecutor to run rebuild in a separate thread.
+        Uses a persistent ThreadPoolExecutor with proper concurrency control.
         
         Returns:
             True if rebuild started, False if already in progress
         """
-        self.logger.info("start_background_rebuild called")
+        self.logger.debug("start_background_rebuild called")
         
-        if self.is_rebuilding:
-            self.logger.info("Rebuild already in progress, skipping")
-            return False
+        # Atomic check-and-set with proper locking
+        with self._rebuild_lock:
+            if self.is_rebuilding:
+                self.logger.debug("Rebuild already in progress, skipping")
+                return False
+            
+            # Atomically set rebuilding flag
+            self.is_rebuilding = True
         
         try:
             import concurrent.futures
-            import threading
             
-            self.logger.info("Starting background rebuild in thread pool")
+            # Initialize executor if needed
+            if self._executor is None:
+                self._executor = concurrent.futures.ThreadPoolExecutor(
+                    max_workers=1, 
+                    thread_name_prefix="index_rebuild"
+                )
+                self.logger.debug("Created persistent ThreadPoolExecutor for rebuilds")
+            
+            self.logger.debug("Starting background rebuild in thread pool")
             
             def run_sync_rebuild():
                 """Run the rebuild synchronously in a background thread."""
                 try:
-                    self.is_rebuilding = True
                     start_time = time.time()
-                    
-                    self.logger.info("Starting sync index rebuild...")
+                    self.logger.debug("Starting sync index rebuild...")
                     
                     # Build new index using existing sync logic
                     file_count = self._index_project(self.base_path)
@@ -219,34 +232,52 @@ class IndexService(BaseService):
                     self.logger.error("Traceback: %s", traceback.format_exc())
                     return False
                 finally:
-                    self.is_rebuilding = False
-                    self.logger.info("Background rebuild finished, is_rebuilding set to False")
+                    # Thread-safe flag reset
+                    with self._rebuild_lock:
+                        self.is_rebuilding = False
+                    self.logger.debug("Background rebuild finished, is_rebuilding set to False")
             
-            # Submit to thread pool and don't wait for completion
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="rebuild") as executor:
-                future = executor.submit(run_sync_rebuild)
-                
-                # Add completion callback
-                def on_complete(fut):
-                    try:
-                        result = fut.result()
-                        if result:
-                            self.logger.info("Background rebuild completed successfully")
-                        else:
-                            self.logger.error("Background rebuild failed")
-                    except Exception as e:
-                        self.logger.error(f"Background rebuild thread failed: {e}")
-                
-                future.add_done_callback(on_complete)
+            # Submit to persistent executor
+            future = self._executor.submit(run_sync_rebuild)
             
-            self.logger.info("Background rebuild scheduled successfully")
+            # Add completion callback
+            def on_complete(fut):
+                try:
+                    result = fut.result()
+                    if result:
+                        self.logger.debug("Background rebuild completed successfully")
+                    else:
+                        self.logger.error("Background rebuild failed")
+                except Exception as e:
+                    self.logger.error(f"Background rebuild thread failed: {e}")
+            
+            future.add_done_callback(on_complete)
+            
+            self.logger.debug("Background rebuild scheduled successfully")
             return True
             
         except Exception as e:
+            # Reset flag on error
+            with self._rebuild_lock:
+                self.is_rebuilding = False
+            
             self.logger.error(f"Failed to start background rebuild: {e}")
             import traceback
             self.logger.error("Traceback: %s", traceback.format_exc())
             return False
+    
+    def shutdown(self) -> None:
+        """
+        Shutdown the index service and cleanup resources.
+        
+        This should be called when the service is no longer needed to ensure
+        proper cleanup of the ThreadPoolExecutor.
+        """
+        if self._executor is not None:
+            self.logger.debug("Shutting down ThreadPoolExecutor...")
+            self._executor.shutdown(wait=True)  # Wait for current rebuilds to complete
+            self._executor = None
+            self.logger.debug("ThreadPoolExecutor shutdown completed")
     
     def get_rebuild_status(self) -> dict:
         """
@@ -255,7 +286,10 @@ class IndexService(BaseService):
         Returns:
             Dictionary with rebuild status
         """
+        with self._rebuild_lock:
+            is_rebuilding = self.is_rebuilding
+        
         return {
-            "is_rebuilding": self.is_rebuilding,
+            "is_rebuilding": is_rebuilding,
             "index_cache_size": len(self.index_cache.get('files', [])) if self.index_cache else 0
         }
