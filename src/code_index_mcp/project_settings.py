@@ -638,7 +638,7 @@ class ProjectSettings:
         config = self.load_config()
         default_config = {
             "enabled": True,
-            "debounce_seconds": 3.0,
+            "debounce_seconds": 6.0,
             "additional_exclude_patterns": [],
             "monitored_extensions": [],  # Empty = use all supported extensions
             "exclude_patterns": [

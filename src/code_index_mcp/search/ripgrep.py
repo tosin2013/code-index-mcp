@@ -41,7 +41,7 @@ class RipgrepStrategy(SearchStrategy):
             fuzzy: Enable word boundary matching (not true fuzzy search)
             regex: Enable regex pattern matching
         """
-        cmd = ['rg', '--line-number', '--no-heading', '--color=never']
+        cmd = ['rg', '--line-number', '--no-heading', '--color=never', '--no-ignore']
 
         if not case_sensitive:
             cmd.append('--ignore-case')

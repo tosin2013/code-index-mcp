@@ -5,9 +5,9 @@ This service handles index building, management, file discovery,
 and index refresh operations.
 """
 
-import asyncio
 import fnmatch
 import json
+import logging
 import time
 from typing import Dict, Any, Optional, Callable
 from mcp.server.fastmcp import Context
@@ -35,8 +35,8 @@ class IndexService(BaseService):
             ctx: The MCP Context object
         """
         super().__init__(ctx)
+        self.logger = logging.getLogger(__name__)
         self.is_rebuilding = False
-        self.rebuild_in_progress_lock = asyncio.Lock()
 
     def rebuild_index(self) -> str:
         """
@@ -177,50 +177,76 @@ class IndexService(BaseService):
         """
         Start index rebuild in background without blocking searches.
         
+        This method can be called from any thread (including file watcher threads).
+        Uses ThreadPoolExecutor to run rebuild in a separate thread.
+        
         Returns:
             True if rebuild started, False if already in progress
         """
+        self.logger.info("start_background_rebuild called")
+        
         if self.is_rebuilding:
+            self.logger.info("Rebuild already in progress, skipping")
             return False
         
-        # Create background task
-        task = asyncio.create_task(self._background_rebuild())
-        task.add_done_callback(self._on_rebuild_complete)
-        
-        return True
-    
-    async def _background_rebuild(self) -> None:
-        """
-        Perform index rebuild asynchronously.
-        """
-        async with self.rebuild_in_progress_lock:
-            try:
-                self.is_rebuilding = True
-                start_time = time.time()
-                
-                # Build new index using existing logic
-                file_count = self._index_project(self.base_path)
-                
-                duration = time.time() - start_time
-                print(f"Background rebuild completed in {duration:.2f}s with {file_count} files")
-                
-            except Exception as e:
-                print(f"Background rebuild failed: {e}")
-                raise
-            finally:
-                self.is_rebuilding = False
-    
-    def _on_rebuild_complete(self, task: asyncio.Task) -> None:
-        """
-        Handle rebuild completion or failure.
-        
-        Args:
-            task: The completed asyncio task
-        """
         try:
-            task.result()  # Raise any exceptions that occurred
+            import concurrent.futures
+            import threading
+            
+            self.logger.info("Starting background rebuild in thread pool")
+            
+            def run_sync_rebuild():
+                """Run the rebuild synchronously in a background thread."""
+                try:
+                    self.is_rebuilding = True
+                    start_time = time.time()
+                    
+                    self.logger.info("Starting sync index rebuild...")
+                    
+                    # Build new index using existing sync logic
+                    file_count = self._index_project(self.base_path)
+                    
+                    duration = time.time() - start_time
+                    message = f"Background rebuild completed in {duration:.2f}s with {file_count} files"
+                    self.logger.info(message)
+                    
+                    return True
+                    
+                except Exception as e:
+                    error_msg = f"Background rebuild failed: {e}"
+                    self.logger.error(error_msg)
+                    import traceback
+                    self.logger.error("Traceback: %s", traceback.format_exc())
+                    return False
+                finally:
+                    self.is_rebuilding = False
+                    self.logger.info("Background rebuild finished, is_rebuilding set to False")
+            
+            # Submit to thread pool and don't wait for completion
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="rebuild") as executor:
+                future = executor.submit(run_sync_rebuild)
+                
+                # Add completion callback
+                def on_complete(fut):
+                    try:
+                        result = fut.result()
+                        if result:
+                            self.logger.info("Background rebuild completed successfully")
+                        else:
+                            self.logger.error("Background rebuild failed")
+                    except Exception as e:
+                        self.logger.error(f"Background rebuild thread failed: {e}")
+                
+                future.add_done_callback(on_complete)
+            
+            self.logger.info("Background rebuild scheduled successfully")
+            return True
+            
         except Exception as e:
-            print(f"Background rebuild task failed: {e}")
+            self.logger.error(f"Failed to start background rebuild: {e}")
+            import traceback
+            self.logger.error("Traceback: %s", traceback.format_exc())
+            return False
     
     def get_rebuild_status(self) -> dict:
         """

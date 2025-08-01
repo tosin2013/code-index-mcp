@@ -65,7 +65,7 @@ async def indexer_lifespan(_server: FastMCP) -> AsyncIterator[CodeIndexerContext
         # Stop file watcher if it was started
         if context.file_watcher_service:
             print("Stopping file watcher service...")
-            await context.file_watcher_service.stop_monitoring()
+            context.file_watcher_service.stop_monitoring()
 
         # Only save index if project path has been set
         if context.base_path and context.index_cache:
@@ -266,13 +266,42 @@ def refresh_search_tools(ctx: Context) -> str:
 def get_file_watcher_status(ctx: Context) -> Dict[str, Any]:
     """Get file watcher service status and statistics."""
     try:
+        # Check for file watcher errors first
+        file_watcher_error = None
+        if hasattr(ctx.request_context.lifespan_context, 'file_watcher_error'):
+            file_watcher_error = ctx.request_context.lifespan_context.file_watcher_error
+        
         # Get file watcher service from context
         file_watcher_service = None
         if hasattr(ctx.request_context.lifespan_context, 'file_watcher_service'):
             file_watcher_service = ctx.request_context.lifespan_context.file_watcher_service
         
+        # If there's an error, return error status with recommendation
+        if file_watcher_error:
+            status = {
+                "available": True,
+                "active": False,
+                "error": file_watcher_error,
+                "recommendation": "Use refresh_index tool for manual updates",
+                "manual_refresh_required": True
+            }
+            
+            # Add basic configuration if available
+            if hasattr(ctx.request_context.lifespan_context, 'settings') and ctx.request_context.lifespan_context.settings:
+                file_watcher_config = ctx.request_context.lifespan_context.settings.get_file_watcher_config()
+                status["configuration"] = file_watcher_config
+            
+            return status
+        
+        # If no service and no error, it's not initialized
         if not file_watcher_service:
-            return {"status": "not_initialized", "message": "File watcher service not initialized"}
+            return {
+                "available": True,
+                "active": False,
+                "status": "not_initialized", 
+                "message": "File watcher service not initialized. Set project path to enable auto-refresh.",
+                "recommendation": "Use set_project_path tool to initialize file watcher"
+            }
         
         # Get status from file watcher service
         status = file_watcher_service.get_status()
@@ -390,6 +419,21 @@ def set_project() -> list[types.PromptMessage]:
 
 def main():
     """Main function to run the MCP server."""
+    # Configure logging for debugging
+    import logging
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
+        handlers=[
+            logging.StreamHandler(),
+            logging.FileHandler('mcp_server_debug.log', mode='w')
+        ]
+    )
+    
+    # Enable debug logging for file watcher and index services
+    logging.getLogger('code_index_mcp.services.file_watcher_service').setLevel(logging.DEBUG)
+    logging.getLogger('code_index_mcp.services.index_service').setLevel(logging.DEBUG)
+    
     # Run the server. Tools are discovered automatically via decorators.
     mcp.run()
 
