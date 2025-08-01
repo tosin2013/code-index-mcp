@@ -12,6 +12,8 @@ import sys
 from abc import ABC, abstractmethod
 from typing import Dict, List, Optional, Tuple, Any
 
+from ..indexing.qualified_names import normalize_file_path
+
 def parse_search_output(output: str, base_path: str) -> Dict[str, List[Tuple[int, str]]]:
     """
     Parse the output of command-line search tools (grep, ag, rg).
@@ -49,7 +51,7 @@ def parse_search_output(output: str, base_path: str) -> Dict[str, List[Tuple[int
             relative_path = os.path.relpath(file_path_abs, normalized_base_path)
             
             # Normalize path separators for consistency
-            relative_path = relative_path.replace('\\', '/')
+            relative_path = normalize_file_path(relative_path)
 
             if relative_path not in results:
                 results[relative_path] = []

@@ -74,15 +74,25 @@ class ProjectSettings:
             # Check if the system temporary directory exists and is writable
             if not os.path.exists(system_temp):
                 print(f"Warning: System temporary directory does not exist: {system_temp}")
-                # Try using current directory as fallback
-                system_temp = os.getcwd()
-                print(f"Using current directory as fallback: {system_temp}")
+                # Try using project directory as fallback if available
+                if base_path and os.path.exists(base_path):
+                    system_temp = base_path
+                    print(f"Using project directory as fallback: {system_temp}")
+                else:
+                    # Use user's home directory as last resort
+                    system_temp = os.path.expanduser("~")
+                    print(f"Using home directory as fallback: {system_temp}")
 
             if not os.access(system_temp, os.W_OK):
                 print(f"Warning: No write access to system temporary directory: {system_temp}")
-                # Try using current directory as fallback
-                system_temp = os.getcwd()
-                print(f"Using current directory as fallback: {system_temp}")
+                # Try using project directory as fallback if available
+                if base_path and os.path.exists(base_path) and os.access(base_path, os.W_OK):
+                    system_temp = base_path
+                    print(f"Using project directory as fallback: {system_temp}")
+                else:
+                    # Use user's home directory as last resort
+                    system_temp = os.path.expanduser("~")
+                    print(f"Using home directory as fallback: {system_temp}")
 
             # Create code_indexer directory
             temp_base_dir = os.path.join(system_temp, SETTINGS_DIR)
@@ -96,9 +106,14 @@ class ProjectSettings:
                 print(f"Code indexer directory already exists: {temp_base_dir}")
         except Exception as e:
             print(f"Error setting up temporary directory: {e}")
-            # If unable to create temporary directory, use .code_indexer in current directory
-            temp_base_dir = os.path.join(os.getcwd(), ".code_indexer")
-            print(f"Using fallback directory: {temp_base_dir}")
+            # If unable to create temporary directory, use .code_indexer in project directory if available
+            if base_path and os.path.exists(base_path):
+                temp_base_dir = os.path.join(base_path, ".code_indexer")
+                print(f"Using project fallback directory: {temp_base_dir}")
+            else:
+                # Use home directory as last resort
+                temp_base_dir = os.path.join(os.path.expanduser("~"), ".code_indexer")
+                print(f"Using home fallback directory: {temp_base_dir}")
             if not os.path.exists(temp_base_dir):
                 os.makedirs(temp_base_dir, exist_ok=True)
 
@@ -117,9 +132,13 @@ class ProjectSettings:
             self.ensure_settings_dir()
         except Exception as e:
             print(f"Error setting up project settings: {e}")
-            # If error occurs, use .code_indexer in current directory as fallback
-            fallback_dir = os.path.join(os.getcwd(), ".code_indexer",
-                                      "default" if not base_path else hashlib.md5(base_path.encode()).hexdigest())
+            # If error occurs, use .code_indexer in project or home directory as fallback
+            if base_path and os.path.exists(base_path):
+                fallback_dir = os.path.join(base_path, ".code_indexer",
+                                          hashlib.md5(base_path.encode()).hexdigest())
+            else:
+                fallback_dir = os.path.join(os.path.expanduser("~"), ".code_indexer",
+                                          "default" if not base_path else hashlib.md5(base_path.encode()).hexdigest())
             print(f"Using fallback directory: {fallback_dir}")
             self.settings_path = fallback_dir
             if not os.path.exists(fallback_dir):
@@ -141,18 +160,26 @@ class ProjectSettings:
             # Check if directory is writable
             if not os.access(self.settings_path, os.W_OK):
                 print(f"Warning: No write access to project settings directory: {self.settings_path}")
-                # If directory is not writable, use .code_indexer in current directory as fallback
-                fallback_dir = os.path.join(os.getcwd(), ".code_indexer",
-                                          os.path.basename(self.settings_path))
+                # If directory is not writable, use .code_indexer in project or home directory as fallback
+                if self.base_path and os.path.exists(self.base_path) and os.access(self.base_path, os.W_OK):
+                    fallback_dir = os.path.join(self.base_path, ".code_indexer",
+                                              os.path.basename(self.settings_path))
+                else:
+                    fallback_dir = os.path.join(os.path.expanduser("~"), ".code_indexer",
+                                              os.path.basename(self.settings_path))
                 print(f"Using fallback directory: {fallback_dir}")
                 self.settings_path = fallback_dir
                 if not os.path.exists(fallback_dir):
                     os.makedirs(fallback_dir, exist_ok=True)
         except Exception as e:
             print(f"Error ensuring settings directory: {e}")
-            # If unable to create settings directory, use .code_indexer in current directory
-            fallback_dir = os.path.join(os.getcwd(), ".code_indexer",
-                                      "default" if not self.base_path else hashlib.md5(self.base_path.encode()).hexdigest())
+            # If unable to create settings directory, use .code_indexer in project or home directory
+            if self.base_path and os.path.exists(self.base_path):
+                fallback_dir = os.path.join(self.base_path, ".code_indexer",
+                                          hashlib.md5(self.base_path.encode()).hexdigest())
+            else:
+                fallback_dir = os.path.join(os.path.expanduser("~"), ".code_indexer",
+                                          "default" if not self.base_path else hashlib.md5(self.base_path.encode()).hexdigest())
             print(f"Using fallback directory: {fallback_dir}")
             self.settings_path = fallback_dir
             if not os.path.exists(fallback_dir):
@@ -167,8 +194,11 @@ class ProjectSettings:
             return path
         except Exception as e:
             print(f"Error getting config path: {e}")
-            # If error occurs, use file in current directory as fallback
-            return os.path.join(os.getcwd(), CONFIG_FILE)
+            # If error occurs, use file in project or home directory as fallback
+            if self.base_path and os.path.exists(self.base_path):
+                return os.path.join(self.base_path, CONFIG_FILE)
+            else:
+                return os.path.join(os.path.expanduser("~"), CONFIG_FILE)
 
     def get_index_path(self):
         """Get the path to the index file"""
@@ -179,8 +209,11 @@ class ProjectSettings:
             return path
         except Exception as e:
             print(f"Error getting index path: {e}")
-            # If error occurs, use file in current directory as fallback
-            return os.path.join(os.getcwd(), INDEX_FILE)
+            # If error occurs, use file in project or home directory as fallback
+            if self.base_path and os.path.exists(self.base_path):
+                return os.path.join(self.base_path, INDEX_FILE)
+            else:
+                return os.path.join(os.path.expanduser("~"), INDEX_FILE)
 
     # get_cache_path method removed - no longer needed with new indexing system
 
@@ -259,8 +292,11 @@ class ProjectSettings:
             # Check if directory is writable
             if not os.access(dir_path, os.W_OK):
                 print(f"Warning: Directory is not writable: {dir_path}")
-                # Use current directory as fallback
-                index_path = os.path.join(os.getcwd(), INDEX_FILE)
+                # Use project or home directory as fallback
+                if self.base_path and os.path.exists(self.base_path):
+                    index_path = os.path.join(self.base_path, INDEX_FILE)
+                else:
+                    index_path = os.path.join(os.path.expanduser("~"), INDEX_FILE)
                 print(f"Using fallback path: {index_path}")
 
             # Convert to JSON string if it's a CodeIndex object
@@ -278,9 +314,12 @@ class ProjectSettings:
             print(f"Index saved successfully to: {index_path}")
         except Exception as e:
             print(f"Error saving index: {e}")
-            # Try saving to current directory
+            # Try saving to project or home directory
             try:
-                fallback_path = os.path.join(os.getcwd(), INDEX_FILE)
+                if self.base_path and os.path.exists(self.base_path):
+                    fallback_path = os.path.join(self.base_path, INDEX_FILE)
+                else:
+                    fallback_path = os.path.join(os.path.expanduser("~"), INDEX_FILE)
                 print(f"Trying fallback path: {fallback_path}")
                 
                 # Convert to JSON string if it's a CodeIndex object
@@ -324,8 +363,11 @@ class ProjectSettings:
                     print(f"Unexpected error loading index: {e}")
                     return None
             else:
-                # Try loading from current directory
-                fallback_path = os.path.join(os.getcwd(), INDEX_FILE)
+                # Try loading from project or home directory
+                if self.base_path and os.path.exists(self.base_path):
+                    fallback_path = os.path.join(self.base_path, INDEX_FILE)
+                else:
+                    fallback_path = os.path.join(os.path.expanduser("~"), INDEX_FILE)
                 if os.path.exists(fallback_path):
                     print(f"Trying fallback path: {fallback_path}")
                     try:
@@ -376,8 +418,12 @@ class ProjectSettings:
                 return 'legacy'
             
             # Check fallback locations
-            fallback_json = os.path.join(os.getcwd(), INDEX_FILE)
-            fallback_pickle = os.path.join(os.getcwd(), "file_index.pickle")
+            if self.base_path and os.path.exists(self.base_path):
+                fallback_json = os.path.join(self.base_path, INDEX_FILE)
+                fallback_pickle = os.path.join(self.base_path, "file_index.pickle")
+            else:
+                fallback_json = os.path.join(os.path.expanduser("~"), INDEX_FILE)
+                fallback_pickle = os.path.join(os.path.expanduser("~"), "file_index.pickle")
             
             if os.path.exists(fallback_json):
                 try:
@@ -427,10 +473,20 @@ class ProjectSettings:
                 # Clean up legacy files
                 legacy_files = [
                     os.path.join(self.settings_path, "file_index.pickle"),
-                    os.path.join(self.settings_path, "content_cache.pickle"),
-                    os.path.join(os.getcwd(), "file_index.pickle"),
-                    os.path.join(os.getcwd(), "content_cache.pickle")
+                    os.path.join(self.settings_path, "content_cache.pickle")
                 ]
+                
+                # Add fallback locations
+                if self.base_path and os.path.exists(self.base_path):
+                    legacy_files.extend([
+                        os.path.join(self.base_path, "file_index.pickle"),
+                        os.path.join(self.base_path, "content_cache.pickle")
+                    ])
+                else:
+                    legacy_files.extend([
+                        os.path.join(os.path.expanduser("~"), "file_index.pickle"),
+                        os.path.join(os.path.expanduser("~"), "content_cache.pickle")
+                    ])
                 
                 for legacy_file in legacy_files:
                     if os.path.exists(legacy_file):
@@ -493,7 +549,7 @@ class ProjectSettings:
                 'writable': os.access(self.settings_path, os.W_OK) if os.path.exists(self.settings_path) else False,
                 'files': {},
                 'temp_dir': tempfile.gettempdir(),
-                'current_dir': os.getcwd()
+                'base_path': self.base_path
             }
 
             if stats['exists'] and stats['is_directory']:
@@ -524,7 +580,10 @@ class ProjectSettings:
                     stats['list_error'] = str(e)
 
             # Check fallback path
-            fallback_dir = os.path.join(os.getcwd(), ".code_indexer")
+            if self.base_path and os.path.exists(self.base_path):
+                fallback_dir = os.path.join(self.base_path, ".code_indexer")
+            else:
+                fallback_dir = os.path.join(os.path.expanduser("~"), ".code_indexer")
             stats['fallback_path'] = fallback_dir
             stats['fallback_exists'] = os.path.exists(fallback_dir)
             stats['fallback_is_directory'] = os.path.isdir(fallback_dir) if os.path.exists(fallback_dir) else False
@@ -536,7 +595,7 @@ class ProjectSettings:
                 'error': str(e),
                 'settings_path': self.settings_path,
                 'temp_dir': tempfile.gettempdir(),
-                'current_dir': os.getcwd()
+                'base_path': self.base_path
             }
 
     def get_search_tools_config(self):

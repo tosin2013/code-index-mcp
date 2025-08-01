@@ -11,6 +11,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Any
 from .models import FileInfo, ProjectScanResult, SpecialFiles
+from .qualified_names import normalize_file_path
 from code_index_mcp.constants import SUPPORTED_EXTENSIONS
 
 
@@ -115,7 +116,7 @@ class ProjectScanner:
                     file_path = os.path.join(root, filename)
                     # Convert to relative path from base_path
                     rel_path = os.path.relpath(file_path, self.base_path)
-                    files.append(rel_path.replace('\\', '/'))  # Normalize path separators
+                    files.append(normalize_file_path(rel_path))  # Normalize path separators
         
         return files
     

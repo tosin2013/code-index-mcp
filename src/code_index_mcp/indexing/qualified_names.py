@@ -90,7 +90,11 @@ def validate_qualified_name(qualified_name: str) -> bool:
 
 def normalize_file_path(file_path: str) -> str:
     """
-    Normalize file path for consistent qualified name generation.
+    Normalize file path for consistent use throughout the codebase.
+    
+    This function provides a unified way to normalize file paths by:
+    1. Converting all path separators to forward slashes
+    2. Normalizing the path structure (removing redundant separators, etc.)
     
     Args:
         file_path: File path to normalize
@@ -98,7 +102,12 @@ def normalize_file_path(file_path: str) -> str:
     Returns:
         Normalized file path with forward slashes
     """
-    return file_path.replace(os.sep, '/')
+    if not file_path:
+        return file_path
+    
+    # First normalize the path structure, then convert separators
+    normalized = os.path.normpath(file_path)
+    return normalized.replace(os.sep, '/')
 
 
 def get_file_path_from_qualified_name(qualified_name: str) -> str:

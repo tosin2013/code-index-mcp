@@ -10,6 +10,8 @@ import re
 import fnmatch
 from typing import Optional, List
 
+from ..indexing.qualified_names import normalize_file_path
+
 
 class ValidationHelper:
     """
@@ -196,11 +198,8 @@ class ValidationHelper:
         if not file_path:
             return ""
 
-        # Normalize path separators
-        sanitized = os.path.normpath(file_path)
-
-        # Convert to forward slashes for consistency
-        sanitized = sanitized.replace('\\', '/')
+        # Normalize path separators and structure
+        sanitized = normalize_file_path(file_path)
 
         # Remove any leading slashes to ensure relative path
         sanitized = sanitized.lstrip('/')

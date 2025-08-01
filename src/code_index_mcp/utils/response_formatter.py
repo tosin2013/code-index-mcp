@@ -8,6 +8,9 @@ services to ensure uniform response structures and formats.
 import json
 from typing import Any, Dict, List, Optional, Union
 
+from ..indexing.qualified_names import generate_qualified_name
+from ..indexing.duplicate_detection import detect_duplicate_functions, detect_duplicate_classes
+
 
 class ResponseFormatter:
     """
@@ -16,6 +19,96 @@ class ResponseFormatter:
     This class provides static methods for formatting different types of
     responses in a consistent manner.
     """
+    
+    @staticmethod
+    def _resolve_qualified_names_in_relationships(
+        file_path: str,
+        relationship_list: List[str],
+        duplicate_names: set,
+        index_cache: Optional[Dict[str, Any]] = None
+    ) -> List[str]:
+        """
+        Convert simple names to qualified names when duplicates exist.
+        
+        Args:
+            file_path: Current file path for context
+            relationship_list: List of function/class names that may need qualification
+            duplicate_names: Set of names that have duplicates in the project
+            index_cache: Optional index cache for duplicate detection
+            
+        Returns:
+            List with qualified names where duplicates exist
+        """
+        if not relationship_list or not duplicate_names:
+            return relationship_list
+        
+        qualified_list = []
+        for name in relationship_list:
+            if name in duplicate_names:
+                # Convert to qualified name if this name has duplicates
+                if index_cache and 'files' in index_cache:
+                    # Try to find the actual file where this name is defined
+                    # For now, we'll use the current file path as context
+                    qualified_name = generate_qualified_name(file_path, name)
+                    qualified_list.append(qualified_name)
+                else:
+                    # Fallback: keep original name if we can't resolve
+                    qualified_list.append(name)
+            else:
+                # No duplicates, keep original name
+                qualified_list.append(name)
+        
+        return qualified_list
+    
+    @staticmethod
+    def _get_duplicate_names_from_index(index_cache: Optional[Dict[str, Any]] = None) -> Dict[str, set]:
+        """
+        Extract duplicate function and class names from index cache.
+        
+        Args:
+            index_cache: Optional index cache
+            
+        Returns:
+            Dictionary with 'functions' and 'classes' sets of duplicate names
+        """
+        duplicates = {'functions': set(), 'classes': set()}
+        
+        if not index_cache:
+            return duplicates
+        
+        try:
+            # Create a temporary CodeIndex-like object for duplicate detection
+            from ..indexing.models import CodeIndex
+            
+            # Convert index_cache to CodeIndex format if needed
+            if isinstance(index_cache, dict) and 'lookups' in index_cache and index_cache['lookups'] is not None:
+                # Validate lookups structure before creating CodeIndex
+                lookups = index_cache.get('lookups', {})
+                if not isinstance(lookups, dict):
+                    return duplicates
+                
+                temp_index = CodeIndex(
+                    project_metadata=index_cache.get('project_metadata', {}),
+                    directory_tree=index_cache.get('directory_tree', {}),
+                    files=index_cache.get('files', []),
+                    lookups=lookups,
+                    reverse_lookups=index_cache.get('reverse_lookups', {}),
+                    special_files=index_cache.get('special_files', {}),
+                    index_metadata=index_cache.get('index_metadata', {})
+                )
+                
+                # Detect duplicates with additional error handling
+                duplicate_functions = detect_duplicate_functions(temp_index)
+                duplicate_classes = detect_duplicate_classes(temp_index)
+                
+                duplicates['functions'] = set(duplicate_functions.keys())
+                duplicates['classes'] = set(duplicate_classes.keys())
+                
+        except (ImportError, AttributeError, KeyError, TypeError):
+            # If we can't detect duplicates, return empty sets
+            pass
+        
+        return duplicates
     
     @staticmethod
     def success_response(message: str, data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -116,15 +209,15 @@ class ResponseFormatter:
         size_bytes: int,
         extension: str,
         language: str = "unknown",
-        functions: Optional[List[str]] = None,
-        classes: Optional[List[str]] = None,
-        imports: Optional[List[str]] = None,
+        functions: Optional[Union[List[str], List[Dict[str, Any]]]] = None,
+        classes: Optional[Union[List[str], List[Dict[str, Any]]]] = None,
+        imports: Optional[Union[List[str], List[Dict[str, Any]]]] = None,
         language_specific: Optional[Dict[str, Any]] = None,
-        from_index: bool = False,
-        error: Optional[str] = None
+        error: Optional[str] = None,
+        index_cache: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
-        Format file summary response.
+        Format file summary response from index data.
         
         Args:
             file_path: Path to the file
@@ -132,27 +225,83 @@ class ResponseFormatter:
             size_bytes: File size in bytes
             extension: File extension
             language: Programming language detected
-            functions: List of function names found
-            classes: List of class names found
-            imports: List of import statements
+            functions: List of function names (strings) or complete function objects (dicts)
+            classes: List of class names (strings) or complete class objects (dicts)
+            imports: List of import statements (strings) or complete import objects (dicts)
             language_specific: Language-specific analysis data
-            from_index: Whether data came from index cache
             error: Error message if analysis failed
+            index_cache: Optional index cache for duplicate name resolution
             
         Returns:
             Formatted file summary response
         """
+        # Get duplicate names from index for qualified name resolution
+        duplicate_names = ResponseFormatter._get_duplicate_names_from_index(index_cache)
+        
+        # Handle backward compatibility for functions
+        processed_functions = []
+        if functions:
+            for func in functions:
+                if isinstance(func, str):
+                    # Legacy format - convert string to basic object
+                    processed_functions.append({"name": func})
+                elif isinstance(func, dict):
+                    # New format - use complete object and resolve qualified names in relationships
+                    processed_func = func.copy()
+                    
+                    # Resolve qualified names in relationship fields
+                    if 'calls' in processed_func and isinstance(processed_func['calls'], list):
+                        processed_func['calls'] = ResponseFormatter._resolve_qualified_names_in_relationships(
+                            file_path, processed_func['calls'], duplicate_names['functions'], index_cache
+                        )
+                    
+                    if 'called_by' in processed_func and isinstance(processed_func['called_by'], list):
+                        processed_func['called_by'] = ResponseFormatter._resolve_qualified_names_in_relationships(
+                            file_path, processed_func['called_by'], duplicate_names['functions'], index_cache
+                        )
+                    
+                    processed_functions.append(processed_func)
+        
+        # Handle backward compatibility for classes
+        processed_classes = []
+        if classes:
+            for cls in classes:
+                if isinstance(cls, str):
+                    # Legacy format - convert string to basic object
+                    processed_classes.append({"name": cls})
+                elif isinstance(cls, dict):
+                    # New format - use complete object and resolve qualified names in relationships
+                    processed_cls = cls.copy()
+                    
+                    # Resolve qualified names in relationship fields
+                    if 'instantiated_by' in processed_cls and isinstance(processed_cls['instantiated_by'], list):
+                        processed_cls['instantiated_by'] = ResponseFormatter._resolve_qualified_names_in_relationships(
+                            file_path, processed_cls['instantiated_by'], duplicate_names['functions'], index_cache
+                        )
+                    
+                    processed_classes.append(processed_cls)
+        
+        # Handle backward compatibility for imports
+        processed_imports = []
+        if imports:
+            for imp in imports:
+                if isinstance(imp, str):
+                    # Legacy format - convert string to basic object
+                    processed_imports.append({"module": imp, "import_type": "unknown"})
+                elif isinstance(imp, dict):
+                    # New format - use complete object
+                    processed_imports.append(imp)
+        
         response = {
             "file_path": file_path,
             "line_count": line_count,
             "size_bytes": size_bytes,
             "extension": extension,
             "language": language,
-            "functions": functions or [],
-            "classes": classes or [],
-            "imports": imports or [],
-            "language_specific": language_specific or {},
-            "from_index": from_index
+            "functions": processed_functions,
+            "classes": processed_classes,
+            "imports": processed_imports,
+            "language_specific": language_specific or {}
         }
         
         if error:
