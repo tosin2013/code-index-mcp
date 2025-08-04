@@ -41,6 +41,12 @@
 - **其他語言**：Lua、Perl、R、MATLAB、配置檔案
 - **共 50+ 種檔案類型** - [查看完整列表](#支援的檔案類型)
 
+### ⚡ **即時監控與自動刷新**
+- **檔案監控器**：檔案變更時自動更新索引
+- **跨平台**：原生作業系統檔案系統監控 (inotify、FSEvents、ReadDirectoryChangesW)
+- **智慧防抖**：批次處理快速變更以防止過度重建（預設：6 秒）
+- **執行緒安全**：使用 ThreadPoolExecutor 進行非阻塞背景操作
+
 ### ⚡ **效能與效率**
 - **智慧索引**：遞迴掃描並智慧篩選建構目錄
 - **持久快取**：儲存索引以實現超快速的後續存取
@@ -128,7 +134,7 @@
 
 在任何相容 MCP 的應用程式中開始使用的最簡單方法：
 
-**先決條件：** Python 3.10+ 和 [uv](https://github.com/astral-sh/uv) 已安裝
+**先決條件：** Python 3.10+、[uv](https://github.com/astral-sh/uv) 和用於檔案監控的 [watchdog](https://pypi.org/project/watchdog/) 已安裝
 
 1. **新增到您的 MCP 配置**（例如 `claude_desktop_config.json` 或 `~/.claude.json`）：
    ```json
@@ -211,6 +217,12 @@ pip install code-index-mcp
 | **`find_files`** | 使用萬用字元模式尋找檔案（例如 `**/*.py`） |
 | **`get_file_summary`** | 分析檔案結構、函式、匯入和複雜度 |
 
+### 🔄 **監控與自動刷新**
+| 工具 | 描述 |
+|------|------|
+| **`get_file_watcher_status`** | 檢查檔案監控器狀態和配置 |
+| **`configure_file_watcher`** | 啟用/停用自動刷新並配置設定 |
+
 ### 🛠️ **系統與維護**
 | 工具 | 描述 |
 |------|------|
@@ -270,6 +282,16 @@ pip install code-index-mcp
 只在 Python 檔案中搜尋 "API_ENDPOINT"
 ```
 *使用：`search_code_advanced`，`file_pattern: "*.py"`*
+
+</details>
+
+<details>
+<summary><strong>自動刷新配置</strong></summary>
+
+```
+配置檔案變更時的自動索引更新
+```
+*使用：`configure_file_watcher` 啟用/停用監控並設定防抖時間*
 
 </details>
 

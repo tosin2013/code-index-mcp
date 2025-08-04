@@ -41,6 +41,12 @@ Code Index MCP is a [Model Context Protocol](https://modelcontextprotocol.io) se
 - **Others**: Lua, Perl, R, MATLAB, configuration files
 - **50+ File Types Total** - [View complete list](#supported-file-types)
 
+### ⚡ **Real-time Monitoring & Auto-refresh**
+- **File Watcher**: Automatic index updates when files change
+- **Cross-platform**: Native OS file system monitoring (inotify, FSEvents, ReadDirectoryChangesW)
+- **Smart Debouncing**: Batches rapid changes to prevent excessive rebuilds (default: 6 seconds)
+- **Thread-safe**: Non-blocking background operations with ThreadPoolExecutor
+
 ### ⚡ **Performance & Efficiency**
 - **Smart Indexing**: Recursively scans with intelligent filtering of build directories
 - **Persistent Caching**: Stores indexes for lightning-fast subsequent access
@@ -128,7 +134,7 @@ Code Index MCP is a [Model Context Protocol](https://modelcontextprotocol.io) se
 
 The easiest way to get started with any MCP-compatible application:
 
-**Prerequisites:** Python 3.10+ and [uv](https://github.com/astral-sh/uv) installed
+**Prerequisites:** Python 3.10+, [uv](https://github.com/astral-sh/uv), and [watchdog](https://pypi.org/project/watchdog/) for file monitoring
 
 1. **Add to your MCP configuration** (e.g., `claude_desktop_config.json` or `~/.claude.json`):
    ```json
@@ -211,6 +217,12 @@ Then configure:
 | **`find_files`** | Locate files using glob patterns (e.g., `**/*.py`) |
 | **`get_file_summary`** | Analyze file structure, functions, imports, and complexity |
 
+### 🔄 **Monitoring & Auto-refresh**
+| Tool | Description |
+|------|-------------|
+| **`get_file_watcher_status`** | Check file watcher status and configuration |
+| **`configure_file_watcher`** | Enable/disable auto-refresh and configure settings |
+
 ### 🛠️ **System & Maintenance**
 | Tool | Description |
 |------|-------------|
@@ -270,6 +282,16 @@ Find authentication-related functions with fuzzy search for 'authUser'
 Search for "API_ENDPOINT" only in Python files
 ```
 *Uses: `search_code_advanced` with `file_pattern: "*.py"`*
+
+</details>
+
+<details>
+<summary><strong>Auto-refresh Configuration</strong></summary>
+
+```
+Configure automatic index updates when files change
+```
+*Uses: `configure_file_watcher` to enable/disable monitoring and set debounce timing*
 
 </details>
 

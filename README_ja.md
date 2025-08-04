@@ -41,6 +41,12 @@ Code Index MCPは、AIモデルと複雑なコードベースの橋渡しをす�
 - **その他の言語**：Lua、Perl、R、MATLAB、設定ファイル
 - **合計50+ファイルタイプ** - [完全なリストを表示](#サポートされているファイルタイプ)
 
+### ⚡ **リアルタイム監視・自動更新**
+- **ファイルウォッチャー**：ファイル変更時の自動インデックス更新
+- **クロスプラットフォーム**：ネイティブOS ファイルシステム監視 (inotify、FSEvents、ReadDirectoryChangesW)
+- **スマートデバウンス**：急速な変更をバッチ処理して過度な再構築を防止（デフォルト：6秒）
+- **スレッドセーフ**：ThreadPoolExecutor による非ブロッキングバックグラウンド操作
+
 ### ⚡ **パフォーマンス・効率性**
 - **スマートインデックス作成**：ビルドディレクトリをインテリジェントにフィルタリングしながら再帰的スキャン
 - **永続キャッシュ**：超高速な後続アクセスのためのインデックス保存
@@ -128,7 +134,7 @@ Code Index MCPは、AIモデルと複雑なコードベースの橋渡しをす�
 
 任意のMCP対応アプリケーションで開始する最も簡単な方法：
 
-**前提条件：** Python 3.10+ と [uv](https://github.com/astral-sh/uv) がインストール済み
+**前提条件：** Python 3.10+、[uv](https://github.com/astral-sh/uv)、ファイル監視用の [watchdog](https://pypi.org/project/watchdog/) がインストール済み
 
 1. **MCP設定に追加**（例：`claude_desktop_config.json` または `~/.claude.json`）：
    ```json
@@ -211,6 +217,12 @@ pip install code-index-mcp
 | **`find_files`** | globパターンを使用したファイル検索（例：`**/*.py`） |
 | **`get_file_summary`** | ファイル構造、関数、インポート、複雑度の解析 |
 
+### 🔄 **監視・自動更新**
+| ツール | 説明 |
+|--------|------|
+| **`get_file_watcher_status`** | ファイルウォッチャーの状態と設定を確認 |
+| **`configure_file_watcher`** | 自動更新の有効化/無効化と設定の構成 |
+
 ### 🛠️ **システム・メンテナンス**
 | ツール | 説明 |
 |--------|------|
@@ -270,6 +282,16 @@ src/api/userService.ts の要約を教えてください
 Pythonファイルのみで "API_ENDPOINT" を検索してください
 ```
 *使用ツール：`search_code_advanced`、`file_pattern: "*.py"`*
+
+</details>
+
+<details>
+<summary><strong>自動更新設定</strong></summary>
+
+```
+ファイル変更時の自動インデックス更新を設定してください
+```
+*使用ツール：`configure_file_watcher` で監視の有効化/無効化とデバウンス時間を設定*
 
 </details>
 
