@@ -167,7 +167,7 @@ Code Index MCPは、AIモデルと複雑なコードベースの橋渡しをす�
      "mcpServers": {
        "code-index": {
          "command": "uv",
-         "args": ["run", "code_index_mcp"]
+         "args": ["run", "code-index-mcp"]
        }
      }
    }
@@ -175,7 +175,7 @@ Code Index MCPは、AIモデルと複雑なコードベースの橋渡しをす�
 
 3. **MCP Inspectorでデバッグ：**
    ```bash
-   npx @modelcontextprotocol/inspector uv run code_index_mcp
+   npx @modelcontextprotocol/inspector uv run code-index-mcp
    ```
 
 <details>
@@ -321,7 +321,7 @@ Pythonファイルのみで "API_ENDPOINT" を検索してください
 git clone https://github.com/johnhuang316/code-index-mcp.git
 cd code-index-mcp
 uv sync
-uv run code_index_mcp
+uv run code-index-mcp
 ```
 
 ### 🐛 **デバッグ**
