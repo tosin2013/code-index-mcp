@@ -134,9 +134,7 @@
 
 在任何相容 MCP 的應用程式中開始使用的最簡單方法：
 
-**先決條件：** Python 3.10+、[uv](https://github.com/astral-sh/uv) 和用於檔案監控的 [watchdog](https://pypi.org/project/watchdog/) 已安裝
-
-> **⚠️ 自動刷新問題：** 如果設定後自動索引更新無法運作，請嘗試 `pip install watchdog`。這可能是由於環境隔離導致檔案系統監控無法正常運作。詳情請參閱 [故障排除](#故障排除)。
+**先決條件：** Python 3.10+ 和 [uv](https://github.com/astral-sh/uv)
 
 1. **新增到您的 MCP 配置**（例如 `claude_desktop_config.json` 或 `~/.claude.json`）：
    ```json
@@ -311,20 +309,8 @@ pip install code-index-mcp
 
 ### 🔄 **自動刷新無法運作**
 
-如果檔案變更時自動索引更新無法運作，這可能與 `watchdog` 依賴項的環境隔離問題有關。
-
-**快速解決方案：**
-```bash
-pip install watchdog
-```
-
-**我們懷疑發生的情況：**
-- `uvx` 環境提供隔離的依賴管理
-- 在某些系統上（特別是 Windows），環境隔離可能會阻止 `watchdog` 正確存取檔案系統監控 API
-- 在系統 Python 環境中安裝 `watchdog` 似乎可以解決此問題，同時維持 `uvx` 隔離的所有其他優點
-- 這仍在調查中，但上述解決方法應該能讓您立即恢復工作
-
-**替代解決方案：**
+如果檔案變更時自動索引更新無法運作，請嘗試：
+- `pip install watchdog`（可能解決環境隔離問題）
 - 使用手動刷新：在檔案變更後呼叫 `refresh_index` 工具
 - 檢查檔案監視器狀態：使用 `get_file_watcher_status` 驗證監控是否處於活動狀態
 
