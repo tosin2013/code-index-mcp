@@ -8,9 +8,11 @@ and index refresh operations.
 import fnmatch
 import json
 import logging
+import os
 import threading
 import time
-from typing import Dict, Any, Optional, Callable
+import traceback
+from typing import Dict, Any
 from mcp.server.fastmcp import Context
 
 from .base_service import BaseService
@@ -98,13 +100,14 @@ class IndexService(BaseService):
         if not self.index_cache:
             self._index_project(self.base_path)
 
-        # Search using current index
+        # Search using directory tree
         matching_files = []
-        if self.index_cache and 'files' in self.index_cache:
-            for file_entry in self.index_cache['files']:
-                file_path = file_entry.get('path', '')
-                if fnmatch.fnmatch(file_path, pattern):
-                    matching_files.append(file_path)
+        if self.index_cache and 'directory_tree' in self.index_cache:
+            matching_files = self._search_directory_tree(
+                self.index_cache['directory_tree'],
+                pattern,
+                ""
+            )
 
         # Return results - file watcher now handles all index updates proactively
         return ResponseFormatter.file_list_response(
@@ -220,15 +223,13 @@ class IndexService(BaseService):
                     file_count = self._index_project(self.base_path)
                     
                     duration = time.time() - start_time
-                    message = f"Background rebuild completed in {duration:.2f}s with {file_count} files"
-                    self.logger.info(message)
+                    self.logger.info("Background rebuild completed in %.2fs with %d files", 
+                                    duration, file_count)
                     
                     return True
                     
                 except Exception as e:
-                    error_msg = f"Background rebuild failed: {e}"
-                    self.logger.error(error_msg)
-                    import traceback
+                    self.logger.error("Background rebuild failed: %s", e)
                     self.logger.error("Traceback: %s", traceback.format_exc())
                     return False
                 finally:
@@ -249,7 +250,7 @@ class IndexService(BaseService):
                     else:
                         self.logger.error("Background rebuild failed")
                 except Exception as e:
-                    self.logger.error(f"Background rebuild thread failed: {e}")
+                    self.logger.error("Background rebuild thread failed: %s", e)
             
             future.add_done_callback(on_complete)
             
@@ -261,8 +262,7 @@ class IndexService(BaseService):
             with self._rebuild_lock:
                 self.is_rebuilding = False
             
-            self.logger.error(f"Failed to start background rebuild: {e}")
-            import traceback
+            self.logger.error("Failed to start background rebuild: %s", e)
             self.logger.error("Traceback: %s", traceback.format_exc())
             return False
     
@@ -293,3 +293,40 @@ class IndexService(BaseService):
             "is_rebuilding": is_rebuilding,
             "index_cache_size": len(self.index_cache.get('files', [])) if self.index_cache else 0
         }
+    
+    def _search_directory_tree(self, tree: dict, pattern: str, current_path: str) -> list:
+        """
+        Search files in directory tree using glob pattern.
+
+        Args:
+            tree: Directory tree dictionary
+            pattern: Glob pattern to match
+            current_path: Current path being traversed
+
+        Returns:
+            List of matching file paths
+        """
+        matching_files = []
+
+        for name, subtree in tree.items():
+            # Build the full path using forward slashes for consistency
+            if current_path:
+                full_path = f"{current_path}/{name}"
+            else:
+                full_path = name
+
+            if subtree is None:
+                # This is a file
+                # Try matching against full path
+                if fnmatch.fnmatch(full_path, pattern):
+                    matching_files.append(full_path)
+                # Also try matching against just the filename
+                elif fnmatch.fnmatch(name, pattern):
+                    matching_files.append(full_path)
+            else:
+                # This is a directory, recurse into it
+                matching_files.extend(
+                    self._search_directory_tree(subtree, pattern, full_path)
+                )
+
+        return matching_files
