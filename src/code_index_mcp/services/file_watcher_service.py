@@ -371,13 +371,37 @@ class DebounceEventHandler(FileSystemEventHandler):
             self.logger.debug(f"Skipping directory event: {event.src_path}")
             return False
 
+        # For moved events, check destination path (final file location)
+        # This handles cases where editors create temp files and move them to final location
+        if event.event_type == 'moved' and hasattr(event, 'dest_path'):
+            self.logger.debug(f"Move event detected: {event.src_path} -> {event.dest_path}")
+            try:
+                dest_path = Path(event.dest_path)
+                if self._should_process_path(dest_path):
+                    self.logger.debug(f"Move event will be processed based on destination: {event.dest_path}")
+                    return True
+            except Exception as e:
+                self.logger.debug(f"Path conversion failed for dest_path {event.dest_path}: {e}")
+
+        # Check source path for all event types
         try:
             path = Path(event.src_path)
+            return self._should_process_path(path)
         except Exception as e:
             # Handle any path conversion issues
             self.logger.debug(f"Path conversion failed for {event.src_path}: {e}")
             return False
 
+    def _should_process_path(self, path: Path) -> bool:
+        """
+        Check if a specific path should trigger index rebuild.
+
+        Args:
+            path: The file path to check
+
+        Returns:
+            True if path should trigger rebuild, False otherwise
+        """
         # Log detailed filtering steps
         self.logger.debug(f"Checking path: {path}")
         
@@ -399,7 +423,7 @@ class DebounceEventHandler(FileSystemEventHandler):
         if is_temp:
             return False
 
-        self.logger.debug(f"Event will be processed: {event.src_path}")
+        self.logger.debug(f"Event will be processed: {path}")
         return True
 
     def is_excluded_path(self, path: Path) -> bool:
