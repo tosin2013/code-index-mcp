@@ -136,7 +136,7 @@ The easiest way to get started with any MCP-compatible application:
 
 **Prerequisites:** Python 3.10+, [uv](https://github.com/astral-sh/uv), and [watchdog](https://pypi.org/project/watchdog/) for file monitoring
 
-> **⚠️ Auto-refresh Issue:** If automatic index updates don't work after setup, try `pip install watchdog`. This may be due to environment isolation preventing file system monitoring. See [Troubleshooting](#troubleshooting) for details.
+> **⚠️ Auto-refresh Issue (Windows):** If automatic index updates don't work after setup on Windows, try `pip install watchdog`. This is a known Windows-specific issue with environment isolation preventing file system monitoring. macOS and Linux users typically don't encounter this issue. See [Troubleshooting](#troubleshooting) for details.
 
 1. **Add to your MCP configuration** (e.g., `claude_desktop_config.json` or `~/.claude.json`):
    ```json
@@ -318,11 +318,11 @@ If the automatic index updates aren't working when files change, this may be rel
 pip install watchdog
 ```
 
-**What we suspect is happening:**
-- The `uvx` environment provides isolated dependency management
-- On some systems (particularly Windows), environment isolation may prevent `watchdog` from accessing the file system monitoring APIs properly
-- Installing `watchdog` in your system Python environment appears to resolve this issue while maintaining all other benefits of `uvx` isolation
-- This is still under investigation, but the workaround above should get you working immediately
+**What we've found:**
+- **Windows**: Environment isolation may prevent `watchdog` from accessing file system monitoring APIs properly
+- **macOS/Linux**: File watcher typically works out-of-the-box with `uvx` without additional setup
+- Installing `watchdog` in your system Python environment resolves Windows issues while maintaining `uvx` isolation benefits
+- This appears to be a Windows-specific compatibility issue with `uvx` environments
 
 **Alternative solutions:**
 - Use manual refresh: Call the `refresh_index` tool after making file changes
