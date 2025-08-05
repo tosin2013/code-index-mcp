@@ -177,7 +177,7 @@ For contributing or local development:
 
 3. **Debug with MCP Inspector:**
    ```bash
-   npx @modelcontextprotocol/inspector uv run code_index_mcp
+   npx @modelcontextprotocol/inspector uv run code-index-mcp
    ```
 
 <details>
@@ -335,7 +335,7 @@ pip install watchdog
 git clone https://github.com/johnhuang316/code-index-mcp.git
 cd code-index-mcp
 uv sync
-uv run code_index_mcp
+uv run code-index-mcp
 ```
 
 ### 🐛 **Debugging**

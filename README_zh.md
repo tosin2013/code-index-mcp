@@ -169,7 +169,7 @@
      "mcpServers": {
        "code-index": {
          "command": "uv",
-         "args": ["run", "code_index_mcp"]
+         "args": ["run", "code-index-mcp"]
        }
      }
    }
@@ -177,7 +177,7 @@
 
 3. **使用 MCP Inspector 除錯：**
    ```bash
-   npx @modelcontextprotocol/inspector uv run code_index_mcp
+   npx @modelcontextprotocol/inspector uv run code-index-mcp
    ```
 
 <details>
@@ -335,7 +335,7 @@ pip install watchdog
 git clone https://github.com/johnhuang316/code-index-mcp.git
 cd code-index-mcp
 uv sync
-uv run code_index_mcp
+uv run code-index-mcp
 ```
 
 ### 🐛 **除錯**
