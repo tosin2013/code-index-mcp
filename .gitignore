@@ -38,8 +38,6 @@ Thumbs.db
 # Code Index MCP specific files
 .code_indexer/
 
-# Test files
-test_*.py
 
 # Claude Code generated files
 CLAUDE.local.md
@@ -47,6 +45,7 @@ CLAUDE.local.md
 .claude_chat/
 claude_*
 COMMIT_MESSAGE.txt
+RELEASE_NOTE.txt
 
 .llm-context/
 .kiro/

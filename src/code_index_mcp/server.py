@@ -171,20 +171,21 @@ def search_code_advanced(
 @handle_mcp_tool_errors(return_type='dict')
 def find_files(pattern: str, ctx: Context) -> Dict[str, Any]:
     """
-    Find files matching a glob pattern. Auto-refreshes index if no results found.
+    Find files matching a glob pattern using efficient directory tree traversal.
 
     Use when:
     - Looking for files by pattern (e.g., "*.py", "test_*.js", "src/**/*.ts")
+    - Searching by filename only (e.g., "README.md" finds all README files)
     - Checking if specific files exist in the project
     - Getting file lists for further analysis
 
-    Auto-refresh behavior:
-    - If no files found, automatically refreshes index once and retries
-    - Rate limited to once every 5 seconds to avoid excessive refreshes
-    - Manual refresh_index tool is always available without rate limits
+    Pattern matching:
+    - Supports both full path and filename-only matching
+    - Uses forward slashes consistently across all platforms
+    - Efficient directory tree traversal for better performance
 
     Args:
-        pattern: Glob pattern to match files (e.g., "*.py", "test_*.js")
+        pattern: Glob pattern to match files (e.g., "*.py", "test_*.js", "README.md")
 
     Returns:
         Dictionary with files list and status information
