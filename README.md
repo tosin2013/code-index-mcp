@@ -167,7 +167,7 @@ For contributing or local development:
      "mcpServers": {
        "code-index": {
          "command": "uv",
-         "args": ["run", "code_index_mcp"]
+         "args": ["run", "code-index-mcp"]
        }
      }
    }
