@@ -371,25 +371,23 @@ class DebounceEventHandler(FileSystemEventHandler):
             self.logger.debug(f"Skipping directory event: {event.src_path}")
             return False
 
-        # For moved events, check destination path (final file location)
-        # This handles cases where editors create temp files and move them to final location
-        if event.event_type == 'moved' and hasattr(event, 'dest_path'):
-            self.logger.debug(f"Move event detected: {event.src_path} -> {event.dest_path}")
-            try:
-                dest_path = Path(event.dest_path)
-                if self._should_process_path(dest_path):
-                    self.logger.debug(f"Move event will be processed based on destination: {event.dest_path}")
-                    return True
-            except Exception as e:
-                self.logger.debug(f"Path conversion failed for dest_path {event.dest_path}: {e}")
-
-        # Check source path for all event types
+        # Select path to check: dest_path for moves, src_path for others
+        if event.event_type == 'moved':
+            if not hasattr(event, 'dest_path'):
+                self.logger.debug("Move event missing dest_path")
+                return False
+            target_path = event.dest_path
+            self.logger.debug(f"Move event: checking destination path {target_path}")
+        else:
+            target_path = event.src_path
+            self.logger.debug(f"{event.event_type} event: checking source path {target_path}")
+        
+        # Unified path checking
         try:
-            path = Path(event.src_path)
+            path = Path(target_path)
             return self._should_process_path(path)
         except Exception as e:
-            # Handle any path conversion issues
-            self.logger.debug(f"Path conversion failed for {event.src_path}: {e}")
+            self.logger.debug(f"Path conversion failed for {target_path}: {e}")
             return False
 
     def _should_process_path(self, path: Path) -> bool:
