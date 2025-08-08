@@ -6,14 +6,19 @@ and project structure operations.
 """
 
 import asyncio
+import concurrent.futures
 import os
 import json
+import time
 from mcp.server.fastmcp import Context
 
 from .base_service import BaseService
 from ..utils import ValidationHelper, ResponseFormatter
 from ..project_settings import ProjectSettings
 from ..constants import SUPPORTED_EXTENSIONS
+from .file_watcher_service import FileWatcherService
+from .index_service import IndexService
+from ..indexing import IndexBuilder
 
 
 class ProjectService(BaseService):
@@ -46,17 +51,17 @@ class ProjectService(BaseService):
             # Get existing file watcher from context
             if (hasattr(self.ctx.request_context.lifespan_context, 'file_watcher_service') and
                 self.ctx.request_context.lifespan_context.file_watcher_service):
-                
+
                 old_watcher = self.ctx.request_context.lifespan_context.file_watcher_service
                 print("Stopping existing file watcher...")
-                
+
                 # Stop monitoring
                 old_watcher.stop_monitoring()
-                
+
                 # Clear reference
                 self.ctx.request_context.lifespan_context.file_watcher_service = None
                 print("Existing file watcher stopped successfully")
-                
+
         except Exception as e:
             print(f"Warning: Error stopping existing file watcher: {e}")
             # Continue anyway - we'll create a new one
@@ -64,27 +69,24 @@ class ProjectService(BaseService):
     async def _start_new_file_watcher_with_retry(self, max_retries: int = 3) -> bool:
         """
         Start a new file watcher with retry logic.
-        
+
         Args:
             max_retries: Maximum number of retry attempts
-            
+
         Returns:
             True if file watcher started successfully, False otherwise
         """
-        from .file_watcher_service import FileWatcherService
-        from .index_service import IndexService
-        
         for attempt in range(max_retries):
             try:
                 print(f"Starting file watcher (attempt {attempt + 1}/{max_retries})...")
-                
+
                 # Create services
                 file_watcher = FileWatcherService(self.ctx)
                 index_service = IndexService(self.ctx)
                 success = file_watcher.start_monitoring(
                     rebuild_callback=index_service.start_background_rebuild
                 )
-                
+
                 if success:
                     # Store in context
                     self.ctx.request_context.lifespan_context.file_watcher_service = file_watcher
@@ -92,14 +94,14 @@ class ProjectService(BaseService):
                     return True
                 else:
                     print(f"File watcher failed to start (attempt {attempt + 1})")
-                    
+
             except Exception as e:
                 print(f"Error starting file watcher (attempt {attempt + 1}): {e}")
-                
+
                 # Wait before retry (except for last attempt)
                 if attempt < max_retries - 1:
                     await asyncio.sleep(1)
-        
+
         # All attempts failed
         print(f"File watcher failed to start after {max_retries} attempts")
         return False
@@ -107,23 +109,21 @@ class ProjectService(BaseService):
     def _record_file_watcher_error(self, message: str) -> None:
         """
         Record file watcher error for LLM notification.
-        
+
         Args:
             message: Error message to record
         """
-        import time
-        
         error_info = {
             'status': 'failed',
             'message': f'{message}. Auto-refresh disabled. Please use manual refresh.',
             'timestamp': time.time(),
             'manual_refresh_required': True
         }
-        
+
         # Store error in context for status reporting
         if hasattr(self.ctx.request_context.lifespan_context, '__dict__'):
             self.ctx.request_context.lifespan_context.file_watcher_error = error_info
-        
+
         print(f"WARNING: File watcher error: {message}")
         print("   Auto-refresh is disabled. Use refresh_index for manual updates.")
 
@@ -143,21 +143,18 @@ class ProjectService(BaseService):
             ValueError: If path is invalid or initialization fails
         """
         # Run async logic synchronously
-        import asyncio
-        
         try:
             # Check if we're in an async context
-            loop = asyncio.get_running_loop()
+            asyncio.get_running_loop()
             # If we're in an async context, we need to run in a separate thread
-            import concurrent.futures
-            
+
             def run_async():
                 return asyncio.run(self._initialize_project_with_lock(path))
-            
+
             with concurrent.futures.ThreadPoolExecutor() as executor:
                 future = executor.submit(run_async)
                 return future.result(timeout=60)  # 60 second timeout
-                
+
         except RuntimeError:
             # No event loop running, we can use asyncio.run directly
             return asyncio.run(self._initialize_project_with_lock(path))
@@ -236,7 +233,7 @@ class ProjectService(BaseService):
 
                 # Step 4: Start new file watcher with retry
                 watcher_success = await self._start_new_file_watcher_with_retry()
-                
+
                 # Step 5: Record file watcher status
                 if not watcher_success:
                     self._record_file_watcher_error("Failed to start file watcher after loading existing index")
@@ -269,7 +266,7 @@ class ProjectService(BaseService):
 
         # Step 4: Start new file watcher with retry
         watcher_success = await self._start_new_file_watcher_with_retry()
-        
+
         # Step 5: Record file watcher status
         if not watcher_success:
             self._record_file_watcher_error("Failed to start file watcher after building new index")
@@ -355,9 +352,6 @@ class ProjectService(BaseService):
         """
         print(f"Building index for project: {base_path}")
 
-        # Import here to avoid circular imports
-        from ..indexing import IndexBuilder
-
         builder = IndexBuilder()
         code_index = builder.build_index(base_path)
 
@@ -380,4 +374,3 @@ class ProjectService(BaseService):
 
         print(f"Index built successfully with {file_count} files")
         return file_count
-

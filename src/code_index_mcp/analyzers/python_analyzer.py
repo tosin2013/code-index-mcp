@@ -26,7 +26,7 @@ class PythonAnalyzer(LanguageAnalyzer):
         # Python-specific analysis
         for i, line in enumerate(lines):
             line = line.strip()
-            
+
             # Skip empty lines and comments
             if not line or line.startswith('#'):
                 continue
@@ -46,4 +46,3 @@ class PythonAnalyzer(LanguageAnalyzer):
                 result.add_symbol("function", func_name, i + 1)
 
         return result
-

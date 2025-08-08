@@ -23,7 +23,7 @@ class SearchService(BaseService):
     - Search capabilities reporting
     """
 
-    
+
     def search_code(  # pylint: disable=too-many-arguments
         self,
         pattern: str,
@@ -95,7 +95,7 @@ class SearchService(BaseService):
         except Exception as e:
             raise ValueError(f"Search failed using '{strategy.name}': {e}") from e
 
-    
+
     def refresh_search_tools(self) -> str:
         """
         Refresh the available search tools.
@@ -118,7 +118,7 @@ class SearchService(BaseService):
         preferred = config['preferred_tool']
         return f"Search tools refreshed. Available: {available}. Preferred: {preferred}."
 
-    
+
     def get_search_capabilities(self) -> Dict[str, Any]:
         """
         Get information about search capabilities and available tools.

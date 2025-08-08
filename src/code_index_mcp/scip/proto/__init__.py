@@ -1,0 +1,1 @@
+"""SCIP Protocol Buffer definitions and utilities."""

@@ -5,6 +5,7 @@ This service handles index building, management, file discovery,
 and index refresh operations.
 """
 
+import concurrent.futures
 import fnmatch
 import json
 import logging
@@ -17,6 +18,7 @@ from mcp.server.fastmcp import Context
 
 from .base_service import BaseService
 from ..utils import ValidationHelper, ResponseFormatter
+from ..indexing import IndexBuilder
 
 
 class IndexService(BaseService):
@@ -112,7 +114,7 @@ class IndexService(BaseService):
         # Return results - file watcher now handles all index updates proactively
         return ResponseFormatter.file_list_response(
             matching_files,
-            f"✅ Found {len(matching_files)} files"
+            f" Found {len(matching_files)} files"
         )
 
     def get_index_stats(self) -> Dict[str, Any]:
@@ -153,9 +155,6 @@ class IndexService(BaseService):
         """
         print(f"Building index for project: {base_path}")
 
-        # Import here to avoid circular imports
-        from ..indexing import IndexBuilder
-
         builder = IndexBuilder()
         code_index = builder.build_index(base_path)
 
@@ -182,52 +181,50 @@ class IndexService(BaseService):
     def start_background_rebuild(self) -> bool:
         """
         Start index rebuild in background without blocking searches.
-        
+
         This method can be called from any thread (including file watcher threads).
         Uses a persistent ThreadPoolExecutor with proper concurrency control.
-        
+
         Returns:
             True if rebuild started, False if already in progress
         """
         self.logger.debug("start_background_rebuild called")
-        
+
         # Atomic check-and-set with proper locking
         with self._rebuild_lock:
             if self.is_rebuilding:
                 self.logger.debug("Rebuild already in progress, skipping")
                 return False
-            
+
             # Atomically set rebuilding flag
             self.is_rebuilding = True
-        
+
         try:
-            import concurrent.futures
-            
             # Initialize executor if needed
             if self._executor is None:
                 self._executor = concurrent.futures.ThreadPoolExecutor(
-                    max_workers=1, 
+                    max_workers=1,
                     thread_name_prefix="index_rebuild"
                 )
                 self.logger.debug("Created persistent ThreadPoolExecutor for rebuilds")
-            
+
             self.logger.debug("Starting background rebuild in thread pool")
-            
+
             def run_sync_rebuild():
                 """Run the rebuild synchronously in a background thread."""
                 try:
                     start_time = time.time()
                     self.logger.debug("Starting sync index rebuild...")
-                    
+
                     # Build new index using existing sync logic
                     file_count = self._index_project(self.base_path)
-                    
+
                     duration = time.time() - start_time
-                    self.logger.info("Background rebuild completed in %.2fs with %d files", 
+                    self.logger.info("Background rebuild completed in %.2fs with %d files",
                                     duration, file_count)
-                    
+
                     return True
-                    
+
                 except Exception as e:
                     self.logger.error("Background rebuild failed: %s", e)
                     self.logger.error("Traceback: %s", traceback.format_exc())
@@ -237,10 +234,10 @@ class IndexService(BaseService):
                     with self._rebuild_lock:
                         self.is_rebuilding = False
                     self.logger.debug("Background rebuild finished, is_rebuilding set to False")
-            
+
             # Submit to persistent executor
             future = self._executor.submit(run_sync_rebuild)
-            
+
             # Add completion callback
             def on_complete(fut):
                 try:
@@ -251,25 +248,25 @@ class IndexService(BaseService):
                         self.logger.error("Background rebuild failed")
                 except Exception as e:
                     self.logger.error("Background rebuild thread failed: %s", e)
-            
+
             future.add_done_callback(on_complete)
-            
+
             self.logger.debug("Background rebuild scheduled successfully")
             return True
-            
+
         except Exception as e:
             # Reset flag on error
             with self._rebuild_lock:
                 self.is_rebuilding = False
-            
+
             self.logger.error("Failed to start background rebuild: %s", e)
             self.logger.error("Traceback: %s", traceback.format_exc())
             return False
-    
+
     def shutdown(self) -> None:
         """
         Shutdown the index service and cleanup resources.
-        
+
         This should be called when the service is no longer needed to ensure
         proper cleanup of the ThreadPoolExecutor.
         """
@@ -278,22 +275,22 @@ class IndexService(BaseService):
             self._executor.shutdown(wait=True)  # Wait for current rebuilds to complete
             self._executor = None
             self.logger.debug("ThreadPoolExecutor shutdown completed")
-    
+
     def get_rebuild_status(self) -> dict:
         """
         Get current rebuild status information.
-        
+
         Returns:
             Dictionary with rebuild status
         """
         with self._rebuild_lock:
             is_rebuilding = self.is_rebuilding
-        
+
         return {
             "is_rebuilding": is_rebuilding,
             "index_cache_size": len(self.index_cache.get('files', [])) if self.index_cache else 0
         }
-    
+
     def _search_directory_tree(self, tree: dict, pattern: str, current_path: str) -> list:
         """
         Search files in directory tree using glob pattern.

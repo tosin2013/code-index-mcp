@@ -1,0 +1,265 @@
+// SCIP (Source Code Intelligence Protocol) schema definition.
+// This is a direct copy from: https://github.com/sourcegraph/scip/blob/main/scip.proto
+
+syntax = "proto3";
+
+package scip;
+
+option go_package = "github.com/sourcegraph/scip/bindings/go/scip/v1";
+option java_package = "com.sourcegraph.scip_java";
+
+// An Index message payload represents a complete SCIP index for a workspace 
+// rooted at a single directory. An Index payload may have a large memory 
+// footprint and it's recommended to emit and consume an Index payload one 
+// field value at a time. To permit such streaming usage, the `metadata` and 
+// `documents` fields should preferably come first and each `documents` field 
+// should be emitted as a separate message.
+//
+// To reduce the memory footprint of Index messages, all Symbol values that
+// are referenced from `documents` should be de-duplicated and stored in the
+// `external_symbols` field. When consuming Index messages, the client should
+// construct a symbol table from these `external_symbols` to correctly resolve 
+// Symbol references that appear in `documents`.
+message Index {
+  Metadata metadata = 1;
+  repeated Document documents = 2;
+  repeated SymbolInformation external_symbols = 3;
+}
+
+// ProtocolVersion specifies the protocol version that should be used to
+// interpret this SCIP index. Different versions of the protocol may not
+// be backwards compatible with each other.
+enum ProtocolVersion {
+  UnspecifiedProtocolVersion = 0;
+}
+
+// Metadata contains information about the producer of the SCIP index.
+message Metadata {
+  ProtocolVersion version = 1;
+  ToolInfo tool_info = 2;
+  string project_root = 3;
+  TextDocumentEncoding text_document_encoding = 4;
+}
+
+enum TextDocumentEncoding {
+  UnspecifiedTextDocumentEncoding = 0;
+  // Use UTF-8 encoding where a 'character' corresponds to a Unicode scalar
+  // value and a 'character offset' corresponds to a byte offset in the
+  // underlying byte array.
+  UTF8 = 1;
+  // Use UTF-16 encoding where a 'character' corresponds to a Unicode code unit
+  // (which may be a high or low surrogate), and a 'character offset'
+  // corresponds to the Unicode code unit offset in the underlying byte array.
+  UTF16 = 2;
+  // Use UTF-32 encoding where a 'character' corresponds to a Unicode scalar
+  // value and a 'character offset' corresponds to a byte offset in the
+  // underlying byte array.
+  UTF32 = 3;
+}
+
+// Information about the tool that produced the SCIP index.
+message ToolInfo {
+  string name = 1;
+  string version = 2;
+  repeated string arguments = 3;
+}
+
+// A Document represents the metadata about one source file on disk.
+message Document {
+  string relative_path = 1;
+  string language = 2;
+  repeated Occurrence occurrences = 3;
+  repeated SymbolInformation symbols = 4;
+  // Optional: the text contents of this document.
+  string text = 5;
+  // Used to indicate the encoding used for the text. Should be UTF-8 
+  // if unspecified, to be compatible with editors and the JVM ecosystem.
+  PositionEncoding position_encoding = 6;
+}
+
+enum PositionEncoding {
+  UnspecifiedPositionEncoding = 0;
+  // The position encoding where columns are measured in UTF-8 byte
+  // offsets. This is the default encoding if unspecified.
+  UTF8Bytes = 1;
+  // The position encoding where columns are measured in UTF-16 code
+  // units. This encoding is supported by the Language Server Protocol
+  // and is part of many Microsoft/web ecosystems.
+  UTF16CodeUnits = 2;
+  // The position encoding where columns are measured in UTF-32 Unicode
+  // scalar values (also known as Unicode codepoints). This encoding is
+  // supported by some text editors like Emacs and the Neovim ecosystem.
+  UTF32CodeUnits = 3;
+}
+
+// An Occurrence associates source positions with symbols.
+message Occurrence {
+  Range range = 1;
+  string symbol = 2;
+  int32 symbol_roles = 3;
+  SyntaxKind syntax_kind = 4;
+  repeated Diagnostic diagnostics = 5;
+  repeated string enclosing_range = 6;
+}
+
+enum SyntaxKind {
+  UnspecifiedSyntaxKind = 0;
+  Comment = 1;
+  PunctuationDelimiter = 2;
+  PunctuationBracket = 3;
+  Keyword = 4;
+  // IdentifierKeyword corresponds to identifiers that are treated as keywords.
+  // This is needed for languages such as Go where built-in functions like
+  // `println` are identifiers but have special meaning.
+  IdentifierKeyword = 5;
+  IdentifierOperator = 6;
+  Identifier = 7;
+  IdentifierBuiltin = 8;
+  IdentifierNull = 9;
+  IdentifierConstant = 10;
+  IdentifierMutableGlobal = 11;
+  IdentifierParameter = 12;
+  IdentifierLocal = 13;
+  IdentifierShadowed = 14;
+  IdentifierNamespace = 15;
+  IdentifierFunction = 16;
+  IdentifierFunctionDefinition = 17;
+  IdentifierMacro = 18;
+  IdentifierMacroDefinition = 19;
+  IdentifierType = 20;
+  IdentifierBuiltinType = 21;
+  IdentifierAttribute = 22;
+  RegexEscape = 23;
+  RegexRepeated = 24;
+  RegexWildcard = 25;
+  RegexDelimiter = 26;
+  RegexJoin = 27;
+  StringLiteral = 28;
+  StringLiteralEscape = 29;
+  StringLiteralSpecial = 30;
+  StringLiteralKey = 31;
+  CharacterLiteral = 32;
+  NumericLiteral = 33;
+  BooleanLiteral = 34;
+  Tag = 35;
+  TagAttribute = 36;
+  TagDelimiter = 37;
+}
+
+// A Range represents source positions.
+message Range {
+  repeated int32 start = 1;
+  repeated int32 end = 2;
+}
+
+// A Diagnostic is a message associated with source positions.
+message Diagnostic {
+  Severity severity = 1;
+  string code = 2;
+  string message = 3;
+  string source = 4;
+  repeated DiagnosticTag tags = 5;
+}
+
+enum Severity {
+  UnspecifiedSeverity = 0;
+  Error = 1;
+  Warning = 2;
+  Information = 3;
+  Hint = 4;
+}
+
+enum DiagnosticTag {
+  UnspecifiedDiagnosticTag = 0;
+  Unnecessary = 1;
+  Deprecated = 2;
+}
+
+// SymbolInformation provides rich metadata about symbols in the index.
+message SymbolInformation {
+  string symbol = 1;
+  repeated string documentation = 2;
+  repeated Relationship relationships = 3;
+  SymbolKind kind = 4;
+  string display_name = 5;
+  string signature_documentation = 6;
+  repeated string enclosing_symbol = 7;
+}
+
+enum SymbolKind {
+  UnspecifiedSymbolKind = 0;
+  Array = 1;
+  Boolean = 2;
+  Class = 3;
+  Constant = 4;
+  Constructor = 5;
+  Enum = 6;
+  EnumMember = 7;
+  Event = 8;
+  Field = 9;
+  File = 10;
+  Function = 11;
+  Interface = 12;
+  Key = 13;
+  Method = 14;
+  Module = 15;
+  Namespace = 16;
+  Null = 17;
+  Number = 18;
+  Object = 19;
+  Operator = 20;
+  Package = 21;
+  Parameter = 22;
+  Property = 23;
+  String = 24;
+  Struct = 25;
+  TypeParameter = 26;
+  Unit = 27;
+  Value = 28;
+  Variable = 29;
+  // Language-specific symbol kinds. Use the `display_name` field to give
+  // the symbol a generic name.
+  AssociatedType = 30;
+  SelfParameter = 31;
+  UnknownKind = 32;
+  Trait = 33;
+  Union = 34;
+  Macro = 35;
+}
+
+// Represents a relationship between symbols.
+message Relationship {
+  string symbol = 1;
+  bool is_reference = 2;
+  bool is_implementation = 3;
+  bool is_type_definition = 4;
+  bool is_definition = 5;
+}
+
+// Symbol roles encode the relationship a symbol has to its containing document.
+// A symbol can have multiple roles. For example, a function that is being defined
+// can have both the `definition` role and the `import` role if it's imported from
+// another package.
+enum SymbolRole {
+  UnspecifiedSymbolRole = 0;
+  // Is the symbol defined here? If yes, this is considered a symbol definition.
+  Definition = 1;
+  // Is the symbol imported here? For example, the symbol `fmt` is imported in
+  // the Go code `import "fmt"`.
+  Import = 2;
+  // Is the symbol written here? For example, the symbol `variable` is written
+  // in the Go code `variable := value`.
+  Write = 4;
+  // Is the symbol read here? This is the default role for a symbol that is
+  // being referenced.
+  Read = 8;
+  // Is the symbol generated here? For example, in the Go code `type Foo struct { Name string }`,
+  // the symbol `Name` has the role `Generated | Read` for the getter function `func (x Foo) Name() string`.
+  Generated = 16;
+  // Is the symbol tested here? For example, in the Go code `func TestSomething(t *testing.T) { t.Errorf("got %s") }`,
+  // the symbols `TestSomething` and `t.Errorf` have the role `Test`.
+  Test = 32;
+  // Is the symbol for a type reference? For example, in the Go code `var x []User`,
+  // the symbol `User` has the role `Type | Read`.
+  Type = 64;
+}

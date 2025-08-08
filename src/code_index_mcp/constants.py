@@ -40,7 +40,7 @@ SUPPORTED_EXTENSIONS = [
     '.clj', '.cljs',                  # Clojure
     '.vim',                           # Vim script
     '.zig',                           # Zig
-    
+
     # Web and markup
     '.html', '.htm',                  # HTML
     '.css', '.scss', '.sass',         # Stylesheets
@@ -49,17 +49,17 @@ SUPPORTED_EXTENSIONS = [
     '.json', '.jsonc',                # JSON
     '.xml',                           # XML
     '.yml', '.yaml',                  # YAML
-    
+
     # Frontend frameworks
     '.vue',                           # Vue.js
     '.svelte',                        # Svelte
     '.astro',                         # Astro
-    
+
     # Template engines
     '.hbs', '.handlebars',            # Handlebars
     '.ejs',                           # EJS
     '.pug',                           # Pug
-    
+
     # Database and SQL
     '.sql', '.ddl', '.dml',           # SQL
     '.mysql', '.postgresql', '.psql', # Database-specific SQL
@@ -74,3 +74,4 @@ SUPPORTED_EXTENSIONS = [
     '.gql',                           # GraphQL
     '.liquibase', '.flyway',          # Migration tools
 ]
+

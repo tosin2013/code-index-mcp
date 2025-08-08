@@ -19,38 +19,38 @@ from code_index_mcp.indexing import IndexBuilder
 
 def demo_indexing():
     """Demonstrate the indexing system on the current project."""
-    print("🔍 Code Indexing System Demo")
+    print(" Code Indexing System Demo")
     print("=" * 50)
     
     # Build index for current project
     project_path = "."
-    print(f"📁 Analyzing project: {os.path.abspath(project_path)}")
+    print(f" Analyzing project: {os.path.abspath(project_path)}")
     
     builder = IndexBuilder()
     index = builder.build_index(project_path)
     
     # Display project metadata
-    print(f"\n📊 Project Metadata:")
+    print(f"\n Project Metadata:")
     print(f"   Name: {index.project_metadata['name']}")
     print(f"   Total Files: {index.project_metadata['total_files']}")
     print(f"   Total Lines: {index.project_metadata['total_lines']}")
     print(f"   Indexed At: {index.project_metadata['indexed_at']}")
     
     # Display index metadata
-    print(f"\n🔧 Index Metadata:")
+    print(f"\n Index Metadata:")
     print(f"   Version: {index.index_metadata['version']}")
     print(f"   Analysis Time: {index.index_metadata['analysis_time_ms']}ms")
     print(f"   Languages: {', '.join(index.index_metadata['languages_analyzed'])}")
     # Removed supports field as it was not useful
     
     # Display file analysis
-    print(f"\n📄 File Analysis:")
+    print(f"\n File Analysis:")
     python_files = [f for f in index.files if f['language'] == 'python']
     print(f"   Python files: {len(python_files)}")
     
     # Show some Python files with their functions and classes
     for file_info in python_files[:3]:  # Show first 3 Python files
-        print(f"   📝 {file_info['path']}:")
+        print(f"    {file_info['path']}:")
         if file_info['functions']:
             func_names = [f['name'] for f in file_info['functions']]
             print(f"      Functions: {', '.join(func_names[:5])}")  # Show first 5
@@ -59,7 +59,7 @@ def demo_indexing():
             print(f"      Classes: {', '.join(class_names)}")
     
     # Display special files
-    print(f"\n📋 Special Files:")
+    print(f"\n Special Files:")
     for category, files in index.special_files.items():
         if files:
             print(f"   {category.replace('_', ' ').title()}: {len(files)} files")
@@ -67,7 +67,7 @@ def demo_indexing():
                 print(f"      - {file_path}")
     
     # Display directory structure (simplified)
-    print(f"\n🌳 Directory Structure:")
+    print(f"\n Directory Structure:")
     def print_tree(tree, indent=0):
         for name, subtree in tree.items():
             print("  " * indent + f"├── {name}")
@@ -82,7 +82,7 @@ def demo_indexing():
                 print(f"│   ├── {subname}")
     
     # Display some lookup examples
-    print(f"\n🔍 Lookup Examples:")
+    print(f"\n Lookup Examples:")
     print(f"   Total path mappings: {len(index.lookups['path_to_id'])}")
     print(f"   Total function mappings: {len(index.lookups['function_to_file_id'])}")
     print(f"   Total class mappings: {len(index.lookups['class_to_file_id'])}")
@@ -103,7 +103,7 @@ def demo_indexing():
                 print(f"      {func_name} → [{len(file_paths)} files] {', '.join(file_paths)}")
     
     # Display relationship examples
-    print(f"\n🔗 Relationships:")
+    print(f"\n Relationships:")
     reverse_lookups = index.reverse_lookups
     
     if reverse_lookups.get('function_callers'):
@@ -119,31 +119,31 @@ def demo_indexing():
     
     # Show errors if any
     if index.index_metadata.get('files_with_errors'):
-        print(f"\n⚠️  Files with errors: {len(index.index_metadata['files_with_errors'])}")
+        print(f"\n  Files with errors: {len(index.index_metadata['files_with_errors'])}")
         for error_file in index.index_metadata['files_with_errors'][:3]:
             print(f"      - {error_file}")
     
-    print(f"\n✅ Indexing complete! Index contains {len(index.files)} files.")
+    print(f"\n Indexing complete! Index contains {len(index.files)} files.")
     
     # Optionally save the index to a file
-    save_index = input("\n💾 Save index to file? (y/N): ").lower().strip()
+    save_index = input("\n Save index to file? (y/N): ").lower().strip()
     if save_index == 'y':
         output_file = "demo_index.json"
         with open(output_file, 'w', encoding='utf-8') as f:
             f.write(index.to_json())
-        print(f"📁 Index saved to {output_file}")
+        print(f" Index saved to {output_file}")
         print(f"   File size: {os.path.getsize(output_file)} bytes")
 
 
 def analyze_specific_file():
     """Analyze a specific file in detail."""
-    print("\n🔬 Detailed File Analysis")
+    print("\n Detailed File Analysis")
     print("=" * 30)
     
     # Let's analyze the main server file
     server_file = "src/code_index_mcp/server.py"
     if not os.path.exists(server_file):
-        print(f"❌ File not found: {server_file}")
+        print(f" File not found: {server_file}")
         return
     
     # Build index and find the server file
@@ -157,15 +157,15 @@ def analyze_specific_file():
             break
     
     if not server_info:
-        print(f"❌ File not found in index: {server_file}")
+        print(f" File not found in index: {server_file}")
         return
     
-    print(f"📄 File: {server_info['path']}")
+    print(f" File: {server_info['path']}")
     print(f"   Language: {server_info['language']}")
     print(f"   Size: {server_info['size']} bytes")
     print(f"   Lines: {server_info['line_count']}")
     
-    print(f"\n🔧 Functions ({len(server_info['functions'])}):")
+    print(f"\n Functions ({len(server_info['functions'])}):")
     for func in server_info['functions'][:10]:  # Show first 10 functions
         params = ', '.join(func['parameters'][:3])  # Show first 3 params
         if len(func['parameters']) > 3:
@@ -179,7 +179,7 @@ def analyze_specific_file():
         if func['called_by']:
             print(f"      ← called by: {', '.join(func['called_by'][:3])}")
     
-    print(f"\n🏗️  Classes ({len(server_info['classes'])}):")
+    print(f"\n  Classes ({len(server_info['classes'])}):")
     for cls in server_info['classes']:
         inheritance = f" extends {cls['inherits_from']}" if cls['inherits_from'] else ""
         print(f"   {cls['name']}{inheritance} [lines {cls['line_start']}-{cls['line_end']}]")
@@ -188,7 +188,7 @@ def analyze_specific_file():
         if cls['instantiated_by']:
             print(f"      Instantiated by: {', '.join(cls['instantiated_by'])}")
     
-    print(f"\n📦 Imports ({len(server_info['imports'])}):")
+    print(f"\n Imports ({len(server_info['imports'])}):")
     for imp in server_info['imports'][:10]:  # Show first 10 imports
         if imp['imported_names']:
             names = ', '.join(imp['imported_names'][:3])
@@ -200,7 +200,7 @@ def analyze_specific_file():
     
     # Show language-specific features
     if server_info['language_specific']:
-        print(f"\n🐍 Python-specific features:")
+        print(f"\n Python-specific features:")
         python_features = server_info['language_specific'].get('python', {})
         
         if python_features.get('decorators'):
@@ -223,13 +223,13 @@ if __name__ == "__main__":
         demo_indexing()
         
         # Ask if user wants detailed file analysis
-        detail_analysis = input("\n🔬 Run detailed file analysis? (y/N): ").lower().strip()
+        detail_analysis = input("\n Run detailed file analysis? (y/N): ").lower().strip()
         if detail_analysis == 'y':
             analyze_specific_file()
             
     except KeyboardInterrupt:
         print("\n\n👋 Demo interrupted by user")
     except Exception as e:
-        print(f"\n❌ Error during demo: {e}")
+        print(f"\n Error during demo: {e}")
         import traceback
         traceback.print_exc()
