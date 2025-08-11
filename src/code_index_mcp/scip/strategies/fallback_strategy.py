@@ -8,6 +8,7 @@ from typing import List, Set, Dict, Any, Optional
 from pathlib import Path
 from .base_strategy import SCIPIndexerStrategy, ConversionError
 from ..proto import scip_pb2
+from ...constants import SUPPORTED_EXTENSIONS
 
 
 logger = logging.getLogger(__name__)
@@ -21,8 +22,11 @@ class FallbackStrategy(SCIPIndexerStrategy):
         super().__init__(priority)
 
     def can_handle(self, extension: str, file_path: str) -> bool:
-        """This strategy can handle any file type as a last resort."""
-        return True
+        """
+        This strategy can handle supported file extensions as a last resort.
+        Only processes files with extensions in SUPPORTED_EXTENSIONS.
+        """
+        return extension.lower() in SUPPORTED_EXTENSIONS
 
     def generate_scip_documents(self, files: List[str], project_path: str) -> List[scip_pb2.Document]:
         """

@@ -5,7 +5,9 @@ Shared constants for the Code Index MCP server.
 # Directory and file names
 SETTINGS_DIR = "code_indexer"
 CONFIG_FILE = "config.json"
-INDEX_FILE = "index.json"
+SCIP_INDEX_FILE = "index.scip"  # SCIP protobuf binary file
+# Legacy files
+INDEX_FILE = "index.json"  # Legacy JSON index file (to be removed)
 # CACHE_FILE removed - no longer needed with new indexing system
 
 # Supported file extensions for code analysis

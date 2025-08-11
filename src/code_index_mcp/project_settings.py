@@ -6,15 +6,23 @@ for the Code Index MCP server.
 """
 import os
 import json
-import shutil
-import pickle
+ 
+ 
 import tempfile
 import hashlib
-import subprocess
+ 
 from datetime import datetime
 
+# SCIP protobuf import
+try:
+    from .scip.proto.scip_pb2 import Index as SCIPIndex
+    SCIP_AVAILABLE = True
+except ImportError:
+    SCIPIndex = None
+    SCIP_AVAILABLE = False
+
 from .constants import (
-    SETTINGS_DIR, CONFIG_FILE, INDEX_FILE
+    SETTINGS_DIR, CONFIG_FILE, SCIP_INDEX_FILE, INDEX_FILE
 )
 from .search.base import SearchStrategy
 from .search.ugrep import UgrepStrategy
@@ -45,8 +53,8 @@ def _get_available_strategies() -> list[SearchStrategy]:
             strategy = strategy_class()
             if strategy.is_available():
                 available.append(strategy)
-        except Exception as e:
-            print(f"Error initializing strategy {strategy_class.__name__}: {e}")
+        except Exception:
+            pass
     return available
 
 
@@ -69,51 +77,40 @@ class ProjectSettings:
         try:
             # Get system temporary directory
             system_temp = tempfile.gettempdir()
-            print(f"System temporary directory: {system_temp}")
 
             # Check if the system temporary directory exists and is writable
             if not os.path.exists(system_temp):
-                print(f"Warning: System temporary directory does not exist: {system_temp}")
                 # Try using project directory as fallback if available
                 if base_path and os.path.exists(base_path):
                     system_temp = base_path
-                    print(f"Using project directory as fallback: {system_temp}")
                 else:
                     # Use user's home directory as last resort
                     system_temp = os.path.expanduser("~")
-                    print(f"Using home directory as fallback: {system_temp}")
 
             if not os.access(system_temp, os.W_OK):
-                print(f"Warning: No write access to system temporary directory: {system_temp}")
                 # Try using project directory as fallback if available
                 if base_path and os.path.exists(base_path) and os.access(base_path, os.W_OK):
                     system_temp = base_path
-                    print(f"Using project directory as fallback: {system_temp}")
                 else:
                     # Use user's home directory as last resort
                     system_temp = os.path.expanduser("~")
-                    print(f"Using home directory as fallback: {system_temp}")
 
             # Create code_indexer directory
             temp_base_dir = os.path.join(system_temp, SETTINGS_DIR)
-            print(f"Code indexer directory path: {temp_base_dir}")
 
             if not os.path.exists(temp_base_dir):
-                print(f"Creating code indexer directory: {temp_base_dir}")
                 os.makedirs(temp_base_dir, exist_ok=True)
-                print(f"Code indexer directory created: {temp_base_dir}")
             else:
-                print(f"Code indexer directory already exists: {temp_base_dir}")
-        except Exception as e:
-            print(f"Error setting up temporary directory: {e}")
+                pass
+        except Exception:
             # If unable to create temporary directory, use .code_indexer in project directory if available
             if base_path and os.path.exists(base_path):
                 temp_base_dir = os.path.join(base_path, ".code_indexer")
-                print(f"Using project fallback directory: {temp_base_dir}")
+                
             else:
                 # Use home directory as last resort
                 temp_base_dir = os.path.join(os.path.expanduser("~"), ".code_indexer")
-                print(f"Using home fallback directory: {temp_base_dir}")
+                
             if not os.path.exists(temp_base_dir):
                 os.makedirs(temp_base_dir, exist_ok=True)
 
@@ -123,15 +120,12 @@ class ProjectSettings:
                 # Use hash of project path as unique identifier
                 path_hash = hashlib.md5(base_path.encode()).hexdigest()
                 self.settings_path = os.path.join(temp_base_dir, path_hash)
-                print(f"Using project-specific directory: {self.settings_path}")
             else:
                 # If no base path provided, use a default directory
                 self.settings_path = os.path.join(temp_base_dir, "default")
-                print(f"Using default directory: {self.settings_path}")
 
             self.ensure_settings_dir()
-        except Exception as e:
-            print(f"Error setting up project settings: {e}")
+        except Exception:
             # If error occurs, use .code_indexer in project or home directory as fallback
             if base_path and os.path.exists(base_path):
                 fallback_dir = os.path.join(base_path, ".code_indexer",
@@ -139,27 +133,23 @@ class ProjectSettings:
             else:
                 fallback_dir = os.path.join(os.path.expanduser("~"), ".code_indexer",
                                           "default" if not base_path else hashlib.md5(base_path.encode()).hexdigest())
-            print(f"Using fallback directory: {fallback_dir}")
+            
             self.settings_path = fallback_dir
             if not os.path.exists(fallback_dir):
                 os.makedirs(fallback_dir, exist_ok=True)
 
     def ensure_settings_dir(self):
         """Ensure settings directory exists"""
-        print(f"Checking project settings directory: {self.settings_path}")
 
         try:
             if not os.path.exists(self.settings_path):
-                print(f"Creating project settings directory: {self.settings_path}")
                 # Create directory structure
                 os.makedirs(self.settings_path, exist_ok=True)
-                print(f"Project settings directory created: {self.settings_path}")
             else:
-                print(f"Project settings directory already exists: {self.settings_path}")
+                pass
 
             # Check if directory is writable
             if not os.access(self.settings_path, os.W_OK):
-                print(f"Warning: No write access to project settings directory: {self.settings_path}")
                 # If directory is not writable, use .code_indexer in project or home directory as fallback
                 if self.base_path and os.path.exists(self.base_path) and os.access(self.base_path, os.W_OK):
                     fallback_dir = os.path.join(self.base_path, ".code_indexer",
@@ -167,12 +157,11 @@ class ProjectSettings:
                 else:
                     fallback_dir = os.path.join(os.path.expanduser("~"), ".code_indexer",
                                               os.path.basename(self.settings_path))
-                print(f"Using fallback directory: {fallback_dir}")
+                
                 self.settings_path = fallback_dir
                 if not os.path.exists(fallback_dir):
                     os.makedirs(fallback_dir, exist_ok=True)
-        except Exception as e:
-            print(f"Error ensuring settings directory: {e}")
+        except Exception:
             # If unable to create settings directory, use .code_indexer in project or home directory
             if self.base_path and os.path.exists(self.base_path):
                 fallback_dir = os.path.join(self.base_path, ".code_indexer",
@@ -180,7 +169,7 @@ class ProjectSettings:
             else:
                 fallback_dir = os.path.join(os.path.expanduser("~"), ".code_indexer",
                                           "default" if not self.base_path else hashlib.md5(self.base_path.encode()).hexdigest())
-            print(f"Using fallback directory: {fallback_dir}")
+            
             self.settings_path = fallback_dir
             if not os.path.exists(fallback_dir):
                 os.makedirs(fallback_dir, exist_ok=True)
@@ -192,23 +181,35 @@ class ProjectSettings:
             # Ensure directory exists
             os.makedirs(os.path.dirname(path), exist_ok=True)
             return path
-        except Exception as e:
-            print(f"Error getting config path: {e}")
+        except Exception:
             # If error occurs, use file in project or home directory as fallback
             if self.base_path and os.path.exists(self.base_path):
                 return os.path.join(self.base_path, CONFIG_FILE)
             else:
                 return os.path.join(os.path.expanduser("~"), CONFIG_FILE)
 
+    def get_scip_index_path(self):
+        """Get the path to the SCIP index file"""
+        try:
+            path = os.path.join(self.settings_path, SCIP_INDEX_FILE)
+            # Ensure directory exists
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            return path
+        except Exception:
+            # If error occurs, use file in project or home directory as fallback
+            if self.base_path and os.path.exists(self.base_path):
+                return os.path.join(self.base_path, SCIP_INDEX_FILE)
+            else:
+                return os.path.join(os.path.expanduser("~"), SCIP_INDEX_FILE)
+
     def get_index_path(self):
-        """Get the path to the index file"""
+        """Get the path to the legacy index file (for backward compatibility)"""
         try:
             path = os.path.join(self.settings_path, INDEX_FILE)
             # Ensure directory exists
             os.makedirs(os.path.dirname(path), exist_ok=True)
             return path
-        except Exception as e:
-            print(f"Error getting index path: {e}")
+        except Exception:
             # If error occurs, use file in project or home directory as fallback
             if self.base_path and os.path.exists(self.base_path):
                 return os.path.join(self.base_path, INDEX_FILE)
@@ -238,10 +239,9 @@ class ProjectSettings:
             with open(config_path, 'w', encoding='utf-8') as f:
                 json.dump(config, f, indent=2, ensure_ascii=False)
 
-            print(f"Config saved to: {config_path}")
+            
             return config
-        except Exception as e:
-            print(f"Error saving config: {e}")
+        except Exception:
             return config
 
     def load_config(self):
@@ -260,46 +260,40 @@ class ProjectSettings:
                 try:
                     with open(config_path, 'r', encoding='utf-8') as f:
                         config = json.load(f)
-                    print(f"Config loaded from: {config_path}")
                     return config
-                except (json.JSONDecodeError, UnicodeDecodeError) as e:
-                    print(f"Error parsing config file: {e}")
+                except (json.JSONDecodeError, UnicodeDecodeError):
                     # If file is corrupted, return empty dict
                     return {}
             else:
-                print(f"Config file does not exist: {config_path}")
+                pass
             return {}
-        except Exception as e:
-            print(f"Error loading config: {e}")
+        except Exception:
             return {}
 
     def save_index(self, index_data):
         """Save code index in JSON format
 
         Args:
-            index_data: CodeIndex object or JSON string
+            index_data: Index data as dictionary or JSON string
         """
         try:
             index_path = self.get_index_path()
-            print(f"Saving index to: {index_path}")
 
             # Ensure directory exists
             dir_path = os.path.dirname(index_path)
             if not os.path.exists(dir_path):
-                print(f"Creating directory: {dir_path}")
                 os.makedirs(dir_path, exist_ok=True)
 
             # Check if directory is writable
             if not os.access(dir_path, os.W_OK):
-                print(f"Warning: Directory is not writable: {dir_path}")
                 # Use project or home directory as fallback
                 if self.base_path and os.path.exists(self.base_path):
                     index_path = os.path.join(self.base_path, INDEX_FILE)
                 else:
                     index_path = os.path.join(os.path.expanduser("~"), INDEX_FILE)
-                print(f"Using fallback path: {index_path}")
+                
 
-            # Convert to JSON string if it's a CodeIndex object
+            # Convert to JSON string if it's an object with to_json method
             if hasattr(index_data, 'to_json'):
                 json_data = index_data.to_json()
             elif isinstance(index_data, str):
@@ -311,31 +305,28 @@ class ProjectSettings:
             with open(index_path, 'w', encoding='utf-8') as f:
                 f.write(json_data)
 
-            print(f"Index saved successfully to: {index_path}")
-        except Exception as e:
-            print(f"Error saving index: {e}")
+            
+        except Exception:
             # Try saving to project or home directory
             try:
                 if self.base_path and os.path.exists(self.base_path):
                     fallback_path = os.path.join(self.base_path, INDEX_FILE)
                 else:
                     fallback_path = os.path.join(os.path.expanduser("~"), INDEX_FILE)
-                print(f"Trying fallback path: {fallback_path}")
                 
-                # Convert to JSON string if it's a CodeIndex object
+
+                # Convert to JSON string if it's an object with to_json method
                 if hasattr(index_data, 'to_json'):
                     json_data = index_data.to_json()
                 elif isinstance(index_data, str):
                     json_data = index_data
                 else:
                     json_data = json.dumps(index_data, indent=2, default=str)
-                
+
                 with open(fallback_path, 'w', encoding='utf-8') as f:
                     f.write(json_data)
-                print(f"Index saved to fallback path: {fallback_path}")
-            except Exception as e2:
-                print(f"Error saving index to fallback path: {e2}")
-
+            except Exception:
+                pass
     def load_index(self):
         """Load code index from JSON format
 
@@ -353,14 +344,11 @@ class ProjectSettings:
                 try:
                     with open(index_path, 'r', encoding='utf-8') as f:
                         index_data = json.load(f)
-                    print(f"Index loaded successfully from: {index_path}")
                     return index_data
-                except (json.JSONDecodeError, UnicodeDecodeError) as e:
-                    print(f"Error parsing index file: {e}")
+                except (json.JSONDecodeError, UnicodeDecodeError):
                     # If file is corrupted, return None
                     return None
-                except Exception as e:
-                    print(f"Unexpected error loading index: {e}")
+                except Exception:
                     return None
             else:
                 # Try loading from project or home directory
@@ -368,26 +356,124 @@ class ProjectSettings:
                     fallback_path = os.path.join(self.base_path, INDEX_FILE)
                 else:
                     fallback_path = os.path.join(os.path.expanduser("~"), INDEX_FILE)
-                if os.path.exists(fallback_path):
-                    print(f"Trying fallback path: {fallback_path}")
-                    try:
-                        with open(fallback_path, 'r', encoding='utf-8') as f:
-                            index_data = json.load(f)
-                        print(f"Index loaded from fallback path: {fallback_path}")
-                        return index_data
-                    except Exception as e:
-                        print(f"Error loading index from fallback path: {e}")
-
+            if os.path.exists(fallback_path):
+                try:
+                    with open(fallback_path, 'r', encoding='utf-8') as f:
+                        index_data = json.load(f)
+                    return index_data
+                except Exception:
+                    pass
             return None
-        except Exception as e:
-            print(f"Error in load_index: {e}")
+        except Exception:
+            return None
+
+    def save_scip_index(self, scip_index):
+        """Save SCIP index in protobuf binary format
+
+        Args:
+            scip_index: SCIP Index protobuf object
+        """
+        if not SCIP_AVAILABLE:
+            raise RuntimeError("SCIP protobuf not available. Cannot save SCIP index.")
+
+        if not isinstance(scip_index, SCIPIndex):
+            raise ValueError("scip_index must be a SCIP Index protobuf object")
+
+        try:
+            scip_path = self.get_scip_index_path()
+
+            # Ensure directory exists
+            dir_path = os.path.dirname(scip_path)
+            if not os.path.exists(dir_path):
+                os.makedirs(dir_path, exist_ok=True)
+
+            # Serialize to binary format
+            binary_data = scip_index.SerializeToString()
+
+            # Save binary data
+            with open(scip_path, 'wb') as f:
+                f.write(binary_data)
+
+            
+
+        except Exception:
+            # Try saving to project or home directory
+            try:
+                if self.base_path and os.path.exists(self.base_path):
+                    fallback_path = os.path.join(self.base_path, SCIP_INDEX_FILE)
+                else:
+                    fallback_path = os.path.join(os.path.expanduser("~"), SCIP_INDEX_FILE)
+                
+
+                binary_data = scip_index.SerializeToString()
+                with open(fallback_path, 'wb') as f:
+                    f.write(binary_data)
+            except Exception:
+                raise
+
+    def load_scip_index(self):
+        """Load SCIP index from protobuf binary format
+
+        Returns:
+            SCIP Index object, or None if file doesn't exist or has errors
+        """
+        if not SCIP_AVAILABLE:
+            return None
+
+        # If skip_load is set, return None directly
+        if self.skip_load:
+            return None
+
+        try:
+            scip_path = self.get_scip_index_path()
+
+            if os.path.exists(scip_path):
+                
+                try:
+                    with open(scip_path, 'rb') as f:
+                        binary_data = f.read()
+
+                    # Deserialize from binary format
+                    scip_index = SCIPIndex()
+                    scip_index.ParseFromString(binary_data)
+
+                    
+                    return scip_index
+
+                except Exception:
+                    return None
+            else:
+                # Try fallback paths
+                fallback_paths = []
+                if self.base_path and os.path.exists(self.base_path):
+                    fallback_paths.append(os.path.join(self.base_path, SCIP_INDEX_FILE))
+                fallback_paths.append(os.path.join(os.path.expanduser("~"), SCIP_INDEX_FILE))
+
+                for fallback_path in fallback_paths:
+                    if os.path.exists(fallback_path):
+                        
+                        try:
+                            with open(fallback_path, 'rb') as f:
+                                binary_data = f.read()
+
+                            scip_index = SCIPIndex()
+                            scip_index.ParseFromString(binary_data)
+
+                            
+                            return scip_index
+                        except Exception:
+                            continue
+
+                return None
+
+        except Exception:
             return None
 
     # save_cache and load_cache methods removed - no longer needed with new indexing system
-    
+
     def detect_index_version(self):
         """Detect the version of the existing index
-        
+
         Returns:
             str: Version string ('legacy', '3.0', or None if no index exists)
         """
@@ -398,25 +484,21 @@ class ProjectSettings:
                 try:
                     with open(index_path, 'r', encoding='utf-8') as f:
                         index_data = json.load(f)
-                    
+
                     # Check if it has the new structure
                     if isinstance(index_data, dict) and 'index_metadata' in index_data:
                         version = index_data.get('index_metadata', {}).get('version', '3.0')
-                        print(f"Detected index version: {version}")
                         return version
                     else:
-                        print("Detected legacy JSON index format")
                         return 'legacy'
                 except (json.JSONDecodeError, UnicodeDecodeError):
-                    print("Index file exists but is not valid JSON")
                     return 'legacy'
-            
+
             # Check for old pickle format
             old_pickle_path = os.path.join(self.settings_path, "file_index.pickle")
             if os.path.exists(old_pickle_path):
-                print("Detected legacy pickle index format")
                 return 'legacy'
-            
+
             # Check fallback locations
             if self.base_path and os.path.exists(self.base_path):
                 fallback_json = os.path.join(self.base_path, INDEX_FILE)
@@ -424,58 +506,50 @@ class ProjectSettings:
             else:
                 fallback_json = os.path.join(os.path.expanduser("~"), INDEX_FILE)
                 fallback_pickle = os.path.join(os.path.expanduser("~"), "file_index.pickle")
-            
+
             if os.path.exists(fallback_json):
                 try:
                     with open(fallback_json, 'r', encoding='utf-8') as f:
                         index_data = json.load(f)
                     if isinstance(index_data, dict) and 'index_metadata' in index_data:
                         version = index_data.get('index_metadata', {}).get('version', '3.0')
-                        print(f"Detected index version in fallback location: {version}")
                         return version
                     else:
                         return 'legacy'
-                except:
+                except Exception:
                     return 'legacy'
-            
+
             if os.path.exists(fallback_pickle):
-                print("Detected legacy pickle index in fallback location")
                 return 'legacy'
-            
-            print("No existing index found")
+
             return None
-            
-        except Exception as e:
-            print(f"Error detecting index version: {e}")
+
+        except Exception:
             return None
-    
+
     def migrate_legacy_index(self):
         """Migrate legacy index format to new format
-        
+
         Returns:
             bool: True if migration was successful or not needed, False if failed
         """
         try:
             version = self.detect_index_version()
-            
+
             if version is None:
-                print("No index to migrate")
                 return True
-            
+
             if version == '3.0' or (isinstance(version, str) and version >= '3.0'):
-                print("Index is already in current format")
                 return True
-            
+
             if version == 'legacy':
-                print("Legacy index detected, but automatic migration is not implemented")
-                print("Please rebuild the index using the new system")
-                
+
                 # Clean up legacy files
                 legacy_files = [
                     os.path.join(self.settings_path, "file_index.pickle"),
                     os.path.join(self.settings_path, "content_cache.pickle")
                 ]
-                
+
                 # Add fallback locations
                 if self.base_path and os.path.exists(self.base_path):
                     legacy_files.extend([
@@ -487,52 +561,45 @@ class ProjectSettings:
                         os.path.join(os.path.expanduser("~"), "file_index.pickle"),
                         os.path.join(os.path.expanduser("~"), "content_cache.pickle")
                     ])
-                
+
                 for legacy_file in legacy_files:
                     if os.path.exists(legacy_file):
                         try:
                             os.remove(legacy_file)
-                            print(f"Removed legacy file: {legacy_file}")
-                        except Exception as e:
-                            print(f"Could not remove legacy file {legacy_file}: {e}")
-                
+                        except Exception:
+                            pass
+
                 return False  # Indicate that manual rebuild is needed
-            
+
             return True
-            
-        except Exception as e:
-            print(f"Error during migration: {e}")
+
+        except Exception:
             return False
 
     def clear(self):
         """Clear config and index files"""
         try:
-            print(f"Clearing settings directory: {self.settings_path}")
 
             if os.path.exists(self.settings_path):
                 # Check if directory is writable
                 if not os.access(self.settings_path, os.W_OK):
-                    print(f"Warning: Directory is not writable: {self.settings_path}")
                     return
 
                 # Delete specific files only (config.json and index.json)
                 files_to_delete = [CONFIG_FILE, INDEX_FILE]
-                
+
                 for filename in files_to_delete:
                     file_path = os.path.join(self.settings_path, filename)
                     try:
                         if os.path.isfile(file_path):
                             os.unlink(file_path)
-                            print(f"Deleted file: {file_path}")
-                    except Exception as e:
-                        print(f"Error deleting {file_path}: {e}")
+                    except Exception:
+                        pass
 
-                print(f"Settings files cleared successfully")
             else:
-                print(f"Settings directory does not exist: {self.settings_path}")
-        except Exception as e:
-            print(f"Error clearing settings: {e}")
-
+                pass
+        except Exception:
+            pass
     def get_stats(self):
         """Get statistics for the settings directory
 
@@ -540,7 +607,6 @@ class ProjectSettings:
             dict: Dictionary containing file sizes and update times
         """
         try:
-            print(f"Getting stats for settings directory: {self.settings_path}")
 
             stats = {
                 'settings_path': self.settings_path,
@@ -590,7 +656,6 @@ class ProjectSettings:
 
             return stats
         except Exception as e:
-            print(f"Error getting stats: {e}")
             return {
                 'error': str(e),
                 'settings_path': self.settings_path,
@@ -617,21 +682,21 @@ class ProjectSettings:
         """
         if not self.available_strategies:
             self.refresh_available_strategies()
-        
+
         return self.available_strategies[0] if self.available_strategies else None
 
     def refresh_available_strategies(self):
         """
         Force a refresh of the available search tools list.
         """
-        print("Refreshing available search strategies...")
+        
         self.available_strategies = _get_available_strategies()
-        print(f"Available strategies found: {[s.name for s in self.available_strategies]}")
-    
+        
+
     def get_file_watcher_config(self) -> dict:
         """
         Get file watcher specific configuration.
-        
+
         Returns:
             dict: File watcher configuration with defaults
         """
@@ -650,25 +715,25 @@ class ProjectSettings:
                 "bin", "obj"
             ]
         }
-        
+
         # Merge with loaded config
         file_watcher_config = config.get("file_watcher", {})
         for key, default_value in default_config.items():
             if key not in file_watcher_config:
                 file_watcher_config[key] = default_value
-        
+
         return file_watcher_config
-    
+
     def update_file_watcher_config(self, updates: dict) -> None:
         """
         Update file watcher configuration.
-        
+
         Args:
             updates: Dictionary of configuration updates
         """
         config = self.load_config()
         if "file_watcher" not in config:
             config["file_watcher"] = self.get_file_watcher_config()
-        
+
         config["file_watcher"].update(updates)
         self.save_config(config)

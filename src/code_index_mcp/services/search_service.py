@@ -58,7 +58,7 @@ class SearchService(BaseService):
         if regex is None:
             regex = is_safe_regex_pattern(pattern)
             if regex:
-                print(f"Auto-detected regex pattern: {pattern}")
+                pass
 
         # Validate search pattern
         error = ValidationHelper.validate_search_pattern(pattern, regex)
@@ -79,7 +79,7 @@ class SearchService(BaseService):
         if not strategy:
             raise ValueError("No search strategies available")
 
-        print(f"Using search strategy: {strategy.name}")
+
 
         try:
             results = strategy.search(

@@ -1,31 +1,36 @@
 """
-Code indexing system for the MCP server.
+Code indexing utilities for the MCP server.
 
-This module provides structured code analysis, relationship tracking,
-and enhanced search capabilities through a JSON-based index format.
+This module provides utility functions for duplicate detection and 
+qualified name generation used by the SCIP indexing system.
 """
 
-from .models import (
-    FileInfo,
-    FunctionInfo,
-    ClassInfo,
-    ImportInfo,
-    FileAnalysisResult,
-    CodeIndex
+# Import utility functions that are still used
+from .duplicate_detection import (
+    detect_duplicate_functions,
+    detect_duplicate_classes,
+    get_duplicate_statistics,
+    format_duplicate_report
 )
 
-from .builder import IndexBuilder
-from .scanner import ProjectScanner
-from .analyzers import LanguageAnalyzerManager
+from .qualified_names import (
+    generate_qualified_name,
+    normalize_file_path
+)
+
+# Simple models for backward compatibility
+from .simple_models import CodeIndex
+
+# SCIP builder is still used by the new architecture
+from .scip_builder import SCIPIndexBuilder
 
 __all__ = [
-    'FileInfo',
-    'FunctionInfo', 
-    'ClassInfo',
-    'ImportInfo',
-    'FileAnalysisResult',
-    'CodeIndex',
-    'IndexBuilder',
-    'ProjectScanner',
-    'LanguageAnalyzerManager'
+    'detect_duplicate_functions',
+    'detect_duplicate_classes', 
+    'get_duplicate_statistics',
+    'format_duplicate_report',
+    'generate_qualified_name',
+    'normalize_file_path',
+    'SCIPIndexBuilder',
+    'CodeIndex'
 ]

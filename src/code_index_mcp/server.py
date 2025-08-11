@@ -7,9 +7,11 @@ It provides tools for file discovery, content retrieval, and code analysis.
 This version uses a service-oriented architecture where MCP decorators delegate
 to domain-specific services for business logic.
 """
+
 # Standard library imports
 import os
 import sys
+import logging
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import AsyncIterator, Dict, Any
@@ -21,12 +23,24 @@ from mcp.server.fastmcp import FastMCP, Context
 # Local imports
 from .project_settings import ProjectSettings
 from .services import (
-    ProjectService, IndexService, SearchService,
-    FileService, SettingsService, FileWatcherService
+    SearchService, FileService, SettingsService, FileWatcherService
 )
 from .services.settings_service import manage_temp_directory
+from .services.file_discovery_service import FileDiscoveryService
+from .services.project_management_service import ProjectManagementService
+from .services.index_management_service import IndexManagementService
+from .services.code_intelligence_service import CodeIntelligenceService
+from .services.system_management_service import SystemManagementService
 from .utils import (
     handle_mcp_resource_errors, handle_mcp_tool_errors
+)
+
+# Setup logging to stderr for MCP compliance - at application entry point
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    stream=sys.stderr,
+    force=True  # Override any existing configuration
 )
 
 @dataclass
@@ -45,8 +59,6 @@ async def indexer_lifespan(_server: FastMCP) -> AsyncIterator[CodeIndexerContext
     # Don't set a default path, user must explicitly set project path
     base_path = ""  # Empty string to indicate no path is set
 
-    print("Initializing Code Indexer MCP server...")
-
     # Initialize settings manager with skip_load=True to skip loading files
     settings = ProjectSettings(base_path, skip_load=True)
 
@@ -58,18 +70,15 @@ async def indexer_lifespan(_server: FastMCP) -> AsyncIterator[CodeIndexerContext
     )
 
     try:
-        print("Server ready. Waiting for user to set project path...")
         # Provide context to the server
         yield context
     finally:
         # Stop file watcher if it was started
         if context.file_watcher_service:
-            print("Stopping file watcher service...")
             context.file_watcher_service.stop_monitoring()
 
         # Only save index if project path has been set
         if context.base_path and context.index_cache:
-            print(f"Saving index for project: {context.base_path}")
             settings.save_index(context.index_cache)
 
 # Create the MCP server with lifespan manager
@@ -82,13 +91,14 @@ mcp = FastMCP("CodeIndexer", lifespan=indexer_lifespan, dependencies=["pathlib"]
 def get_config() -> str:
     """Get the current configuration of the Code Indexer."""
     ctx = mcp.get_context()
-    return ProjectService(ctx).get_project_config()
+    return ProjectManagementService(ctx).get_project_config()
 
 @mcp.resource("files://{file_path}")
 @handle_mcp_resource_errors
 def get_file_content(file_path: str) -> str:
     """Get the content of a specific file."""
     ctx = mcp.get_context()
+    # Use FileService for simple file reading - this is appropriate for a resource
     return FileService(ctx).get_file_content(file_path)
 
 @mcp.resource("structure://project")
@@ -96,14 +106,10 @@ def get_file_content(file_path: str) -> str:
 def get_project_structure() -> str:
     """Get the structure of the project as a JSON tree."""
     ctx = mcp.get_context()
-    return ProjectService(ctx).get_project_structure()
+    return ProjectManagementService(ctx).get_project_structure()
 
-@mcp.resource("settings://stats")
-@handle_mcp_resource_errors
-def get_settings_stats() -> str:
-    """Get statistics about the settings directory and files."""
-    ctx = mcp.get_context()
-    return SettingsService(ctx).get_settings_stats()
+# Removed: settings://stats resource - this information is available via get_settings_info() tool
+# and is more of a debugging/technical detail rather than context AI needs
 
 # ----- TOOLS -----
 
@@ -111,7 +117,7 @@ def get_settings_stats() -> str:
 @handle_mcp_tool_errors(return_type='str')
 def set_project_path(path: str, ctx: Context) -> str:
     """Set the base project path for indexing."""
-    return ProjectService(ctx).initialize_project(path)
+    return ProjectManagementService(ctx).initialize_project(path)
 
 @mcp.tool()
 @handle_mcp_tool_errors(return_type='dict')
@@ -171,18 +177,19 @@ def search_code_advanced(
 @handle_mcp_tool_errors(return_type='dict')
 def find_files(pattern: str, ctx: Context) -> Dict[str, Any]:
     """
-    Find files matching a glob pattern using efficient directory tree traversal.
+    Find files matching a glob pattern using pre-built file index.
 
     Use when:
-    - Looking for files by pattern (e.g., "*.py", "test_*.js", "src/**/*.ts")
+    - Looking for files by pattern (e.g., "*.py", "test_*.js")
     - Searching by filename only (e.g., "README.md" finds all README files)
     - Checking if specific files exist in the project
     - Getting file lists for further analysis
 
     Pattern matching:
     - Supports both full path and filename-only matching
+    - Uses standard glob patterns (*, ?, [])
+    - Fast lookup using in-memory file index
     - Uses forward slashes consistently across all platforms
-    - Efficient directory tree traversal for better performance
 
     Args:
         pattern: Glob pattern to match files (e.g., "*.py", "test_*.js", "README.md")
@@ -190,7 +197,7 @@ def find_files(pattern: str, ctx: Context) -> Dict[str, Any]:
     Returns:
         Dictionary with files list and status information
     """
-    return IndexService(ctx).find_files_by_pattern(pattern)
+    return FileDiscoveryService(ctx).find_files(pattern)
 
 @mcp.tool()
 @handle_mcp_tool_errors(return_type='dict')
@@ -202,7 +209,7 @@ def get_file_summary(file_path: str, ctx: Context) -> Dict[str, Any]:
     - Import statements
     - Basic complexity metrics
     """
-    return FileService(ctx).analyze_file(file_path)
+    return CodeIntelligenceService(ctx).analyze_file(file_path)
 
 @mcp.tool()
 @handle_mcp_tool_errors(return_type='str')
@@ -227,7 +234,7 @@ def refresh_index(ctx: Context) -> str:
     Returns:
         Success message with total file count
     """
-    return IndexService(ctx).rebuild_index()
+    return IndexManagementService(ctx).rebuild_index()
 
 @mcp.tool()
 @handle_mcp_tool_errors(return_type='dict')
@@ -266,61 +273,7 @@ def refresh_search_tools(ctx: Context) -> str:
 @handle_mcp_tool_errors(return_type='dict')
 def get_file_watcher_status(ctx: Context) -> Dict[str, Any]:
     """Get file watcher service status and statistics."""
-    try:
-        # Check for file watcher errors first
-        file_watcher_error = None
-        if hasattr(ctx.request_context.lifespan_context, 'file_watcher_error'):
-            file_watcher_error = ctx.request_context.lifespan_context.file_watcher_error
-
-        # Get file watcher service from context
-        file_watcher_service = None
-        if hasattr(ctx.request_context.lifespan_context, 'file_watcher_service'):
-            file_watcher_service = ctx.request_context.lifespan_context.file_watcher_service
-
-        # If there's an error, return error status with recommendation
-        if file_watcher_error:
-            status = {
-                "available": True,
-                "active": False,
-                "error": file_watcher_error,
-                "recommendation": "Use refresh_index tool for manual updates",
-                "manual_refresh_required": True
-            }
-
-            # Add basic configuration if available
-            if hasattr(ctx.request_context.lifespan_context, 'settings') and ctx.request_context.lifespan_context.settings:
-                file_watcher_config = ctx.request_context.lifespan_context.settings.get_file_watcher_config()
-                status["configuration"] = file_watcher_config
-
-            return status
-
-        # If no service and no error, it's not initialized
-        if not file_watcher_service:
-            return {
-                "available": True,
-                "active": False,
-                "status": "not_initialized",
-                "message": "File watcher service not initialized. Set project path to enable auto-refresh.",
-                "recommendation": "Use set_project_path tool to initialize file watcher"
-            }
-
-        # Get status from file watcher service
-        status = file_watcher_service.get_status()
-
-        # Add index service status
-        index_service = IndexService(ctx)
-        rebuild_status = index_service.get_rebuild_status()
-        status["rebuild_status"] = rebuild_status
-
-        # Add configuration
-        if hasattr(ctx.request_context.lifespan_context, 'settings') and ctx.request_context.lifespan_context.settings:
-            file_watcher_config = ctx.request_context.lifespan_context.settings.get_file_watcher_config()
-            status["configuration"] = file_watcher_config
-
-        return status
-
-    except Exception as e:
-        return {"status": "error", "message": f"Failed to get file watcher status: {e}"}
+    return SystemManagementService(ctx).get_file_watcher_status()
 
 @mcp.tool()
 @handle_mcp_tool_errors(return_type='str')
@@ -331,34 +284,7 @@ def configure_file_watcher(
     additional_exclude_patterns: list = None
 ) -> str:
     """Configure file watcher service settings."""
-    try:
-        # Get settings from context
-        if not hasattr(ctx.request_context.lifespan_context, 'settings') or not ctx.request_context.lifespan_context.settings:
-            return "Settings not available - project path not set"
-
-        settings = ctx.request_context.lifespan_context.settings
-
-        # Build updates dictionary
-        updates = {}
-        if enabled is not None:
-            updates["enabled"] = enabled
-        if debounce_seconds is not None:
-            updates["debounce_seconds"] = debounce_seconds
-        if additional_exclude_patterns is not None:
-            updates["additional_exclude_patterns"] = additional_exclude_patterns
-
-        if not updates:
-            return "No configuration changes specified"
-
-        # Update configuration
-        settings.update_file_watcher_config(updates)
-
-        # If file watcher is running, we would need to restart it for changes to take effect
-        # For now, just return success message with note about restart
-        return f"File watcher configuration updated: {updates}. Restart may be required for changes to take effect."
-
-    except Exception as e:
-        return f"Failed to update file watcher configuration: {e}"
+    return SystemManagementService(ctx).configure_file_watcher(enabled, debounce_seconds, additional_exclude_patterns)
 
 # ----- PROMPTS -----
 

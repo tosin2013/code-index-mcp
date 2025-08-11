@@ -217,11 +217,9 @@ class FileWatcherService(BaseService):
             self.is_monitoring = False
 
             self.logger.info("File watcher stopped and cleaned up successfully")
-            print("STOPPED: File watcher stopped")
 
         except Exception as e:
             self.logger.error("Error stopping file watcher: %s", e)
-            print(f"WARNING: Error stopping file watcher: {e}")
 
             # Force cleanup even if there were errors
             self.observer = None
@@ -350,18 +348,15 @@ class DebounceEventHandler(FileSystemEventHandler):
         Args:
             event: The file system event
         """
-        # Always log events for debugging
-        self.logger.debug("Raw event: %s - %s (is_directory: %s)", event.event_type, event.src_path, event.is_directory)
-
-        # Test event processing
+        # Check if event should be processed
         should_process = self.should_process_event(event)
-        self.logger.debug("Should process: %s", should_process)
 
         if should_process:
-            self.logger.debug("Processing file system event: %s - %s", event.event_type, event.src_path)
+            self.logger.info("File changed: %s - %s", event.event_type, event.src_path)
             self.reset_debounce_timer()
         else:
-            self.logger.debug("Event filtered out: %s - %s", event.event_type, event.src_path)
+            # Only log at debug level for filtered events
+            self.logger.debug("Filtered: %s - %s", event.event_type, event.src_path)
 
     def should_process_event(self, event: FileSystemEvent) -> bool:
         """
@@ -381,20 +376,20 @@ class DebounceEventHandler(FileSystemEventHandler):
         # Select path to check: dest_path for moves, src_path for others
         if event.event_type == 'moved':
             if not hasattr(event, 'dest_path'):
-                self.logger.debug("Move event missing dest_path")
                 return False
             target_path = event.dest_path
-            self.logger.debug("Move event: checking destination path %s", target_path)
         else:
             target_path = event.src_path
-            self.logger.debug("%s event: checking source path %s", event.event_type, target_path)
+
+        # Fast path exclusion - check if path is in excluded directory before any processing
+        if self._is_path_in_excluded_directory(target_path):
+            return False
 
         # Unified path checking
         try:
             path = Path(target_path)
             return self._should_process_path(path)
-        except Exception as e:
-            self.logger.debug("Path conversion failed for %s: %s", target_path, e)
+        except Exception:
             return False
 
     def _should_process_path(self, path: Path) -> bool:
@@ -407,29 +402,54 @@ class DebounceEventHandler(FileSystemEventHandler):
         Returns:
             True if path should trigger rebuild, False otherwise
         """
-        # Log detailed filtering steps
-        self.logger.debug("Checking path: %s", path)
-
         # Skip excluded paths
-        is_excluded = self.is_excluded_path(path)
-        self.logger.debug("Is excluded path: %s", is_excluded)
-        if is_excluded:
+        if self.is_excluded_path(path):
             return False
 
         # Only process supported file types
-        is_supported = self.is_supported_file_type(path)
-        self.logger.debug("Is supported file type: %s (extension: %s)", is_supported, path.suffix)
-        if not is_supported:
+        if not self.is_supported_file_type(path):
             return False
 
         # Skip temporary files
-        is_temp = self.is_temporary_file(path)
-        self.logger.debug("Is temporary file: %s", is_temp)
-        if is_temp:
+        if self.is_temporary_file(path):
             return False
 
-        self.logger.debug("Event will be processed: %s", path)
         return True
+
+    def _is_path_in_excluded_directory(self, file_path: str) -> bool:
+        """
+        Fast check if a file path is within an excluded directory.
+        
+        This method performs a quick string-based check to avoid expensive
+        Path operations for files in excluded directories like .venv.
+        
+        Args:
+            file_path: The file path to check
+            
+        Returns:
+            True if the path is in an excluded directory, False otherwise
+        """
+        try:
+            # Normalize path separators for cross-platform compatibility
+            normalized_path = file_path.replace('\\', '/')
+            base_path_normalized = str(self.base_path).replace('\\', '/')
+            
+            # Get relative path string
+            if not normalized_path.startswith(base_path_normalized):
+                return True  # Path outside project - exclude it
+                
+            relative_path = normalized_path[len(base_path_normalized):].lstrip('/')
+            
+            # Quick check: if any excluded pattern appears as a path component
+            path_parts = relative_path.split('/')
+            for part in path_parts:
+                if part in self.exclude_patterns:
+                    return True
+                    
+            return False
+        except Exception:
+            # If any error occurs, err on the side of exclusion
+            return True
 
     def is_excluded_path(self, path: Path) -> bool:
         """
@@ -499,9 +519,6 @@ class DebounceEventHandler(FileSystemEventHandler):
         """Reset the debounce timer, canceling any existing timer."""
         if self.debounce_timer:
             self.debounce_timer.cancel()
-            self.logger.debug("Previous debounce timer cancelled")
-
-        self.logger.debug("Starting debounce timer for %s seconds", self.debounce_seconds)
 
         self.debounce_timer = Timer(
             self.debounce_seconds,
@@ -509,20 +526,13 @@ class DebounceEventHandler(FileSystemEventHandler):
         )
         self.debounce_timer.start()
 
-        self.logger.debug("Debounce timer started successfully")
-
     def trigger_rebuild(self) -> None:
         """Trigger index rebuild after debounce period."""
-        trigger_msg = "File changes detected, triggering background rebuild"
-        self.logger.info(trigger_msg)
+        self.logger.info("File changes detected, triggering rebuild")
 
         if self.rebuild_callback:
             try:
-                self.logger.debug("Calling rebuild callback...")
-
                 result = self.rebuild_callback()
-
-                self.logger.debug("Rebuild callback completed with result: %s", result)
             except Exception as e:
                 self.logger.error("Rebuild callback failed: %s", e)
                 traceback_msg = traceback.format_exc()

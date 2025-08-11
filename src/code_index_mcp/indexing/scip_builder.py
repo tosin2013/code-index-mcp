@@ -1,293 +1,305 @@
 """SCIP Index Builder - main orchestrator for SCIP-based indexing."""
 
 import os
-import logging
+import fnmatch
 from pathlib import Path
 from datetime import datetime
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from ..scip.factory import SCIPIndexerFactory, SCIPIndexingError, IndexingFailedError
-from ..scip.proto.scip_pb2 import (
-    Index, Document, Metadata, ToolInfo,
-    UnspecifiedProtocolVersion, UTF8
-)
-from .scanner import ProjectScanner
-from .models import ValidationResult
+from dataclasses import dataclass, field
+
+from ..scip.factory import SCIPIndexerFactory, SCIPIndexingError
+from ..scip.proto import scip_pb2
 
 
-logger = logging.getLogger(__name__)
+
+@dataclass
+class ValidationResult:
+    """Result of SCIP index validation."""
+    is_valid: bool
+    errors: List[str] = field(default_factory=list)
+    warnings: List[str] = field(default_factory=list)
+
+
+@dataclass
+class ScanResult:
+    """Result of a project scan."""
+    file_list: List[Dict[str, Any]]
+    project_metadata: Dict[str, Any]
 
 
 class SCIPIndexBuilder:
     """Main builder class that orchestrates SCIP-based indexing."""
 
     def __init__(self, max_workers: Optional[int] = None):
-        """
-        Initialize the SCIP index builder.
-
-        Args:
-            max_workers: Maximum number of worker threads for parallel processing
-        """
         self.max_workers = max_workers
         self.scip_factory = SCIPIndexerFactory()
         self.project_path = ""
 
-    def build_scip_index(self, project_path: str) -> Index:
-        """
-        Build complete SCIP index for a project.
-
-        Args:
-            project_path: Path to the project root directory
-
-        Returns:
-            Complete SCIP Index structure
-
-        Raises:
-            SCIPIndexingError: If indexing fails
-        """
+    def build_scip_index(self, project_path: str) -> scip_pb2.Index:
+        """Build complete SCIP index for a project."""
         start_time = datetime.now()
         self.project_path = project_path
-
-        logger.info(f"Starting SCIP indexing for project: {project_path}")
+        
 
         try:
-            # Step 1: Scan project directory
-            scanner = ProjectScanner(project_path)
-            scan_result = scanner.scan_project()
+            scan_result = self._scan_project_files(project_path)
 
-            logger.info(f"Found {len(scan_result.file_list)} files to index")
-
-            # Step 2: Group files by the strategy that will handle them
-            file_paths = [f.path for f in scan_result.file_list]
+            file_paths = [str(f['path']) for f in scan_result.file_list]
             strategy_files = self.scip_factory.group_files_by_strategy(file_paths)
 
-            logger.info(f"Files grouped into {len(strategy_files)} strategies")
+            all_documents = self._process_files(strategy_files, project_path)
 
-            # Step 3: Generate SCIP documents using appropriate strategies
-            all_documents = []
-
-            if self.max_workers and self.max_workers > 1:
-                # Parallel processing
-                all_documents = self._process_files_parallel(strategy_files, project_path)
-            else:
-                # Sequential processing
-                all_documents = self._process_files_sequential(strategy_files, project_path)
-
-            # Step 4: Assemble final SCIP index
             scip_index = self._assemble_scip_index(all_documents, scan_result, start_time)
+            duration = (datetime.now() - start_time).total_seconds()
 
-            end_time = datetime.now()
-            duration = (end_time - start_time).total_seconds()
-
-            logger.info(f"SCIP indexing completed in {duration:.2f}s: {len(all_documents)} documents")
-
-            # Step 5: Validate the index
             validation_result = self._validate_scip_index(scip_index)
             if not validation_result.is_valid:
-                logger.warning(f"SCIP index validation warnings: {validation_result.warnings}")
                 if validation_result.errors:
-                    logger.error(f"SCIP index validation errors: {validation_result.errors}")
+                    pass
 
             return scip_index
-
         except Exception as e:
-            logger.error(f"SCIP indexing failed: {str(e)}")
             return self._create_fallback_scip_index(project_path, str(e))
 
-    def _process_files_sequential(self, strategy_files: Dict, project_path: str) -> List[Document]:
-        """Process files sequentially using their assigned strategies."""
+    def _scan_project_files(self, project_path: str) -> ScanResult:
+        """Scan project directory to get a list of files and metadata."""
+        files = []
+        # Use project settings for exclude patterns
+        ignored_dirs = self._get_exclude_patterns()
+        # Load gitignore patterns
+        gitignore_patterns = self._load_gitignore_patterns(project_path)
+        
+        for root, dirs, filenames in os.walk(project_path):
+            # Check if current root path contains any ignored directories
+            root_parts = Path(root).parts
+            project_parts = Path(project_path).parts
+            relative_parts = root_parts[len(project_parts):]
+            
+            # Skip if any part of the path is in ignored_dirs
+            if any(part in ignored_dirs for part in relative_parts):
+                dirs[:] = []  # Don't descend further
+                continue
+                
+            # Modify dirs in-place to prune the search
+            dirs[:] = [d for d in dirs if d not in ignored_dirs]
+            
+            # Apply gitignore filtering to directories
+            dirs[:] = [d for d in dirs if not self._is_gitignored(os.path.join(root, d), project_path, gitignore_patterns)]
+            
+            for filename in filenames:
+                # Ignore hidden files (but allow .gitignore itself)
+                if filename.startswith('.') and filename != '.gitignore':
+                    continue
+                    
+                full_path = os.path.join(root, filename)
+                
+                # Apply gitignore filtering to files
+                if self._is_gitignored(full_path, project_path, gitignore_patterns):
+                    continue
+                    
+                files.append(full_path)
+
+        file_list = [{'path': f, 'is_binary': False} for f in files]
+        project_metadata = {"project_name": os.path.basename(project_path)}
+        return ScanResult(file_list=file_list, project_metadata=project_metadata)
+
+    def _get_exclude_patterns(self) -> set:
+        """Get exclude patterns from project settings."""
+        try:
+            from ..project_settings import ProjectSettings
+            # Try to get patterns from project settings
+            settings = ProjectSettings(self.project_path, skip_load=False)
+            exclude_patterns = settings.config.get("file_watcher", {}).get("exclude_patterns", [])
+            return set(exclude_patterns)
+        except Exception:
+            # Fallback to basic patterns if settings not available
+            return {'.git', '.svn', '.hg', '__pycache__', 'node_modules', '.venv', 'venv', 
+                   'build', 'dist', 'target', '.idea', '.vscode'}
+
+    def _load_gitignore_patterns(self, project_path: str) -> List[str]:
+        """Load patterns from .gitignore file."""
+        gitignore_path = os.path.join(project_path, '.gitignore')
+        patterns = []
+        
+        if os.path.exists(gitignore_path):
+            try:
+                with open(gitignore_path, 'r', encoding='utf-8') as f:
+                    for line in f:
+                        line = line.strip()
+                        # Skip empty lines and comments
+                        if line and not line.startswith('#'):
+                            patterns.append(line)
+            except Exception:
+                pass  # Ignore errors reading .gitignore
+        
+        return patterns
+
+    def _is_gitignored(self, file_path: str, project_path: str, gitignore_patterns: List[str]) -> bool:
+        """Check if a file or directory is ignored by .gitignore patterns."""
+        if not gitignore_patterns:
+            return False
+            
+        # Get relative path from project root
+        try:
+            rel_path = os.path.relpath(file_path, project_path)
+            # Normalize path separators for cross-platform compatibility
+            rel_path = rel_path.replace('\\', '/')
+            
+            # Check each gitignore pattern
+            for pattern in gitignore_patterns:
+                # Handle negation patterns (starting with !)
+                if pattern.startswith('!'):
+                    continue  # Skip negation for now (simplified implementation)
+                    
+                # Add trailing slash for directory patterns
+                if pattern.endswith('/'):
+                    pattern = pattern.rstrip('/')
+                    # Check if it's a directory and matches pattern
+                    if os.path.isdir(file_path) and fnmatch.fnmatch(rel_path, pattern):
+                        return True
+                    # Also check if any parent directory matches
+                    path_parts = rel_path.split('/')
+                    for i in range(len(path_parts)):
+                        if fnmatch.fnmatch('/'.join(path_parts[:i+1]), pattern):
+                            return True
+                else:
+                    # Check file or directory name
+                    if fnmatch.fnmatch(rel_path, pattern):
+                        return True
+                    # Check if any parent directory or file in path matches
+                    path_parts = rel_path.split('/')
+                    for part in path_parts:
+                        if fnmatch.fnmatch(part, pattern):
+                            return True
+                        
+        except Exception:
+            pass
+            
+        return False
+
+    def _process_files(self, strategy_files: Dict, project_path: str) -> List[scip_pb2.Document]:
+        """Process files using appropriate strategies, either sequentially or in parallel."""
+        if self.max_workers and self.max_workers > 1:
+            return self._process_files_parallel(strategy_files, project_path)
+        return self._process_files_sequential(strategy_files, project_path)
+
+    def _process_files_sequential(self, strategy_files: Dict, project_path: str) -> List[scip_pb2.Document]:
+        """Process files sequentially."""
         all_documents = []
-
         for strategy, files in strategy_files.items():
-            logger.info(f"Processing {len(files)} files with {strategy.get_strategy_name()}")
-
+            
             try:
                 documents = strategy.generate_scip_documents(files, project_path)
                 all_documents.extend(documents)
-                logger.info(f"SUCCESS {strategy.get_strategy_name()}: {len(documents)} documents")
-
             except Exception as e:
-                logger.error(f"FAILED {strategy.get_strategy_name()} failed: {str(e)}")
-                # Try fallback strategies for these files
-                fallback_documents = self._try_fallback_strategies(files, strategy, project_path)
-                all_documents.extend(fallback_documents)
-
+                all_documents.extend(self._try_fallback_strategies(files, strategy, project_path))
         return all_documents
 
-    def _process_files_parallel(self, strategy_files: Dict, project_path: str) -> List[Document]:
-        """Process files in parallel using their assigned strategies."""
+    def _process_files_parallel(self, strategy_files: Dict, project_path: str) -> List[scip_pb2.Document]:
+        """Process files in parallel."""
         all_documents = []
-
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-            # Submit strategy tasks
-            future_to_strategy = {}
-
-            for strategy, files in strategy_files.items():
-                logger.info(f"Submitting {len(files)} files to {strategy.get_strategy_name()}")
-                future = executor.submit(strategy.generate_scip_documents, files, project_path)
-                future_to_strategy[future] = (strategy, files)
-
-            # Collect results as they complete
+            future_to_strategy = {
+                executor.submit(s.generate_scip_documents, f, project_path): (s, f)
+                for s, f in strategy_files.items()
+            }
             for future in as_completed(future_to_strategy):
                 strategy, files = future_to_strategy[future]
-
                 try:
                     documents = future.result()
                     all_documents.extend(documents)
-                    logger.info(f"SUCCESS {strategy.get_strategy_name()}: {len(documents)} documents")
-
+                    
                 except Exception as e:
-                    logger.error(f"FAILED {strategy.get_strategy_name()} failed: {str(e)}")
-                    # Try fallback strategies for these files
-                    fallback_documents = self._try_fallback_strategies(files, strategy, project_path)
-                    all_documents.extend(fallback_documents)
-
+                    all_documents.extend(self._try_fallback_strategies(files, strategy, project_path))
         return all_documents
 
-    def _try_fallback_strategies(self, failed_files: List[str], failed_strategy, project_path: str) -> List[Document]:
-        """Try fallback strategies for files that failed with their primary strategy."""
+    def _try_fallback_strategies(self, failed_files: List[str], failed_strategy, project_path: str) -> List[scip_pb2.Document]:
+        """Try fallback strategies for files that failed."""
         fallback_documents = []
-
-        logger.info(f"Attempting fallback strategies for {len(failed_files)} failed files")
-
+        
         for file_path in failed_files:
             extension = self._get_file_extension(file_path)
-
-            # Get all strategies for this extension (excluding the failed one)
             strategies = self.scip_factory.get_strategies_for_extension(extension)
             fallback_strategies = [s for s in strategies if s != failed_strategy]
 
             success = False
-            for fallback_strategy in fallback_strategies:
+            for fallback in fallback_strategies:
                 try:
-                    documents = fallback_strategy.generate_scip_documents([file_path], project_path)
-                    fallback_documents.extend(documents)
-                    logger.debug(f"SUCCESS Fallback {fallback_strategy.get_strategy_name()}: {file_path}")
+                    docs = fallback.generate_scip_documents([file_path], project_path)
+                    fallback_documents.extend(docs)
                     success = True
                     break
-
-                except Exception as e:
-                    logger.debug(f"FAILED Fallback {fallback_strategy.get_strategy_name()} failed: {file_path}")
-                    continue
+                except Exception:
+                    pass
 
             if not success:
-                logger.warning(f"All strategies failed for: {file_path}")
-
+                pass
         return fallback_documents
 
-    def _assemble_scip_index(self, documents: List[Document], scan_result, start_time: datetime) -> Index:
-        """Assemble the final SCIP index structure."""
-        scip_index = Index()
-
-        # Set metadata
+    def _assemble_scip_index(self, documents: List[scip_pb2.Document], scan_result: ScanResult, start_time: datetime) -> scip_pb2.Index:
+        """Assemble the final SCIP index."""
+        scip_index = scip_pb2.Index()
         scip_index.metadata.CopyFrom(self._create_metadata(scan_result.project_metadata, start_time))
-
-        # Add all documents
         scip_index.documents.extend(documents)
-
-        # Extract and deduplicate external symbols
         external_symbols = self._extract_external_symbols(documents)
         scip_index.external_symbols.extend(external_symbols)
-
-        logger.info(f"Assembled SCIP index: {len(documents)} documents, {len(external_symbols)} symbols")
-
+        
         return scip_index
 
-    def _create_metadata(self, project_metadata: Dict[str, Any], start_time: datetime) -> Metadata:
+    def _create_metadata(self, project_metadata: Dict[str, Any], start_time: datetime) -> scip_pb2.Metadata:
         """Create SCIP metadata."""
-        metadata = Metadata()
-
-        # Protocol version
-        metadata.version = UnspecifiedProtocolVersion
-
-        # Tool information
+        metadata = scip_pb2.Metadata()
+        metadata.version = scip_pb2.ProtocolVersion.UnspecifiedProtocolVersion
         metadata.tool_info.name = "code-index-mcp"
-        metadata.tool_info.version = project_metadata.get("version", "1.2.1")  # Use project version if available
-        # Add timestamp as argument
-        metadata.tool_info.arguments.extend(["scip-indexing", f"started-{start_time.isoformat()}"])
-
-        # Project root - prefer from metadata if available
-        metadata.project_root = project_metadata.get("project_root", self.project_path)
-
-        # Text encoding
-        metadata.text_document_encoding = UTF8
-
+        metadata.tool_info.version = "1.2.1"
+        metadata.tool_info.arguments.extend(["scip-indexing"])
+        metadata.project_root = self.project_path
+        metadata.text_document_encoding = scip_pb2.TextDocumentEncoding.UTF8
         return metadata
 
-    def _extract_external_symbols(self, documents: List[Document]) -> List:
-        """Extract and deduplicate external symbols from documents."""
-        # For now, return empty list - external symbols are an optimization
-        # that we can implement later if needed
-        # We collect external symbols referenced in the documents for future implementation
-        external_refs = set()
-        for document in documents:
-            for occurrence in document.occurrences:
-                if occurrence.symbol.startswith('external '):
-                    external_refs.add(occurrence.symbol)
-
-        # Return empty list for now, but log the count of external references found
-        if external_refs:
-            logger.debug(f"Found {len(external_refs)} external symbol references")
-
+    def _extract_external_symbols(self, documents: List[scip_pb2.Document]) -> List:
+        """Extract and deduplicate external symbols."""
         return []
 
-    def _validate_scip_index(self, scip_index: Index) -> ValidationResult:
+    def _validate_scip_index(self, scip_index: scip_pb2.Index) -> ValidationResult:
         """Validate the completed SCIP index."""
-        errors = []
-        warnings = []
-
-        # Check required fields
+        errors, warnings = [], []
         if not scip_index.metadata.project_root:
             errors.append("Missing project_root in metadata")
-
         if not scip_index.documents:
             warnings.append("No documents in SCIP index")
-
-        # Check document validity
-        for i, document in enumerate(scip_index.documents):
-            if not document.relative_path:
+        for i, doc in enumerate(scip_index.documents):
+            if not doc.relative_path:
                 errors.append(f"Document {i} missing relative_path")
-
-            if not document.language:
-                warnings.append(f"Document {i} ({document.relative_path}) missing language")
-
-        # Check tool info
+            if not doc.language:
+                warnings.append(f"Document {i} ({doc.relative_path}) missing language")
         if not scip_index.metadata.tool_info.name:
             warnings.append("Missing tool name in metadata")
+        return ValidationResult(is_valid=not errors, errors=errors, warnings=warnings)
 
-        return ValidationResult(
-            is_valid=len(errors) == 0,
-            errors=errors,
-            warnings=warnings
-        )
-
-    def _create_fallback_scip_index(self, project_path: str, error_message: str) -> Index:
-        """Create a minimal fallback SCIP index when building fails."""
-        scip_index = Index()
-
-        # Create minimal metadata
-        metadata = Metadata()
+    def _create_fallback_scip_index(self, project_path: str, error_message: str) -> scip_pb2.Index:
+        """Create a minimal fallback SCIP index on failure."""
+        scip_index = scip_pb2.Index()
+        metadata = scip_pb2.Metadata()
         metadata.tool_info.name = "code-index-mcp"
         metadata.tool_info.version = "1.2.1"
         metadata.project_root = project_path
-        metadata.text_document_encoding = UTF8
+        metadata.text_document_encoding = scip_pb2.TextDocumentEncoding.UTF8
         scip_index.metadata.CopyFrom(metadata)
 
-        # Create a single document with error information
-        error_doc = Document()
+        error_doc = scip_pb2.Document()
         error_doc.relative_path = "BUILD_ERROR.md"
         error_doc.language = "markdown"
         error_doc.text = f"# Build Error\n\nSCIP indexing failed: {error_message}\n"
         scip_index.documents.append(error_doc)
 
-        logger.error(f"Created fallback SCIP index due to error: {error_message}")
+        
         return scip_index
 
     def _get_file_extension(self, file_path: str) -> str:
-        """Extract file extension from path."""
-        if '.' not in file_path:
-            return ''
-        return '.' + file_path.split('.')[-1].lower()
+        """Extract file extension."""
+        return os.path.splitext(file_path)[1].lower()
 
     def get_strategy_summary(self) -> Dict[str, Any]:
         """Get a summary of available strategies."""

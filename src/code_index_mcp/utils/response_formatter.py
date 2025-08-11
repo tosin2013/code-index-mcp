@@ -78,7 +78,7 @@ class ResponseFormatter:
         
         try:
             # Create a temporary CodeIndex-like object for duplicate detection
-            from ..indexing.models import CodeIndex
+            from ..indexing.simple_models import CodeIndex
             
             # Convert index_cache to CodeIndex format if needed
             if isinstance(index_cache, dict) and 'lookups' in index_cache and index_cache['lookups'] is not None:
