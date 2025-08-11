@@ -9,7 +9,6 @@ import json
 from typing import Any, Dict, List, Optional, Union
 
 from ..indexing.qualified_names import generate_qualified_name
-from ..indexing.duplicate_detection import detect_duplicate_functions, detect_duplicate_classes
 
 
 class ResponseFormatter:
@@ -76,37 +75,8 @@ class ResponseFormatter:
         if not index_cache:
             return duplicates
         
-        try:
-            # Create a temporary CodeIndex-like object for duplicate detection
-            from ..indexing.simple_models import CodeIndex
-            
-            # Convert index_cache to CodeIndex format if needed
-            if isinstance(index_cache, dict) and 'lookups' in index_cache and index_cache['lookups'] is not None:
-                # Validate lookups structure before creating CodeIndex
-                lookups = index_cache.get('lookups', {})
-                if not isinstance(lookups, dict):
-                    return duplicates
-                
-                temp_index = CodeIndex(
-                    project_metadata=index_cache.get('project_metadata', {}),
-                    directory_tree=index_cache.get('directory_tree', {}),
-                    files=index_cache.get('files', []),
-                    lookups=lookups,
-                    reverse_lookups=index_cache.get('reverse_lookups', {}),
-                    special_files=index_cache.get('special_files', {}),
-                    index_metadata=index_cache.get('index_metadata', {})
-                )
-                
-                # Detect duplicates with additional error handling
-                duplicate_functions = detect_duplicate_functions(temp_index)
-                duplicate_classes = detect_duplicate_classes(temp_index)
-                
-                duplicates['functions'] = set(duplicate_functions.keys())
-                duplicates['classes'] = set(duplicate_classes.keys())
-                
-        except (ImportError, AttributeError, KeyError, TypeError):
-            # If we can't detect duplicates, return empty sets
-            pass
+        # Duplicate detection functionality removed - was legacy code
+        # Return empty duplicates as this feature is no longer used
         
         return duplicates
     
