@@ -22,36 +22,69 @@ Code Index MCP is a [Model Context Protocol](https://modelcontextprotocol.io) se
 
 **Perfect for:** Code review, refactoring, documentation generation, debugging assistance, and architectural analysis.
 
+## Quick Start
+
+### 🚀 **Recommended Setup (Most Users)**
+
+The easiest way to get started with any MCP-compatible application:
+
+**Prerequisites:** Python 3.10+ and [uv](https://github.com/astral-sh/uv)
+
+1. **Add to your MCP configuration** (e.g., `claude_desktop_config.json` or `~/.claude.json`):
+   ```json
+   {
+     "mcpServers": {
+       "code-index": {
+         "command": "uvx",
+         "args": ["code-index-mcp"]
+       }
+     }
+   }
+   ```
+
+2. **Restart your application** – `uvx` automatically handles installation and execution
+
+3. **Start using**:
+   ```
+   Set the project path to /Users/dev/my-react-app
+   Find all TypeScript files in this project  
+   Search for "authentication" functions
+   Analyze the main App.tsx file
+   ```
+
+## Typical Use Cases
+
+**Code Review**: "Find all places using the old API"  
+**Refactoring Help**: "Where is this function called?"  
+**Learning Projects**: "Show me the main components of this React project"  
+**Debugging**: "Search for all error handling related code"
+
 ## Key Features
 
 ### 🔍 **Intelligent Search & Analysis**
+- **SCIP-Powered**: Industry-standard code intelligence format used by major IDEs
 - **Advanced Search**: Auto-detects and uses the best available tool (ugrep, ripgrep, ag, or grep)
-- **Regex Support**: Full regex pattern matching with ReDoS attack prevention
-- **Fuzzy Search**: True fuzzy matching with edit distance (ugrep) or word boundary patterns
+- **Universal Understanding**: Single system comprehends all programming languages
 - **File Analysis**: Deep insights into structure, imports, classes, methods, and complexity metrics
 
-### 🗂️ **Multi-Language Support**
-- **Mainstream Languages**: Java, Python, JavaScript/TypeScript, C/C++, Go, Rust, C#
-- **Mobile Development**: Swift, Kotlin, Objective-C/C++, React Native
-- **Web Frontend**: Vue, React, Svelte, Astro, HTML, CSS, SCSS
-- **Database**: SQL (MySQL, PostgreSQL, SQLite), NoSQL, stored procedures, migrations
-- **Scripting**: Ruby, PHP, Shell, PowerShell, Bash
-- **Systems**: C/C++, Rust, Go, Zig
-- **JVM Ecosystem**: Java, Kotlin, Scala, Groovy
-- **Others**: Lua, Perl, R, MATLAB, configuration files
-- **50+ File Types Total** - [View complete list](#supported-file-types)
+### 🗂️ **Multi-Language Support**  
+- **50+ File Types**: Java, Python, JavaScript/TypeScript, C/C++, Go, Rust, C#, Swift, Kotlin, Ruby, PHP, and more
+- **Web Frontend**: Vue, React, Svelte, HTML, CSS, SCSS
+- **Database**: SQL variants, NoSQL, stored procedures, migrations
+- **Configuration**: JSON, YAML, XML, Markdown
+- **[View complete list](#supported-file-types)**
 
 ### ⚡ **Real-time Monitoring & Auto-refresh**
 - **File Watcher**: Automatic index updates when files change
-- **Cross-platform**: Native OS file system monitoring (inotify, FSEvents, ReadDirectoryChangesW)
-- **Smart Debouncing**: Batches rapid changes to prevent excessive rebuilds (default: 6 seconds)
-- **Thread-safe**: Non-blocking background operations with ThreadPoolExecutor
+- **Cross-platform**: Native OS file system monitoring
+- **Smart Processing**: Batches rapid changes to prevent excessive rebuilds
+- **Rich Metadata**: Captures symbols, references, definitions, and relationships
 
 ### ⚡ **Performance & Efficiency**
-- **Smart Indexing**: Recursively scans with intelligent filtering of build directories
+- **SCIP Indexing**: Fast protobuf-based unified indexing system
 - **Persistent Caching**: Stores indexes for lightning-fast subsequent access
-- **Lazy Loading**: Tools detected only when needed for optimal startup
-- **Memory Efficient**: Intelligent caching strategies for large codebases
+- **Smart Filtering**: Intelligent exclusion of build directories and temporary files
+- **Memory Efficient**: Optimized for large codebases
 
 ## Supported File Types
 
@@ -127,28 +160,6 @@ Code Index MCP is a [Model Context Protocol](https://modelcontextprotocol.io) se
 - Configuration (`.json`, `.xml`, `.yml`, `.yaml`)
 
 </details>
-
-## Quick Start
-
-### 🚀 **Recommended Setup (Most Users)**
-
-The easiest way to get started with any MCP-compatible application:
-
-**Prerequisites:** Python 3.10+ and [uv](https://github.com/astral-sh/uv)
-
-1. **Add to your MCP configuration** (e.g., `claude_desktop_config.json` or `~/.claude.json`):
-   ```json
-   {
-     "mcpServers": {
-       "code-index": {
-         "command": "uvx",
-         "args": ["code-index-mcp"]
-       }
-     }
-   }
-   ```
-
-2. **Restart your application** – `uvx` automatically handles installation and execution
 
 ### 🛠️ **Development Setup**
 

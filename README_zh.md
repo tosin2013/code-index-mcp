@@ -22,30 +22,63 @@
 
 **適用於：**程式碼審查、重構、文件生成、除錯協助和架構分析。
 
+## 快速開始
+
+### 🚀 **推薦設定（大多數使用者）**
+
+與任何 MCP 相容應用程式開始的最簡單方式：
+
+**前置需求：** Python 3.10+ 和 [uv](https://github.com/astral-sh/uv)
+
+1. **新增到您的 MCP 設定** (例如 `claude_desktop_config.json` 或 `~/.claude.json`)：
+   ```json
+   {
+     "mcpServers": {
+       "code-index": {
+         "command": "uvx",
+         "args": ["code-index-mcp"]
+       }
+     }
+   }
+   ```
+
+2. **重新啟動應用程式** – `uvx` 會自動處理安裝和執行
+
+3. **開始使用**：
+   ```
+   設定專案路徑為 /Users/dev/my-react-app
+   在這個專案中找到所有 TypeScript 檔案
+   搜尋「authentication」相關函數
+   分析主要的 App.tsx 檔案
+   ```
+
+## 典型使用場景
+
+**程式碼審查**：「找出所有使用舊 API 的地方」  
+**重構協助**：「這個函數在哪裡被呼叫？」  
+**學習專案**：「顯示這個 React 專案的主要元件」  
+**除錯協助**：「搜尋所有錯誤處理相關的程式碼」
+
 ## 主要特性
 
 ### 🔍 **智慧搜尋與分析**
+- **SCIP 驅動**：業界標準程式碼智能格式，被主流 IDE 採用
 - **進階搜尋**：自動偵測並使用最佳工具（ugrep、ripgrep、ag 或 grep）
-- **正規表達式支援**：完整的正規表達式模式匹配，具備 ReDoS 攻擊防護
-- **模糊搜尋**：真正的編輯距離模糊匹配（ugrep）或詞邊界模式匹配
+- **通用理解**：單一系統理解所有程式語言
 - **檔案分析**：深入了解結構、匯入、類別、方法和複雜度指標
 
 ### 🗂️ **多語言支援**
-- **主流語言**：Java、Python、JavaScript/TypeScript、C/C++、Go、Rust、C#
-- **行動開發**：Swift、Kotlin、Objective-C/C++、React Native
-- **網頁前端**：Vue、React、Svelte、Astro、HTML、CSS、SCSS
-- **資料庫**：SQL (MySQL、PostgreSQL、SQLite)、NoSQL、存儲過程、遷移腳本
-- **腳本語言**：Ruby、PHP、Shell、PowerShell、Bash
-- **系統語言**：C/C++、Rust、Go、Zig
-- **JVM 生態系**：Java、Kotlin、Scala、Groovy
-- **其他語言**：Lua、Perl、R、MATLAB、配置檔案
-- **共 50+ 種檔案類型** - [查看完整列表](#支援的檔案類型)
+- **50+ 種檔案類型**：Java、Python、JavaScript/TypeScript、C/C++、Go、Rust、C#、Swift、Kotlin、Ruby、PHP 等
+- **網頁前端**：Vue、React、Svelte、HTML、CSS、SCSS
+- **資料庫**：SQL 變體、NoSQL、存儲過程、遷移腳本
+- **配置檔案**：JSON、YAML、XML、Markdown
+- **[查看完整列表](#支援的檔案類型)**
 
 ### ⚡ **即時監控與自動刷新**
 - **檔案監控器**：檔案變更時自動更新索引
-- **跨平台**：原生作業系統檔案系統監控 (inotify、FSEvents、ReadDirectoryChangesW)
-- **智慧防抖**：批次處理快速變更以防止過度重建（預設：6 秒）
-- **執行緒安全**：使用 ThreadPoolExecutor 進行非阻塞背景操作
+- **跨平台**：原生作業系統檔案系統監控
+- **智慧處理**：批次處理快速變更以防止過度重建
+- **豐富元資料**：捕獲符號、引用、定義和關聯性
 
 ### ⚡ **效能與效率**
 - **智慧索引**：遞迴掃描並智慧篩選建構目錄
