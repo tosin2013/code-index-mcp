@@ -7,6 +7,7 @@ from .python_analyzer import PythonAnalyzer
 from .javascript_analyzer import JavaScriptAnalyzer
 from .java_analyzer import JavaAnalyzer
 from .objective_c_analyzer import ObjectiveCAnalyzer
+from .zig_analyzer import ZigAnalyzer
 
 
 class AnalyzerFactory:
@@ -74,6 +75,7 @@ def _initialize_factory():
     AnalyzerFactory.register(['.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs'], JavaScriptAnalyzer)
     AnalyzerFactory.register(['.java'], JavaAnalyzer)
     AnalyzerFactory.register(['.m', '.mm'], ObjectiveCAnalyzer)
+    AnalyzerFactory.register(['.zig', '.zon'], ZigAnalyzer)
 
 
 # Initialize on import
