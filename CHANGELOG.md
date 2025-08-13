@@ -2,6 +2,42 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.1.0] - 2025-01-13
+
+### Major SCIP Architecture Enhancement
+
+This release completes the migration to SCIP-based code indexing with significant improvements to the core infrastructure and API simplification.
+
+#### Core SCIP Infrastructure
+- **Complete SCIP core components**: Added symbol_manager, position_calculator, reference_resolver, moniker_manager
+- **Two-phase SCIP analysis**: Implemented symbol collection → reference resolution workflow
+- **Unified index management**: New index_provider and unified_index_manager for seamless index operations
+- **SCIP-compliant symbol IDs**: Standard symbol ID generation with cross-file reference support
+
+#### Enhanced Strategy System
+- **All language strategies SCIP-compliant**: Refactored Python, Java, JavaScript, Objective-C strategies
+- **External symbol extraction**: Added dependency tracking and external symbol resolution
+- **Proper SCIP classifications**: Implemented symbol roles and syntax kind detection
+- **Robust file handling**: Enhanced encoding detection and error recovery
+
+#### API Improvements
+- **Simplified find_files response**: Returns clean file path lists instead of complex metadata objects
+- **Enhanced SCIPSymbolAnalyzer**: Replaced legacy query tools with accurate symbol analysis
+- **Improved logging**: Comprehensive logging throughout SCIP indexing pipeline
+
+#### Dependency Updates
+- **pathspec integration**: Better .gitignore parsing and file filtering
+- **Updated requirements**: Added comprehensive dependency list for cross-platform support
+
+#### Technical Improvements
+- **Symbol analysis tools**: New inspection scripts for debugging and development
+- **Enhanced error handling**: Better fallback strategies and error recovery
+- **Testing improvements**: Updated sample projects for multilingual testing
+
+#### Breaking Changes
+- **find_files API**: Now returns `List[str]` instead of complex metadata dictionary
+- **Internal architecture**: Significant refactoring of internal components (no user-facing impact)
+
 ## [2.0.0] - 2025-08-11
 
 ### 🚀 MAJOR RELEASE - SCIP Architecture Migration
