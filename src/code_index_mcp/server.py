@@ -13,7 +13,7 @@ import sys
 import logging
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import AsyncIterator, Dict, Any, Optional
+from typing import AsyncIterator, Dict, Any, Optional, List
 
 # Third-party imports
 from mcp import types
@@ -185,8 +185,8 @@ def search_code_advanced(
     )
 
 @mcp.tool()
-@handle_mcp_tool_errors(return_type='dict')
-def find_files(pattern: str, ctx: Context) -> Dict[str, Any]:
+@handle_mcp_tool_errors(return_type='list')
+def find_files(pattern: str, ctx: Context) -> List[str]:
     """
     Find files matching a glob pattern using pre-built file index.
 
@@ -206,7 +206,7 @@ def find_files(pattern: str, ctx: Context) -> Dict[str, Any]:
         pattern: Glob pattern to match files (e.g., "*.py", "test_*.js", "README.md")
 
     Returns:
-        Dictionary with files list and status information
+        List of file paths matching the pattern
     """
     return FileDiscoveryService(ctx).find_files(pattern)
 

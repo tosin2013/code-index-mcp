@@ -37,7 +37,7 @@ class FileDiscoveryService(BaseService):
         super().__init__(ctx)
         self._matcher_tool = FileMatchingTool()
 
-    def find_files(self, pattern: str, max_results: Optional[int] = None) -> Dict[str, Any]:
+    def find_files(self, pattern: str, max_results: Optional[int] = None) -> List[str]:
         """
         Find files matching the given pattern using intelligent discovery.
 
@@ -50,7 +50,7 @@ class FileDiscoveryService(BaseService):
             max_results: Maximum number of results to return (None for no limit)
 
         Returns:
-            Dictionary with discovery results and metadata
+            List of file paths matching the pattern
 
         Raises:
             ValueError: If pattern is invalid or project not set up
@@ -282,7 +282,7 @@ class FileDiscoveryService(BaseService):
             'original_pattern': pattern
         }
 
-    def _format_discovery_result(self, discovery_result: FileDiscoveryResult) -> Dict[str, Any]:
+    def _format_discovery_result(self, discovery_result: FileDiscoveryResult) -> List[str]:
         """
         Format the discovery result according to business requirements.
 
@@ -290,13 +290,6 @@ class FileDiscoveryService(BaseService):
             discovery_result: Raw discovery result
 
         Returns:
-            Formatted result dictionary for MCP response
+            Simple list of file paths
         """
-        return {
-            'files': discovery_result.files,
-            'total': discovery_result.total_count,
-            'pattern': discovery_result.pattern_used,
-            'strategy': discovery_result.search_strategy,
-            'metadata': discovery_result.metadata,
-            'status': 'success'
-        }
+        return discovery_result.files
