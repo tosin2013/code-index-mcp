@@ -9,12 +9,11 @@ to domain-specific services for business logic.
 """
 
 # Standard library imports
-import os
 import sys
 import logging
 from contextlib import asynccontextmanager
-from dataclasses import dataclass, field
-from typing import AsyncIterator, Dict, Any
+from dataclasses import dataclass
+from typing import AsyncIterator, Dict, Any, Optional
 
 # Third-party imports
 from mcp import types
@@ -25,6 +24,7 @@ from .project_settings import ProjectSettings
 from .services import (
     SearchService, FileService, SettingsService, FileWatcherService
 )
+from .indexing.unified_index_manager import UnifiedIndexManager
 from .services.settings_service import manage_temp_directory
 from .services.file_discovery_service import FileDiscoveryService
 from .services.project_management_service import ProjectManagementService
@@ -35,13 +35,25 @@ from .utils import (
     handle_mcp_resource_errors, handle_mcp_tool_errors
 )
 
-# Setup logging to stderr for MCP compliance - at application entry point
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    stream=sys.stderr,
-    force=True  # Override any existing configuration
-)
+# Setup logging without writing to files
+def setup_indexing_performance_logging():
+    """Setup logging (stderr only); remove any file-based logging."""
+
+    root_logger = logging.getLogger()
+    root_logger.handlers.clear()
+
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
+    # stderr for errors only
+    stderr_handler = logging.StreamHandler(sys.stderr)
+    stderr_handler.setFormatter(formatter)
+    stderr_handler.setLevel(logging.ERROR)
+
+    root_logger.addHandler(stderr_handler)
+    root_logger.setLevel(logging.DEBUG)
+
+# Initialize logging (no file handlers)
+setup_indexing_performance_logging()
 
 @dataclass
 class CodeIndexerContext:
@@ -49,8 +61,7 @@ class CodeIndexerContext:
     base_path: str
     settings: ProjectSettings
     file_count: int = 0
-    file_index: dict = field(default_factory=dict)
-    index_cache: dict = field(default_factory=dict)
+    index_manager: Optional['UnifiedIndexManager'] = None
     file_watcher_service: FileWatcherService = None
 
 @asynccontextmanager
@@ -78,8 +89,8 @@ async def indexer_lifespan(_server: FastMCP) -> AsyncIterator[CodeIndexerContext
             context.file_watcher_service.stop_monitoring()
 
         # Only save index if project path has been set
-        if context.base_path and context.index_cache:
-            settings.save_index(context.index_cache)
+        if context.base_path and context.index_manager:
+            context.index_manager.save_index()
 
 # Create the MCP server with lifespan manager
 mcp = FastMCP("CodeIndexer", lifespan=indexer_lifespan, dependencies=["pathlib"])

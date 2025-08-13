@@ -480,4 +480,9 @@ public class UserManager {
             logger.error("Error saving users to file: {}", storagePath, e);
         }
     }
+
+    // CI marker method to verify auto-reindex on change
+    public String ciAddedSymbolMarker() {
+        return "ci_symbol_java";
+    }
 }

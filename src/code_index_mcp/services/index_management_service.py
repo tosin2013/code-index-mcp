@@ -145,11 +145,8 @@ class IndexManagementService(BaseService):
     def _clear_existing_index(self) -> None:
         """Business logic to clear existing index state."""
 
-        # Clear in-memory cache
+        # Clear unified index manager
         self.helper.clear_index_cache()
-
-        # Clear SCIP tool state
-        self._scip_tool.clear_index()
 
         # No logging
 
@@ -164,14 +161,27 @@ class IndexManagementService(BaseService):
             RuntimeError: If rebuild fails
         """
         try:
-            # Business logic: Manual rebuild always rebuilds from scratch
-            file_count = self._scip_tool.build_index(self.base_path)
+            # Business logic: Manual rebuild through unified manager
+            if not self.index_manager:
+                raise RuntimeError("Index manager not available")
             
-            # Business logic: Save the rebuilt index
-            if not self._scip_tool.save_index():
-                logger.warning("Manual rebuild: Index built but save failed")
+            # Force rebuild
+            success = self.index_manager.refresh_index(force=True)
+            if not success:
+                raise RuntimeError("Index rebuild failed")
             
-            return file_count
+            # Get file count from provider
+            provider = self.index_provider
+            if provider:
+                file_count = len(provider.get_file_list())
+                
+                # Save the rebuilt index
+                if not self.index_manager.save_index():
+                    logger.warning("Manual rebuild: Index built but save failed")
+                
+                return file_count
+            else:
+                raise RuntimeError("No index provider available after rebuild")
 
         except Exception as e:
             raise RuntimeError(f"Failed to rebuild index: {e}") from e

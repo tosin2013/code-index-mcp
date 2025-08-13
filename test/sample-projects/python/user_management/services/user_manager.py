@@ -216,3 +216,7 @@ class UserManager:
     def __str__(self) -> str:
         """String representation of UserManager."""
         return f"UserManager(users: {len(self._users)})"
+
+    # CI marker method to verify auto-reindex on change
+    def _ci_added_symbol_marker(self) -> str:
+        return "ci_symbol_python"

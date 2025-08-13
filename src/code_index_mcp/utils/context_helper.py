@@ -69,30 +69,17 @@ class ContextHelper:
             return 0
 
     @property
-    def file_index(self) -> dict:
+    def index_manager(self):
         """
-        Get the file index from the context.
+        Get the unified index manager from the context.
 
         Returns:
-            The file index dictionary, or empty dict if not available
+            The UnifiedIndexManager instance, or None if not available
         """
         try:
-            return getattr(self.ctx.request_context.lifespan_context, 'file_index', {})
+            return getattr(self.ctx.request_context.lifespan_context, 'index_manager', None)
         except AttributeError:
-            return {}
-
-    @property
-    def index_cache(self) -> dict:
-        """
-        Get the index cache from the context.
-
-        Returns:
-            The index cache dictionary, or empty dict if not available
-        """
-        try:
-            return getattr(self.ctx.request_context.lifespan_context, 'index_cache', {})
-        except AttributeError:
-            return {}
+            return None
 
     def validate_base_path(self) -> bool:
         """
@@ -161,12 +148,22 @@ class ContextHelper:
 
     def clear_index_cache(self) -> None:
         """
-        Clear the index cache in the context.
+        Clear the index through the unified index manager.
         """
         try:
-            if hasattr(self.ctx.request_context.lifespan_context, 'file_index'):
-                self.ctx.request_context.lifespan_context.file_index.clear()
-            if hasattr(self.ctx.request_context.lifespan_context, 'index_cache'):
-                self.ctx.request_context.lifespan_context.index_cache.clear()
+            if self.index_manager:
+                self.index_manager.clear_index()
         except AttributeError:
             pass
+    
+    def update_index_manager(self, index_manager) -> None:
+        """
+        Update the index manager in the context.
+
+        Args:
+            index_manager: The new UnifiedIndexManager instance
+        """
+        try:
+            self.ctx.request_context.lifespan_context.index_manager = index_manager
+        except AttributeError:
+            pass  # Context not available or doesn't support this operation

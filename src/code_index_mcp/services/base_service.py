@@ -118,21 +118,23 @@ class BaseService(ABC):
         return self.helper.file_count
 
     @property
-    def file_index(self) -> dict:
+    def index_provider(self):
         """
-        Convenient access to the file index.
+        Convenient access to the unified index provider.
 
         Returns:
-            The file index dictionary
+            The current IIndexProvider instance, or None if not available
         """
-        return self.helper.file_index
-
+        if self.helper.index_manager:
+            return self.helper.index_manager.get_provider()
+        return None
+    
     @property
-    def index_cache(self) -> dict:
+    def index_manager(self):
         """
-        Convenient access to the index cache.
+        Convenient access to the unified index manager.
 
         Returns:
-            The index cache dictionary
+            The UnifiedIndexManager instance, or None if not available
         """
-        return self.helper.index_cache
+        return self.helper.index_manager

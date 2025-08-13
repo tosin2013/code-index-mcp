@@ -14,12 +14,8 @@ from ...indexing.scip_builder import SCIPIndexBuilder
 
 logger = logging.getLogger(__name__)
 
-@dataclass
-class FileInfo:
-    """Technical data structure for file information."""
-    relative_path: str
-    language: str
-    absolute_path: str
+# Import FileInfo from the central location to avoid duplication
+from ...indexing.index_provider import FileInfo
 
 
 class SCIPIndexTool:

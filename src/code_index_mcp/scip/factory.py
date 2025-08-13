@@ -26,14 +26,14 @@ class SCIPIndexerFactory:
     
     def _register_all_strategies(self):
         """Register all available strategies in priority order."""
-        logger.info("Registering SCIP indexing strategies (tree-sitter)...")
+        logger.info("Registering SCIP indexing strategies (SCIP compliant)...")
         
-        # Language-specific strategies (high priority: 90)
+        # Language-specific strategies (high priority: 95)
         language_strategies = [
-            PythonStrategy(priority=90),
-            JavaScriptStrategy(priority=90),
-            JavaStrategy(priority=90),
-            ObjectiveCStrategy(priority=90),
+            PythonStrategy(priority=95),
+            JavaScriptStrategy(priority=95),
+            JavaStrategy(priority=95),
+            ObjectiveCStrategy(priority=95),
         ]
         
         for strategy in language_strategies:
@@ -41,11 +41,11 @@ class SCIPIndexerFactory:
             logger.debug(f"Registered {strategy.get_strategy_name()}")
         
         # Fallback strategy (lowest priority: 10)
-        fallback_strategy = FallbackStrategy(priority=10)
-        self.register_strategy(fallback_strategy)
-        logger.debug(f"Registered {fallback_strategy.get_strategy_name()}")
+        fallback = FallbackStrategy(priority=10)
+        self.register_strategy(fallback)
+        logger.debug(f"Registered {fallback.get_strategy_name()}")
         
-        logger.info(f"Registered {len(self.strategies)} strategies using tree-sitter parsing")
+        logger.info(f"Registered {len(self.strategies)} strategies")
     
     def register_strategy(self, strategy: SCIPIndexerStrategy):
         """

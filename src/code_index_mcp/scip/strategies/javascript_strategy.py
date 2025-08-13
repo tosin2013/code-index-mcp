@@ -1,134 +1,156 @@
-# pylint: disable=no-member
-"""Tree-sitter based JavaScript/TypeScript SCIP indexing strategy."""
+"""JavaScript/TypeScript SCIP indexing strategy v2 - SCIP standard compliant."""
 
 import logging
 import os
-from typing import List, Set, Dict, Any, Optional
+from typing import List, Optional, Dict, Any, Set
 from pathlib import Path
 
-import tree_sitter
-from tree_sitter_javascript import language as js_language
-from tree_sitter_typescript import language_typescript as ts_language
+try:
+    import tree_sitter
+    from tree_sitter_javascript import language as js_language
+    from tree_sitter_typescript import language_typescript as ts_language
+    TREE_SITTER_AVAILABLE = True
+except ImportError:
+    TREE_SITTER_AVAILABLE = False
 
-from .base_strategy import SCIPIndexerStrategy, ConversionError
+from .base_strategy import SCIPIndexerStrategy, StrategyError
 from ..proto import scip_pb2
+from ..core.position_calculator import PositionCalculator
 
 
 logger = logging.getLogger(__name__)
 
 
 class JavaScriptStrategy(SCIPIndexerStrategy):
-    """Tree-sitter based strategy for JavaScript/TypeScript files."""
+    """SCIP-compliant JavaScript/TypeScript indexing strategy using Tree-sitter."""
 
     SUPPORTED_EXTENSIONS = {'.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs'}
 
-    def __init__(self, priority: int = 90):
-        """Initialize with tree-sitter parsers."""
+    def __init__(self, priority: int = 95):
+        """Initialize the JavaScript/TypeScript strategy v2."""
         super().__init__(priority)
-
-
+        
+        if not TREE_SITTER_AVAILABLE:
+            raise StrategyError("Tree-sitter not available for JavaScript/TypeScript strategy")
+        
         # Initialize parsers
         js_lang = tree_sitter.Language(js_language())
         ts_lang = tree_sitter.Language(ts_language())
-
+        
         self.js_parser = tree_sitter.Parser(js_lang)
         self.ts_parser = tree_sitter.Parser(ts_lang)
 
-        logger.info("JavaScriptStrategy initialized with tree-sitter")
-
     def can_handle(self, extension: str, file_path: str) -> bool:
-        """Check if this strategy can handle the given file extension."""
-        return extension.lower() in self.SUPPORTED_EXTENSIONS
+        """Check if this strategy can handle the file type."""
+        return extension.lower() in self.SUPPORTED_EXTENSIONS and TREE_SITTER_AVAILABLE
 
-    def generate_scip_documents(self, files: List[str], project_path: str) -> List[scip_pb2.Document]:
-        """
-        Generate SCIP documents using tree-sitter AST parsing.
+    def get_language_name(self) -> str:
+        """Get the language name for SCIP symbol generation."""
+        return "javascript"  # Use 'javascript' for both JS and TS
 
-        Args:
-            files: List of JavaScript/TypeScript file paths to index
-            project_path: Root path of the project
+    def is_available(self) -> bool:
+        """Check if this strategy is available."""
+        return TREE_SITTER_AVAILABLE
 
-        Returns:
-            List of SCIP Document objects
-        """
-
-        documents = []
-
+    def _collect_symbol_definitions(self, files: List[str], project_path: str) -> None:
+        """Phase 1: Collect all symbol definitions from JavaScript/TypeScript files."""
         for file_path in files:
             try:
-                document = self._create_scip_document(file_path, project_path)
+                self._collect_symbols_from_file(file_path, project_path)
+            except Exception as e:
+                logger.warning(f"Failed to collect symbols from {file_path}: {e}")
+                continue
+
+    def _generate_documents_with_references(self, files: List[str], project_path: str) -> List[scip_pb2.Document]:
+        """Phase 2: Generate complete SCIP documents with resolved references."""
+        documents = []
+        
+        for file_path in files:
+            try:
+                document = self._analyze_js_file(file_path, project_path)
                 if document:
                     documents.append(document)
             except Exception as e:
-                logger.error(f"Failed to create SCIP document for {file_path}: {str(e)}")
-                # Continue with other files
-
-        logger.info(f"JavaScriptStrategy created {len(documents)} SCIP documents")
+                logger.error(f"Failed to analyze JavaScript/TypeScript file {file_path}: {e}")
+                continue
+        
         return documents
 
-    def _create_scip_document(self, file_path: str, project_path: str) -> Optional[scip_pb2.Document]:
-        """
-        Create a SCIP document for a JavaScript/TypeScript file using tree-sitter.
+    def _collect_symbols_from_file(self, file_path: str, project_path: str) -> None:
+        """Collect symbol definitions from a single JavaScript/TypeScript file."""
+        # Read file content
+        content = self._read_file_content(file_path)
+        if not content:
+            return
 
-        Args:
-            file_path: Path to the JavaScript/TypeScript file
-            project_path: Root path of the project
+        # Parse with Tree-sitter
+        tree = self._parse_content(content, file_path)
+        if not tree:
+            return
 
-        Returns:
-            SCIP Document object or None if failed
-        """
-        try:
-            # Resolve full file path
-            if not os.path.isabs(file_path):
-                full_path = os.path.join(project_path, file_path)
-            else:
-                full_path = file_path
+        # Collect symbols
+        relative_path = self._get_relative_path(file_path, project_path)
+        collector = JavaScriptSymbolCollector(
+            relative_path, content, tree, self.symbol_manager, self.reference_resolver
+        )
+        collector.analyze()
 
-            # Read file content
-            with open(full_path, 'r', encoding='utf-8') as f:
-                content = f.read()
-
-            # Create SCIP document
-            document = scip_pb2.Document()
-            document.relative_path = self._get_relative_path(file_path, project_path)
-            document.language = self._detect_language(Path(file_path).suffix)
-
-            # Parse with appropriate parser
-            tree = self._parse_content(content, document.language)
-            if not tree:
-                return None
-
-            # Analyze the AST
-            analyzer = JSTreeSitterAnalyzer(document.relative_path, content, tree, document.language)
-            analyzer.analyze()
-
-            # Add results to document
-            document.occurrences.extend(analyzer.occurrences)
-            document.symbols.extend(analyzer.symbols)
-
-            logger.debug(f"Created SCIP document for {document.relative_path}: "
-                        f"{len(document.occurrences)} occurrences, {len(document.symbols)} symbols")
-
-            return document
-
-        except Exception as e:
-            logger.error(f"Failed to create SCIP document for {file_path}: {str(e)}")
+    def _analyze_js_file(self, file_path: str, project_path: str) -> Optional[scip_pb2.Document]:
+        """Analyze a single JavaScript/TypeScript file and generate complete SCIP document."""
+        # Read file content
+        content = self._read_file_content(file_path)
+        if not content:
             return None
 
-    def _parse_content(self, content: str, language: str) -> Optional[tree_sitter.Tree]:
+        # Parse with Tree-sitter
+        tree = self._parse_content(content, file_path)
+        if not tree:
+            return None
+
+        # Create SCIP document
+        document = scip_pb2.Document()
+        document.relative_path = self._get_relative_path(file_path, project_path)
+        document.language = self._detect_specific_language(Path(file_path).suffix)
+
+        # Analyze AST and generate occurrences
+        self.position_calculator = PositionCalculator(content)
+        analyzer = JavaScriptAnalyzer(
+            document.relative_path,
+            content,
+            tree,
+            document.language,
+            self.symbol_manager,
+            self.position_calculator,
+            self.reference_resolver
+        )
+        analyzer.analyze()
+
+        # Add results to document
+        document.occurrences.extend(analyzer.occurrences)
+        document.symbols.extend(analyzer.symbols)
+
+        logger.debug(f"Analyzed JavaScript/TypeScript file {document.relative_path}: "
+                    f"{len(document.occurrences)} occurrences, {len(document.symbols)} symbols")
+
+        return document
+
+    def _parse_content(self, content: str, file_path: str) -> Optional[tree_sitter.Tree]:
         """Parse content with appropriate parser."""
         try:
             content_bytes = content.encode('utf-8')
-
-            if language in ['typescript', 'tsx']:
+            
+            # Choose parser based on file extension
+            extension = Path(file_path).suffix.lower()
+            if extension in ['.ts', '.tsx']:
                 return self.ts_parser.parse(content_bytes)
             else:
                 return self.js_parser.parse(content_bytes)
+                
         except Exception as e:
-            logger.error(f"Failed to parse content: {str(e)}")
+            logger.error(f"Failed to parse content: {e}")
             return None
 
-    def _detect_language(self, extension: str) -> str:
+    def _detect_specific_language(self, extension: str) -> str:
         """Detect specific language from extension."""
         ext_to_lang = {
             '.js': 'javascript',
@@ -140,67 +162,201 @@ class JavaScriptStrategy(SCIPIndexerStrategy):
         }
         return ext_to_lang.get(extension.lower(), 'javascript')
 
-    def _get_relative_path(self, file_path: str, project_path: str) -> str:
-        """Get relative path from project root."""
-        try:
-            path = Path(file_path)
-            if path.is_absolute():
-                return str(path.relative_to(Path(project_path)))
-            return file_path
-        except ValueError:
-            return file_path
 
-    def get_strategy_name(self) -> str:
-        """Return a human-readable name for this strategy."""
-        return "JavaScript/TypeScript(TreeSitter)"
+class JavaScriptSymbolCollector:
+    """Tree-sitter based symbol collector for JavaScript/TypeScript (Phase 1)."""
+
+    def __init__(self, file_path: str, content: str, tree: tree_sitter.Tree, symbol_manager, reference_resolver):
+        self.file_path = file_path
+        self.content = content
+        self.tree = tree
+        self.symbol_manager = symbol_manager
+        self.reference_resolver = reference_resolver
+        self.scope_stack: List[str] = []
+
+    def analyze(self):
+        """Analyze the tree-sitter AST to collect symbols."""
+        root = self.tree.root_node
+        self._analyze_node(root)
+
+    def _analyze_node(self, node: tree_sitter.Node):
+        """Recursively analyze AST nodes."""
+        node_type = node.type
+
+        if node_type == 'function_declaration':
+            self._register_function_symbol(node)
+        elif node_type == 'method_definition':
+            self._register_method_symbol(node)
+        elif node_type == 'class_declaration':
+            self._register_class_symbol(node)
+        elif node_type == 'interface_declaration':
+            self._register_interface_symbol(node)
+        elif node_type == 'type_alias_declaration':
+            self._register_type_alias_symbol(node)
+        elif node_type == 'variable_declarator':
+            self._register_variable_symbol(node)
+
+        # Recursively analyze child nodes
+        for child in node.children:
+            self._analyze_node(child)
+
+    def _register_function_symbol(self, node: tree_sitter.Node):
+        """Register a function symbol definition."""
+        name_node = self._find_child_by_type(node, 'identifier')
+        if name_node:
+            name = self._get_node_text(name_node)
+            if name:
+                symbol_id = self.symbol_manager.create_local_symbol(
+                    language="javascript",
+                    file_path=self.file_path,
+                    symbol_path=self.scope_stack + [name],
+                    descriptor="()."
+                )
+                
+                self._register_symbol(symbol_id, name, scip_pb2.Function, ["JavaScript function"])
+
+    def _register_method_symbol(self, node: tree_sitter.Node):
+        """Register a method symbol definition."""
+        name_node = (self._find_child_by_type(node, 'property_identifier') or 
+                    self._find_child_by_type(node, 'identifier'))
+        if name_node:
+            name = self._get_node_text(name_node)
+            if name:
+                symbol_id = self.symbol_manager.create_local_symbol(
+                    language="javascript",
+                    file_path=self.file_path,
+                    symbol_path=self.scope_stack + [name],
+                    descriptor="()."
+                )
+                
+                self._register_symbol(symbol_id, name, scip_pb2.Method, ["JavaScript method"])
+
+    def _register_class_symbol(self, node: tree_sitter.Node):
+        """Register a class symbol definition."""
+        name_node = self._find_child_by_type(node, 'identifier')
+        if name_node:
+            name = self._get_node_text(name_node)
+            if name:
+                symbol_id = self.symbol_manager.create_local_symbol(
+                    language="javascript",
+                    file_path=self.file_path,
+                    symbol_path=self.scope_stack + [name],
+                    descriptor="#"
+                )
+                
+                self._register_symbol(symbol_id, name, scip_pb2.Class, ["JavaScript class"])
+
+    def _register_interface_symbol(self, node: tree_sitter.Node):
+        """Register a TypeScript interface symbol definition."""
+        name_node = self._find_child_by_type(node, 'type_identifier')
+        if name_node:
+            name = self._get_node_text(name_node)
+            if name:
+                symbol_id = self.symbol_manager.create_local_symbol(
+                    language="javascript",
+                    file_path=self.file_path,
+                    symbol_path=self.scope_stack + [name],
+                    descriptor="#"
+                )
+                
+                self._register_symbol(symbol_id, name, scip_pb2.Interface, ["TypeScript interface"])
+
+    def _register_type_alias_symbol(self, node: tree_sitter.Node):
+        """Register a TypeScript type alias symbol definition."""
+        name_node = self._find_child_by_type(node, 'type_identifier')
+        if name_node:
+            name = self._get_node_text(name_node)
+            if name:
+                symbol_id = self.symbol_manager.create_local_symbol(
+                    language="javascript",
+                    file_path=self.file_path,
+                    symbol_path=self.scope_stack + [name],
+                    descriptor="#"
+                )
+                
+                self._register_symbol(symbol_id, name, scip_pb2.TypeParameter, ["TypeScript type alias"])
+
+    def _register_variable_symbol(self, node: tree_sitter.Node):
+        """Register a variable symbol definition."""
+        name_node = self._find_child_by_type(node, 'identifier')
+        if name_node:
+            name = self._get_node_text(name_node)
+            if name:
+                symbol_id = self.symbol_manager.create_local_symbol(
+                    language="javascript",
+                    file_path=self.file_path,
+                    symbol_path=self.scope_stack + [name],
+                    descriptor=""
+                )
+                
+                self._register_symbol(symbol_id, name, scip_pb2.Variable, ["JavaScript variable"])
+
+    def _register_symbol(self, symbol_id: str, name: str, symbol_kind: int, documentation: List[str]):
+        """Register a symbol with the reference resolver."""
+        dummy_range = scip_pb2.Range()
+        dummy_range.start.extend([0, 0])
+        dummy_range.end.extend([0, 1])
+        
+        self.reference_resolver.register_symbol_definition(
+            symbol_id=symbol_id,
+            file_path=self.file_path,
+            definition_range=dummy_range,
+            symbol_kind=symbol_kind,
+            display_name=name,
+            documentation=documentation
+        )
+
+    def _find_child_by_type(self, node: tree_sitter.Node, node_type: str) -> Optional[tree_sitter.Node]:
+        """Find first child node of the given type."""
+        for child in node.children:
+            if child.type == node_type:
+                return child
+        return None
+
+    def _get_node_text(self, node: tree_sitter.Node) -> str:
+        """Get text content of a node."""
+        return self.content[node.start_byte:node.end_byte]
 
 
-class JSTreeSitterAnalyzer:
-    """Tree-sitter based analyzer for JavaScript/TypeScript AST."""
+class JavaScriptAnalyzer:
+    """Tree-sitter based analyzer for JavaScript/TypeScript AST (Phase 2)."""
 
-    def __init__(self, file_path: str, content: str, tree: tree_sitter.Tree, language: str):
+    def __init__(self, file_path: str, content: str, tree: tree_sitter.Tree, language: str,
+                 symbol_manager, position_calculator, reference_resolver):
         self.file_path = file_path
         self.content = content
         self.tree = tree
         self.language = language
-        self.lines = content.split('\n')
+        self.symbol_manager = symbol_manager
+        self.position_calculator = position_calculator
+        self.reference_resolver = reference_resolver
+        self.scope_stack: List[str] = []
+        
+        # Results
         self.occurrences: List[scip_pb2.Occurrence] = []
         self.symbols: List[scip_pb2.SymbolInformation] = []
-
-        # Track scope for qualified names
-        self.scope_stack: List[str] = []
 
     def analyze(self):
         """Analyze the tree-sitter AST."""
         root = self.tree.root_node
         self._analyze_node(root)
 
-        logger.debug(f"Analyzed {self.file_path}: "
-                    f"{len(self.occurrences)} occurrences, {len(self.symbols)} symbols")
-
     def _analyze_node(self, node: tree_sitter.Node):
         """Recursively analyze AST nodes."""
-        # Handle different node types
         node_type = node.type
 
         if node_type == 'function_declaration':
             self._handle_function_declaration(node)
         elif node_type == 'method_definition':
             self._handle_method_definition(node)
-        elif node_type == 'arrow_function':
-            self._handle_arrow_function(node)
         elif node_type == 'class_declaration':
             self._handle_class_declaration(node)
         elif node_type == 'interface_declaration':
             self._handle_interface_declaration(node)
         elif node_type == 'type_alias_declaration':
-            self._handle_type_alias(node)
+            self._handle_type_alias_declaration(node)
         elif node_type == 'variable_declarator':
             self._handle_variable_declarator(node)
-        elif node_type == 'import_statement' or node_type == 'import_declaration':
-            self._handle_import(node)
-        elif node_type == 'export_statement' or node_type == 'export_declaration':
-            self._handle_export(node)
         elif node_type == 'identifier':
             self._handle_identifier_reference(node)
 
@@ -214,20 +370,16 @@ class JSTreeSitterAnalyzer:
         if name_node:
             name = self._get_node_text(name_node)
             if name:
-                self._add_function_symbol(name_node, name, is_method=False)
+                self._create_function_symbol(node, name_node, name, False)
 
     def _handle_method_definition(self, node: tree_sitter.Node):
-        """Handle class method definitions."""
-        # Find the method name (property_identifier or identifier)
-        name_node = self._find_child_by_type(node, 'property_identifier') or self._find_child_by_type(node, 'identifier')
+        """Handle method definitions."""
+        name_node = (self._find_child_by_type(node, 'property_identifier') or 
+                    self._find_child_by_type(node, 'identifier'))
         if name_node:
             name = self._get_node_text(name_node)
             if name:
-                self._add_function_symbol(name_node, name, is_method=True)
-
-    def _handle_arrow_function(self, node: tree_sitter.Node):
-        """Handle arrow functions assigned to variables."""
-        # Arrow functions are often handled as part of variable_declarator
+                self._create_function_symbol(node, name_node, name, True)
 
     def _handle_class_declaration(self, node: tree_sitter.Node):
         """Handle class declarations."""
@@ -235,40 +387,34 @@ class JSTreeSitterAnalyzer:
         if name_node:
             name = self._get_node_text(name_node)
             if name:
-                self._add_class_symbol(name_node, name)
-
+                self._create_class_symbol(node, name_node, name, scip_pb2.Class, "JavaScript class")
+                
                 # Enter class scope
                 self.scope_stack.append(name)
-
+                
                 # Analyze class body
                 class_body = self._find_child_by_type(node, 'class_body')
                 if class_body:
                     self._analyze_node(class_body)
-
+                
                 # Exit class scope
                 self.scope_stack.pop()
 
     def _handle_interface_declaration(self, node: tree_sitter.Node):
         """Handle TypeScript interface declarations."""
-        if self.language not in ['typescript', 'tsx']:
-            return
-
         name_node = self._find_child_by_type(node, 'type_identifier')
         if name_node:
             name = self._get_node_text(name_node)
             if name:
-                self._add_interface_symbol(name_node, name)
+                self._create_class_symbol(node, name_node, name, scip_pb2.Interface, "TypeScript interface")
 
-    def _handle_type_alias(self, node: tree_sitter.Node):
-        """Handle TypeScript type aliases."""
-        if self.language not in ['typescript', 'tsx']:
-            return
-
+    def _handle_type_alias_declaration(self, node: tree_sitter.Node):
+        """Handle TypeScript type alias declarations."""
         name_node = self._find_child_by_type(node, 'type_identifier')
         if name_node:
             name = self._get_node_text(name_node)
             if name:
-                self._add_type_symbol(name_node, name)
+                self._create_class_symbol(node, name_node, name, scip_pb2.TypeParameter, "TypeScript type alias")
 
     def _handle_variable_declarator(self, node: tree_sitter.Node):
         """Handle variable declarations."""
@@ -276,30 +422,10 @@ class JSTreeSitterAnalyzer:
         if name_node:
             name = self._get_node_text(name_node)
             if name:
-                # Check if it's assigned to a function
-                value_node = node.children[-1] if len(node.children) > 2 else None
-                if value_node and value_node.type in ['function_expression', 'arrow_function']:
-                    self._add_function_symbol(name_node, name, is_method=False)
-                else:
-                    self._add_variable_symbol(name_node, name)
-
-    def _handle_import(self, node: tree_sitter.Node):
-        """Handle import statements."""
-        # Find imported identifiers
-        for child in node.children:
-            if child.type == 'import_specifier':
-                name_node = self._find_child_by_type(child, 'identifier')
-                if name_node:
-                    name = self._get_node_text(name_node)
-                    if name:
-                        self._add_import_symbol(name_node, name)
-
-    def _handle_export(self, node: tree_sitter.Node):
-        """Handle export statements."""
-        # Exports are usually handled as part of their declarations
+                self._create_variable_symbol(node, name_node, name)
 
     def _handle_identifier_reference(self, node: tree_sitter.Node):
-        """Handle identifier references (usage, not definition)."""
+        """Handle identifier references."""
         # Only handle if it's not part of a declaration
         parent = node.parent
         if parent and parent.type not in [
@@ -308,96 +434,103 @@ class JSTreeSitterAnalyzer:
         ]:
             name = self._get_node_text(node)
             if name and len(name) > 1:  # Avoid single letters
-                self._add_reference(node, name)
+                self._handle_name_reference(node, name)
 
-    def _add_function_symbol(self, node: tree_sitter.Node, name: str, is_method: bool = False):
-        """Add a function symbol to the index."""
-        qualified_name = self._get_qualified_name(name)
-        symbol_id = self._create_symbol_id(qualified_name, '().')
-
-        # Create occurrence
-        occurrence = self._create_occurrence(node, symbol_id, scip_pb2.Definition, scip_pb2.IdentifierFunction)
+    def _create_function_symbol(self, node: tree_sitter.Node, name_node: tree_sitter.Node, name: str, is_method: bool):
+        """Create a function or method symbol."""
+        symbol_id = self.symbol_manager.create_local_symbol(
+            language="javascript",
+            file_path=self.file_path,
+            symbol_path=self.scope_stack + [name],
+            descriptor="()."
+        )
+        
+        # Create definition occurrence
+        range_obj = self.position_calculator.tree_sitter_node_to_range(name_node)
+        occurrence = self._create_occurrence(
+            symbol_id, range_obj, scip_pb2.Definition, scip_pb2.IdentifierFunction
+        )
         self.occurrences.append(occurrence)
-
-        # Create symbol info
+        
+        # Create symbol information
         kind = scip_pb2.Method if is_method else scip_pb2.Function
-        docs = [f"{'Method' if is_method else 'Function'} in {self.language}"]
-        symbol_info = self._create_symbol_information(symbol_id, name, kind, docs)
+        doc_type = "method" if is_method else "function"
+        documentation = [f"JavaScript {doc_type} in {self.language}"]
+        
+        symbol_info = self._create_symbol_information(
+            symbol_id, name, kind, documentation
+        )
         self.symbols.append(symbol_info)
 
-    def _add_class_symbol(self, node: tree_sitter.Node, name: str):
-        """Add a class symbol to the index."""
-        qualified_name = self._get_qualified_name(name)
-        symbol_id = self._create_symbol_id(qualified_name, '#')
-
-        occurrence = self._create_occurrence(node, symbol_id, scip_pb2.Definition, scip_pb2.IdentifierType)
+    def _create_class_symbol(self, node: tree_sitter.Node, name_node: tree_sitter.Node, 
+                            name: str, symbol_kind: int, description: str):
+        """Create a class, interface, or type symbol."""
+        symbol_id = self.symbol_manager.create_local_symbol(
+            language="javascript",
+            file_path=self.file_path,
+            symbol_path=self.scope_stack + [name],
+            descriptor="#"
+        )
+        
+        # Create definition occurrence
+        range_obj = self.position_calculator.tree_sitter_node_to_range(name_node)
+        occurrence = self._create_occurrence(
+            symbol_id, range_obj, scip_pb2.Definition, scip_pb2.IdentifierType
+        )
         self.occurrences.append(occurrence)
-
-        symbol_info = self._create_symbol_information(symbol_id, name, scip_pb2.Class,
-                                                     [f"Class in {self.language}"])
+        
+        # Create symbol information
+        symbol_info = self._create_symbol_information(
+            symbol_id, name, symbol_kind, [description]
+        )
         self.symbols.append(symbol_info)
 
-    def _add_interface_symbol(self, node: tree_sitter.Node, name: str):
-        """Add an interface symbol to the index."""
-        qualified_name = self._get_qualified_name(name)
-        symbol_id = self._create_symbol_id(qualified_name, '#')
-
-        occurrence = self._create_occurrence(node, symbol_id, scip_pb2.Definition, scip_pb2.IdentifierType)
+    def _create_variable_symbol(self, node: tree_sitter.Node, name_node: tree_sitter.Node, name: str):
+        """Create a variable symbol."""
+        symbol_id = self.symbol_manager.create_local_symbol(
+            language="javascript",
+            file_path=self.file_path,
+            symbol_path=self.scope_stack + [name],
+            descriptor=""
+        )
+        
+        # Create definition occurrence
+        range_obj = self.position_calculator.tree_sitter_node_to_range(name_node)
+        occurrence = self._create_occurrence(
+            symbol_id, range_obj, scip_pb2.Definition, scip_pb2.IdentifierLocal
+        )
         self.occurrences.append(occurrence)
-
-        symbol_info = self._create_symbol_information(symbol_id, name, scip_pb2.Interface,
-                                                     [f"Interface in {self.language}"])
+        
+        # Create symbol information
+        symbol_info = self._create_symbol_information(
+            symbol_id, name, scip_pb2.Variable, [f"JavaScript variable in {self.language}"]
+        )
         self.symbols.append(symbol_info)
 
-    def _add_type_symbol(self, node: tree_sitter.Node, name: str):
-        """Add a type alias symbol to the index."""
-        qualified_name = self._get_qualified_name(name)
-        symbol_id = self._create_symbol_id(qualified_name, '#')
-
-        occurrence = self._create_occurrence(node, symbol_id, scip_pb2.Definition, scip_pb2.IdentifierType)
-        self.occurrences.append(occurrence)
-
-        symbol_info = self._create_symbol_information(symbol_id, name, scip_pb2.TypeParameter,
-                                                     [f"Type alias in {self.language}"])
-        self.symbols.append(symbol_info)
-
-    def _add_variable_symbol(self, node: tree_sitter.Node, name: str):
-        """Add a variable symbol to the index."""
-        qualified_name = self._get_qualified_name(name)
-        symbol_id = self._create_symbol_id(qualified_name, '')
-
-        occurrence = self._create_occurrence(node, symbol_id, scip_pb2.Definition, scip_pb2.IdentifierLocal)
-        self.occurrences.append(occurrence)
-
-        symbol_info = self._create_symbol_information(symbol_id, name, scip_pb2.Variable,
-                                                     [f"Variable in {self.language}"])
-        self.symbols.append(symbol_info)
-
-    def _add_import_symbol(self, node: tree_sitter.Node, name: str):
-        """Add an import symbol to the index."""
-        qualified_name = self._get_qualified_name(name)
-        symbol_id = self._create_symbol_id(qualified_name, '')
-
-        occurrence = self._create_occurrence(node, symbol_id, scip_pb2.Definition, scip_pb2.IdentifierNamespace)
-        self.occurrences.append(occurrence)
-
-        symbol_info = self._create_symbol_information(symbol_id, name, scip_pb2.Namespace,
-                                                     [f"Import in {self.language}"])
-        self.symbols.append(symbol_info)
-
-    def _add_reference(self, node: tree_sitter.Node, name: str):
-        """Add a reference (usage) occurrence."""
-        qualified_name = self._get_qualified_name(name)
-        symbol_id = self._create_symbol_id(qualified_name, '')
-
-        occurrence = self._create_occurrence(node, symbol_id, 0, scip_pb2.IdentifierLocal)
-        self.occurrences.append(occurrence)
-
-    def _get_qualified_name(self, name: str) -> str:
-        """Get qualified name based on current scope."""
-        if self.scope_stack:
-            return '.'.join(self.scope_stack + [name])
-        return name
+    def _handle_name_reference(self, node: tree_sitter.Node, name: str):
+        """Handle name reference."""
+        # Try to resolve the reference
+        resolved_symbol_id = self.reference_resolver.resolve_reference_by_name(
+            symbol_name=name,
+            context_file=self.file_path,
+            context_scope=self.scope_stack
+        )
+        
+        if resolved_symbol_id:
+            # Create reference occurrence
+            range_obj = self.position_calculator.tree_sitter_node_to_range(node)
+            occurrence = self._create_occurrence(
+                resolved_symbol_id, range_obj, 0, scip_pb2.Identifier  # 0 = reference role
+            )
+            self.occurrences.append(occurrence)
+            
+            # Register the reference
+            self.reference_resolver.register_symbol_reference(
+                symbol_id=resolved_symbol_id,
+                file_path=self.file_path,
+                reference_range=range_obj,
+                context_scope=self.scope_stack
+            )
 
     def _find_child_by_type(self, node: tree_sitter.Node, node_type: str) -> Optional[tree_sitter.Node]:
         """Find first child node of the given type."""
@@ -410,45 +543,25 @@ class JSTreeSitterAnalyzer:
         """Get text content of a node."""
         return self.content[node.start_byte:node.end_byte]
 
-    def _create_symbol_id(self, name: str, kind: str) -> str:
-        """Create a SCIP symbol identifier."""
-        clean_path = (self.file_path.replace('/', '.').replace('\\', '.')
-                     .replace('.', '_'))
-        return f"local {clean_path} {name}{kind}"
-
-    def _create_occurrence(self, node: tree_sitter.Node, symbol: str, roles: int, syntax_kind: int) -> scip_pb2.Occurrence:
-        """Create a SCIP occurrence from a tree-sitter node."""
+    def _create_occurrence(self, symbol_id: str, range_obj: scip_pb2.Range, 
+                          symbol_roles: int, syntax_kind: int) -> scip_pb2.Occurrence:
+        """Create a SCIP occurrence."""
         occurrence = scip_pb2.Occurrence()
-
-        # Convert byte positions to line/column
-        start_line, start_col = self._byte_to_line_col(node.start_byte)
-        end_line, end_col = self._byte_to_line_col(node.end_byte)
-
-        occurrence.range.start.extend([start_line, start_col])
-        occurrence.range.end.extend([end_line, end_col])
-        occurrence.symbol = symbol
-        occurrence.symbol_roles = roles
+        occurrence.symbol = symbol_id
+        occurrence.symbol_roles = symbol_roles
         occurrence.syntax_kind = syntax_kind
-
+        occurrence.range.CopyFrom(range_obj)
         return occurrence
 
-    def _byte_to_line_col(self, byte_offset: int) -> tuple[int, int]:
-        """Convert byte offset to line/column position."""
-        content_before = self.content[:byte_offset]
-        lines_before = content_before.split('\n')
-        line = len(lines_before) - 1
-        col = len(lines_before[-1])
-        return line, col
-
-    def _create_symbol_information(self, symbol: str, name: str, kind: int,
-                                  documentation: List[str] = None) -> scip_pb2.SymbolInformation:
+    def _create_symbol_information(self, symbol_id: str, display_name: str, 
+                                  symbol_kind: int, documentation: List[str] = None) -> scip_pb2.SymbolInformation:
         """Create SCIP symbol information."""
         symbol_info = scip_pb2.SymbolInformation()
-        symbol_info.symbol = symbol
-        symbol_info.kind = kind
-        symbol_info.display_name = name
-
+        symbol_info.symbol = symbol_id
+        symbol_info.display_name = display_name
+        symbol_info.kind = symbol_kind
+        
         if documentation:
             symbol_info.documentation.extend(documentation)
-
+        
         return symbol_info

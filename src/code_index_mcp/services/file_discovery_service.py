@@ -10,7 +10,6 @@ from typing import Dict, Any, List, Optional
 from dataclasses import dataclass
 
 from .base_service import BaseService
-from ..tools.scip import SCIPIndexTool
 from ..tools.filesystem import FileMatchingTool
 from ..utils import ValidationHelper
 
@@ -36,7 +35,6 @@ class FileDiscoveryService(BaseService):
 
     def __init__(self, ctx):
         super().__init__(ctx)
-        self._scip_tool = SCIPIndexTool()
         self._matcher_tool = FileMatchingTool()
 
     def find_files(self, pattern: str, max_results: Optional[int] = None) -> Dict[str, Any]:
@@ -93,43 +91,35 @@ class FileDiscoveryService(BaseService):
 
     def _ensure_index_available(self) -> None:
         """
-        Business logic to ensure SCIP index is available and ready.
+        Business logic to ensure index is available for discovery.
 
-        This implements the business rule that file discovery requires
-        an up-to-date index of the project.
+        Now uses unified index manager instead of direct SCIP tool access.
 
         Raises:
             RuntimeError: If index cannot be made available
         """
-        # Business logic: Check if index is already available in memory
-        if self._scip_tool.is_index_available():
+        # Business rule: Check if unified index manager is available
+        if not self.index_manager:
+            raise RuntimeError("Index manager not available. Please initialize project first.")
+        
+        # Business rule: Check if index provider is available
+        provider = self.index_provider
+        if provider and provider.is_available():
             return
-
-        # Business logic: Try to load existing index from disk
+        
+        # Business logic: Initialize or refresh index
         try:
-            if self._scip_tool.load_existing_index(self.base_path):
-                # Update context with loaded file count
-                file_count = len(self._scip_tool.get_file_list())
-                self.helper.update_file_count(file_count)
-                return
-        except (FileNotFoundError, ValueError, RuntimeError) as e:
-            # If loading fails, continue to rebuild
-            pass
-
-        # Business logic: No existing index, need to build new one
-        try:
-            file_count = self._scip_tool.build_index(self.base_path)
+            if not self.index_manager.initialize():
+                raise RuntimeError("Failed to initialize index manager")
             
-            # Save the newly built index
-            if not self._scip_tool.save_index():
-                # Log warning but don't fail - index is still usable in memory
-                pass
-
-            # Update context with file count (business state management)
-            self.helper.update_file_count(file_count)
+            # Update context with file count
+            provider = self.index_provider
+            if provider:
+                file_count = len(provider.get_file_list())
+                self.helper.update_file_count(file_count)
 
         except Exception as e:
-            raise RuntimeError(f"Failed to build index for file discovery: {e}") from e
+            raise RuntimeError(f"Failed to ensure index availability: {e}") from e
 
     def _execute_discovery_workflow(self, pattern: str, max_results: Optional[int]) -> FileDiscoveryResult:
         """
@@ -142,8 +132,12 @@ class FileDiscoveryService(BaseService):
         Returns:
             FileDiscoveryResult with discovery data
         """
-        # Get all indexed files from technical tool
-        all_files = self._scip_tool.get_file_list()
+        # Get all indexed files through unified interface
+        provider = self.index_provider
+        if not provider:
+            raise RuntimeError("Index provider not available. Please initialize project first.")
+        
+        all_files = provider.get_file_list()
 
         # Apply pattern matching using technical tool
         matched_files = self._matcher_tool.match_glob_pattern(all_files, pattern)
@@ -209,6 +203,43 @@ class FileDiscoveryService(BaseService):
 
         return strategy
 
+    def _get_project_metadata_from_index_manager(self) -> Dict[str, Any]:
+        """
+        Get project metadata from unified index manager.
+
+        Returns:
+            Dictionary with project metadata, or default values if not available
+        """
+        if self.index_manager:
+            try:
+                status = self.index_manager.get_index_status()
+                if status and status.get('metadata'):
+                    metadata = status['metadata']
+                    return {
+                        'project_root': metadata.get('project_root', self.base_path),
+                        'total_files': status.get('file_count', 0),
+                        'tool_version': metadata.get('tool_version', 'unified-manager'),
+                        'languages': []  # Languages info not available in current IndexMetadata
+                    }
+                elif status:
+                    # Fallback to status info
+                    return {
+                        'project_root': self.base_path,
+                        'total_files': status.get('file_count', 0),
+                        'tool_version': 'unified-manager',
+                        'languages': []
+                    }
+            except (AttributeError, KeyError, TypeError):
+                pass  # Fall through to default if metadata access fails
+        
+        # Fallback to default metadata if index manager not available
+        return {
+            'project_root': self.base_path,
+            'total_files': 0,
+            'tool_version': 'unknown',
+            'languages': []
+        }
+
     def _gather_discovery_metadata(self, all_files, matched_files, limited_files, pattern: str) -> Dict[str, Any]:
         """
         Gather business metadata about the discovery operation.
@@ -222,8 +253,8 @@ class FileDiscoveryService(BaseService):
         Returns:
             Dictionary with business metadata
         """
-        # Get project metadata from technical tool
-        project_metadata = self._scip_tool.get_project_metadata()
+        # Get project metadata from unified index manager
+        project_metadata = self._get_project_metadata_from_index_manager()
 
         # Calculate business metrics
         match_ratio = len(matched_files) / len(all_files) if all_files else 0

@@ -2,6 +2,8 @@
 
 import os
 import fnmatch
+import pathspec
+import logging
 from pathlib import Path
 from datetime import datetime
 from typing import List, Dict, Any, Optional, Tuple
@@ -10,6 +12,9 @@ from dataclasses import dataclass, field
 
 from ..scip.factory import SCIPIndexerFactory, SCIPIndexingError
 from ..scip.proto import scip_pb2
+
+
+logger = logging.getLogger(__name__)
 
 
 
@@ -38,67 +43,135 @@ class SCIPIndexBuilder:
 
     def build_scip_index(self, project_path: str) -> scip_pb2.Index:
         """Build complete SCIP index for a project."""
+        # Build index without timing logs
         start_time = datetime.now()
         self.project_path = project_path
         
+        logger.info("🚀 Starting SCIP index build for project: %s", project_path)
+        logger.debug("Build configuration: max_workers=%s", self.max_workers)
 
         try:
+            logger.info("📁 Phase 1: Scanning project files...")
+            # Phase 1: scan files
             scan_result = self._scan_project_files(project_path)
+            total_files_considered = len(scan_result.file_list)
+            logger.info("✅ File scan completed, found %d valid files", total_files_considered)
 
+            logger.info("🏷️ Phase 2: Grouping files by strategy...")
             file_paths = [str(f['path']) for f in scan_result.file_list]
             strategy_files = self.scip_factory.group_files_by_strategy(file_paths)
+            
+            for strategy, files in strategy_files.items():
+                logger.info("  📋 %s: %d files", strategy.__class__.__name__, len(files))
+            logger.debug("File grouping completed")
 
+            logger.info("⚙️ Phase 3: Processing files with strategies...")
             all_documents = self._process_files(strategy_files, project_path)
+            logger.info("✅ File processing completed, generated %d documents", len(all_documents))
 
+            logger.info("🔗 Phase 4: Assembling SCIP index...")
             scip_index = self._assemble_scip_index(all_documents, scan_result, start_time)
-            duration = (datetime.now() - start_time).total_seconds()
+            logger.debug("Index assembly completed")
 
+            logger.info("🎉 SCIP index build completed successfully")
+
+            logger.info("🔍 Phase 5: Validating SCIP index...")
             validation_result = self._validate_scip_index(scip_index)
             if not validation_result.is_valid:
-                if validation_result.errors:
-                    pass
+                logger.warning("⚠️ Index validation found issues: %s", validation_result.errors)
+            else:
+                logger.info("✅ Index validation passed")
 
             return scip_index
         except Exception as e:
+            logger.error("❌ SCIP index build failed: %s", e, exc_info=True)
             return self._create_fallback_scip_index(project_path, str(e))
 
     def _scan_project_files(self, project_path: str) -> ScanResult:
         """Scan project directory to get a list of files and metadata."""
+        logger.debug("📂 Starting file system scan of: %s", project_path)
         files = []
+        
         # Use project settings for exclude patterns
+        logger.debug("🚫 Loading exclude patterns...")
         ignored_dirs = self._get_exclude_patterns()
+        logger.debug("Ignored directories: %s", ignored_dirs)
+        
         # Load gitignore patterns
-        gitignore_patterns = self._load_gitignore_patterns(project_path)
+        logger.debug("📋 Loading .gitignore patterns...")
+        gitignore_spec = self._load_gitignore_patterns(project_path)
+        if hasattr(gitignore_spec, 'patterns'):
+            logger.debug("Found %d gitignore patterns", len(gitignore_spec.patterns))
+        elif gitignore_spec:
+            logger.debug("Loaded gitignore specification")
+        else:
+            logger.debug("No gitignore patterns found")
+        
+        scan_count = 0
+        gitignore_skipped = 0
+        hidden_files_skipped = 0
+        ignored_dir_time = 0
+        gitignore_check_time = 0
         
         for root, dirs, filenames in os.walk(project_path):
+            scan_count += 1
+            if scan_count % 100 == 0:
+                logger.debug("📊 Scanned %d directories, found %d files so far...", scan_count, len(files))
+                
             # Check if current root path contains any ignored directories
+            ignored_dir_start = datetime.now()
             root_parts = Path(root).parts
             project_parts = Path(project_path).parts
             relative_parts = root_parts[len(project_parts):]
             
             # Skip if any part of the path is in ignored_dirs
             if any(part in ignored_dirs for part in relative_parts):
+                ignored_dir_time += (datetime.now() - ignored_dir_start).total_seconds()
+                logger.debug("🚫 Skipping ignored directory: %s", root)
                 dirs[:] = []  # Don't descend further
                 continue
                 
             # Modify dirs in-place to prune the search
+            original_dirs = len(dirs)
             dirs[:] = [d for d in dirs if d not in ignored_dirs]
+            if len(dirs) < original_dirs:
+                ignored_dir_time += (datetime.now() - ignored_dir_start).total_seconds()
+                logger.debug("🚫 Filtered %d ignored subdirectories in %s", original_dirs - len(dirs), root)
+            else:
+                ignored_dir_time += (datetime.now() - ignored_dir_start).total_seconds()
             
             # Apply gitignore filtering to directories
-            dirs[:] = [d for d in dirs if not self._is_gitignored(os.path.join(root, d), project_path, gitignore_patterns)]
+            gitignore_dir_start = datetime.now()
+            pre_gitignore_dirs = len(dirs)
+            dirs[:] = [d for d in dirs if not self._is_gitignored(os.path.join(root, d), project_path, gitignore_spec)]
+            gitignore_filtered_dirs = pre_gitignore_dirs - len(dirs)
+            gitignore_check_time += (datetime.now() - gitignore_dir_start).total_seconds()
+            
+            if gitignore_filtered_dirs > 0:
+                logger.debug("📋 .gitignore filtered %d directories in %s", gitignore_filtered_dirs, root)
             
             for filename in filenames:
+                file_check_start = datetime.now()
+                
                 # Ignore hidden files (but allow .gitignore itself)
                 if filename.startswith('.') and filename != '.gitignore':
+                    hidden_files_skipped += 1
+                    gitignore_check_time += (datetime.now() - file_check_start).total_seconds()
                     continue
                     
                 full_path = os.path.join(root, filename)
                 
                 # Apply gitignore filtering to files
-                if self._is_gitignored(full_path, project_path, gitignore_patterns):
+                if self._is_gitignored(full_path, project_path, gitignore_spec):
+                    gitignore_skipped += 1
+                    gitignore_check_time += (datetime.now() - file_check_start).total_seconds()
                     continue
                     
+                gitignore_check_time += (datetime.now() - file_check_start).total_seconds()
                 files.append(full_path)
+        
+        logger.info("📊 File scan summary: scanned %d directories, found %d valid files", scan_count, len(files))
+        logger.info("🚫 Filtered files: %d gitignored, %d hidden files", gitignore_skipped, hidden_files_skipped)
 
         file_list = [{'path': f, 'is_binary': False} for f in files]
         project_metadata = {"project_name": os.path.basename(project_path)}
@@ -117,66 +190,39 @@ class SCIPIndexBuilder:
             return {'.git', '.svn', '.hg', '__pycache__', 'node_modules', '.venv', 'venv', 
                    'build', 'dist', 'target', '.idea', '.vscode'}
 
-    def _load_gitignore_patterns(self, project_path: str) -> List[str]:
-        """Load patterns from .gitignore file."""
+    def _load_gitignore_patterns(self, project_path: str):
+        """Load patterns from .gitignore file using pathspec (required)."""
         gitignore_path = os.path.join(project_path, '.gitignore')
-        patterns = []
-        
+
         if os.path.exists(gitignore_path):
             try:
                 with open(gitignore_path, 'r', encoding='utf-8') as f:
-                    for line in f:
-                        line = line.strip()
-                        # Skip empty lines and comments
-                        if line and not line.startswith('#'):
-                            patterns.append(line)
+                    spec = pathspec.PathSpec.from_lines('gitignorestyle', f)
+                return spec
             except Exception:
-                pass  # Ignore errors reading .gitignore
-        
-        return patterns
+                logger.debug("Failed to load .gitignore via pathspec")
+                return None
 
-    def _is_gitignored(self, file_path: str, project_path: str, gitignore_patterns: List[str]) -> bool:
-        """Check if a file or directory is ignored by .gitignore patterns."""
-        if not gitignore_patterns:
+        return None
+    
+    
+
+    def _is_gitignored(self, file_path: str, project_path: str, gitignore_spec) -> bool:
+        """Check if a file or directory is ignored by .gitignore patterns using pathspec."""
+        if not gitignore_spec:
             return False
-            
-        # Get relative path from project root
+
         try:
+            # Get relative path from project root
             rel_path = os.path.relpath(file_path, project_path)
             # Normalize path separators for cross-platform compatibility
             rel_path = rel_path.replace('\\', '/')
-            
-            # Check each gitignore pattern
-            for pattern in gitignore_patterns:
-                # Handle negation patterns (starting with !)
-                if pattern.startswith('!'):
-                    continue  # Skip negation for now (simplified implementation)
-                    
-                # Add trailing slash for directory patterns
-                if pattern.endswith('/'):
-                    pattern = pattern.rstrip('/')
-                    # Check if it's a directory and matches pattern
-                    if os.path.isdir(file_path) and fnmatch.fnmatch(rel_path, pattern):
-                        return True
-                    # Also check if any parent directory matches
-                    path_parts = rel_path.split('/')
-                    for i in range(len(path_parts)):
-                        if fnmatch.fnmatch('/'.join(path_parts[:i+1]), pattern):
-                            return True
-                else:
-                    # Check file or directory name
-                    if fnmatch.fnmatch(rel_path, pattern):
-                        return True
-                    # Check if any parent directory or file in path matches
-                    path_parts = rel_path.split('/')
-                    for part in path_parts:
-                        if fnmatch.fnmatch(part, pattern):
-                            return True
-                        
+
+            return gitignore_spec.match_file(rel_path)
         except Exception:
-            pass
-            
-        return False
+            return False
+    
+    
 
     def _process_files(self, strategy_files: Dict, project_path: str) -> List[scip_pb2.Document]:
         """Process files using appropriate strategies, either sequentially or in parallel."""
@@ -186,14 +232,24 @@ class SCIPIndexBuilder:
 
     def _process_files_sequential(self, strategy_files: Dict, project_path: str) -> List[scip_pb2.Document]:
         """Process files sequentially."""
+        logger.debug("🔄 Processing files sequentially (single-threaded)")
         all_documents = []
+        
         for strategy, files in strategy_files.items():
+            strategy_name = strategy.__class__.__name__
+            logger.info("⚙️ Processing %d files with %s...", len(files), strategy_name)
             
             try:
                 documents = strategy.generate_scip_documents(files, project_path)
+                logger.info("✅ %s completed, generated %d documents", strategy_name, len(documents))
                 all_documents.extend(documents)
             except Exception as e:
-                all_documents.extend(self._try_fallback_strategies(files, strategy, project_path))
+                logger.error("❌ %s failed: %s", strategy_name, e, exc_info=True)
+                logger.info("🔄 Trying fallback strategies for %d files...", len(files))
+                fallback_docs = self._try_fallback_strategies(files, strategy, project_path)
+                all_documents.extend(fallback_docs)
+                logger.info("📄 Fallback generated %d documents", len(fallback_docs))
+        
         return all_documents
 
     def _process_files_parallel(self, strategy_files: Dict, project_path: str) -> List[scip_pb2.Document]:
@@ -258,9 +314,25 @@ class SCIPIndexBuilder:
         metadata.text_document_encoding = scip_pb2.TextDocumentEncoding.UTF8
         return metadata
 
-    def _extract_external_symbols(self, documents: List[scip_pb2.Document]) -> List:
-        """Extract and deduplicate external symbols."""
-        return []
+    def _extract_external_symbols(self, documents: List[scip_pb2.Document]) -> List[scip_pb2.SymbolInformation]:
+        """Extract and deduplicate external symbols from strategies."""
+        external_symbols = []
+        seen_symbols = set()
+        
+        # Collect external symbols from all strategies
+        for strategy in self.scip_factory.strategies:
+            try:
+                strategy_external_symbols = strategy.get_external_symbols()
+                for symbol_info in strategy_external_symbols:
+                    symbol_id = symbol_info.symbol
+                    if symbol_id not in seen_symbols:
+                        external_symbols.append(symbol_info)
+                        seen_symbols.add(symbol_id)
+            except Exception as e:
+                # Strategy might not support external symbols yet
+                continue
+        
+        return external_symbols
 
     def _validate_scip_index(self, scip_index: scip_pb2.Index) -> ValidationResult:
         """Validate the completed SCIP index."""

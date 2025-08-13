@@ -176,3 +176,5 @@ class User(Person):
     def __repr__(self) -> str:
         """Developer representation of user."""
         return f"User(username='{self.username}', name='{self.name}', role={self.role})"
+
+# AUTO_REINDEX_MARKER: ci_auto_reindex_test_token

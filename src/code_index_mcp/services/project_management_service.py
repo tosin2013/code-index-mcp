@@ -7,15 +7,16 @@ and lifecycle management. It composes technical tools to achieve business goals.
 import json
 import logging
 from typing import Dict, Any
-
-logger = logging.getLogger(__name__)
 from dataclasses import dataclass
+from contextlib import contextmanager
+
 from .base_service import BaseService
 from ..tools.config import ProjectConfigTool
-from ..utils import ValidationHelper
 from ..utils.response_formatter import ResponseFormatter
-from contextlib import contextmanager
 from ..constants import SUPPORTED_EXTENSIONS
+from ..indexing.unified_index_manager import UnifiedIndexManager
+
+logger = logging.getLogger(__name__)
 
 # Optional SCIP tools import
 try:
@@ -119,8 +120,8 @@ class ProjectManagementService(BaseService):
         # Business step 2: Initialize project configuration
         self._initialize_project_configuration(normalized_path)
 
-        # Business step 3: Handle index (load existing or build new)
-        index_result = self._handle_project_index(normalized_path)
+        # Business step 3: Initialize unified index manager
+        index_result = self._initialize_index_manager(normalized_path)
 
         # Business step 4: Setup file monitoring
         monitoring_result = self._setup_file_monitoring(normalized_path)
@@ -165,32 +166,38 @@ class ProjectManagementService(BaseService):
 
             self._config_tool.get_settings_path()
 
-    def _handle_project_index(self, project_path: str) -> Dict[str, Any]:
+    def _initialize_index_manager(self, project_path: str) -> Dict[str, Any]:
         """
-        Business logic to handle project index (load existing or build new).
+        Business logic to initialize unified index manager.
 
         Args:
             project_path: Project path
 
         Returns:
-            Dictionary with index handling results
+            Dictionary with initialization results
         """
         with self._noop_operation():
-            # Business rule: Check for legacy index migration
-            migration_result = self._config_tool.migrate_legacy_index()
-            if not migration_result:
-                
-                return self._build_new_index(project_path)
-
-            # Business rule: Try to load existing index
-            existing_index = self._config_tool.load_existing_index()
-
-            if self._is_valid_existing_index(existing_index):
-                
-                return self._load_existing_index(existing_index)
-            else:
-                
-                return self._build_new_index(project_path)
+            # Create unified index manager
+            index_manager = UnifiedIndexManager(project_path, self.helper.settings)
+            
+            # Store in context
+            self.helper.update_index_manager(index_manager)
+            
+            # Initialize the manager (this will load existing or build new)
+            if index_manager.initialize():
+                provider = index_manager.get_provider()
+                if provider:
+                    file_count = len(provider.get_file_list())
+                    return {
+                        'file_count': file_count,
+                        'source': 'unified_manager'
+                    }
+            
+            # Fallback if initialization fails
+            return {
+                'file_count': 0,
+                'source': 'failed'
+            }
 
     def _is_valid_existing_index(self, index_data: Dict[str, Any]) -> bool:
         """
@@ -225,11 +232,8 @@ class ProjectManagementService(BaseService):
         """
         
 
-        # Update context with loaded index
-        if hasattr(self.ctx.request_context.lifespan_context, 'index_cache'):
-            self.ctx.request_context.lifespan_context.index_cache.update(index_data)
-        if hasattr(self.ctx.request_context.lifespan_context, 'file_index'):
-            self.ctx.request_context.lifespan_context.file_index.update(index_data)
+        # Note: Legacy index loading is now handled by UnifiedIndexManager
+        # This method is kept for backward compatibility but functionality moved
 
         # Extract file count from metadata
         file_count = index_data.get('project_metadata', {}).get('total_files', 0)
@@ -306,16 +310,18 @@ class ProjectManagementService(BaseService):
             def rebuild_callback():
                 logger.info("File watcher triggered rebuild callback")
                 try:
-                    logger.debug(f"Starting SCIP index rebuild for: {project_path}")
-                    # Business logic: File changed, rebuild index
-                    file_count = self._scip_tool.build_index(project_path)
+                    logger.debug(f"Starting index rebuild for: {project_path}")
+                    # Business logic: File changed, rebuild through unified manager
+                    if self.helper.index_manager:
+                        success = self.helper.index_manager.refresh_index(force=True)
+                        if success:
+                            provider = self.helper.index_manager.get_provider()
+                            file_count = len(provider.get_file_list()) if provider else 0
+                            logger.info(f"File watcher rebuild completed successfully - indexed {file_count} files")
+                            return True
                     
-                    # Business logic: Save the rebuilt index
-                    if not self._scip_tool.save_index():
-                        logger.warning("File watcher rebuild: Index built but save failed")
-                    
-                    logger.info(f"File watcher rebuild completed successfully - indexed {file_count} files")
-                    return True
+                    logger.warning("File watcher rebuild failed - no index manager available")
+                    return False
                 except Exception as e:
                     import traceback
                     logger.error(f"File watcher rebuild failed: {e}")
@@ -367,9 +373,13 @@ class ProjectManagementService(BaseService):
         Returns:
             Formatted result string for MCP response
         """
-        if result.index_source == 'loaded_existing':
+        if result.index_source == 'unified_manager':
             message = (f"Project path set to: {result.project_path}. "
-                      f"Loaded existing index with {result.file_count} files. "
+                      f"Initialized unified index with {result.file_count} files. "
+                      f"{result.search_capabilities}.")
+        elif result.index_source == 'failed':
+            message = (f"Project path set to: {result.project_path}. "
+                      f"Index initialization failed. Some features may be limited. "
                       f"{result.search_capabilities}.")
         else:
             message = (f"Project path set to: {result.project_path}. "
