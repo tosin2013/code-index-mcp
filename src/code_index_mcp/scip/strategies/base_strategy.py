@@ -32,7 +32,7 @@ class SCIPIndexerStrategy(ABC):
             priority: Strategy priority (higher = more preferred)
                      100 = Official tools (highest)
                      90 = Language-specific strategies
-                     50 = Custom analyzers (primary)
+                     50 = Custom strategies (primary)
                      25 = Language-specialized defaults
                      10 = Generic defaults
                      1 = Fallback (lowest)

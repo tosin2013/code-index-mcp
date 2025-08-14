@@ -1147,7 +1147,7 @@ class SCIPSymbolAnalyzer:
             List of parameter names
         """
         try:
-            # Try to extract from documentation (Python AST analyzer stores params here)
+            # Try to extract from documentation (Python strategy stores params here)
             if hasattr(symbol_info, 'documentation') and symbol_info.documentation:
                 for doc_line in symbol_info.documentation:
                     if doc_line.startswith('Parameters: '):
