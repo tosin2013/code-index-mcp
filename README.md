@@ -94,7 +94,7 @@ The easiest way to get started with any MCP-compatible application:
 **System & Low-Level:**
 - C/C++ (`.c`, `.cpp`, `.h`, `.hpp`)
 - Rust (`.rs`)
-- Zig (`.zig`)
+- Zig (`.zig`, `.zon`)
 - Go (`.go`)
 
 **Object-Oriented:**

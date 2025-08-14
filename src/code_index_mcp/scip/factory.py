@@ -7,6 +7,7 @@ from .strategies.python_strategy import PythonStrategy
 from .strategies.javascript_strategy import JavaScriptStrategy
 from .strategies.java_strategy import JavaStrategy
 from .strategies.objective_c_strategy import ObjectiveCStrategy
+from .strategies.zig_strategy import ZigStrategy
 from .strategies.fallback_strategy import FallbackStrategy
 from ..constants import SUPPORTED_EXTENSIONS
 
@@ -34,6 +35,7 @@ class SCIPIndexerFactory:
             JavaScriptStrategy(priority=95),
             JavaStrategy(priority=95),
             ObjectiveCStrategy(priority=95),
+            ZigStrategy(priority=95),
         ]
         
         for strategy in language_strategies:
@@ -117,6 +119,8 @@ class SCIPIndexerFactory:
                 supported.update({'.java'})
             elif isinstance(strategy, ObjectiveCStrategy):
                 supported.update({'.m', '.mm'})
+            elif isinstance(strategy, ZigStrategy):
+                supported.update({'.zig', '.zon'})
             elif isinstance(strategy, FallbackStrategy):
                 # Fallback supports everything, but we don't want to list everything here
                 pass

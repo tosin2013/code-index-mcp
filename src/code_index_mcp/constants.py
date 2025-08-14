@@ -41,7 +41,7 @@ SUPPORTED_EXTENSIONS = [
     '.fs', '.fsx',                    # F#
     '.clj', '.cljs',                  # Clojure
     '.vim',                           # Vim script
-    '.zig',                           # Zig
+    '.zig', '.zon',                   # Zig
 
     # Web and markup
     '.html', '.htm',                  # HTML
