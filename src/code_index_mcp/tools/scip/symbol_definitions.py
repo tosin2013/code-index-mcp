@@ -8,7 +8,7 @@ accurate symbol information and call relationships in a format optimized for LLM
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, field
 
-from .relationship_info import SymbolRelationships, RelationshipsSummary
+from .relationship_info import SymbolRelationships
 
 
 class SymbolLocationError(Exception):
@@ -137,7 +137,21 @@ class SymbolDefinition:
             "value": self.value
         }
     
-    # to_scip_relationships method removed - now using unified SymbolRelationships structure
+    def to_scip_relationships(self, symbol_manager=None, language="", file_path="") -> List[tuple]:
+        """Convert symbol relationships to SCIP format."""
+        scip_relationships = []
+        
+        # Convert all relationships to SCIP tuples
+        for rel in self.relationships.calls:
+            scip_relationships.append((rel.target_symbol_id, "calls"))
+        for rel in self.relationships.inherits_from:
+            scip_relationships.append((rel.target_symbol_id, "inherits"))
+        for rel in self.relationships.implements:
+            scip_relationships.append((rel.target_symbol_id, "implements"))
+        for rel in self.relationships.references:
+            scip_relationships.append((rel.target_symbol_id, "references"))
+            
+        return scip_relationships
 
 
 @dataclass
@@ -185,8 +199,6 @@ class FileAnalysis:
     # Dependency information
     imports: ImportGroup = field(default_factory=lambda: ImportGroup())
     
-    # Relationship summary
-    relationships_summary: Optional[RelationshipsSummary] = None
     
     def add_symbol(self, symbol: SymbolDefinition):
         """Add a symbol to the appropriate collection based on its type."""
@@ -230,11 +242,6 @@ class FileAnalysis:
             },
             "dependencies": {
                 "imports": self.imports.to_dict()
-            },
-            "relationships_summary": self.relationships_summary.to_dict() if self.relationships_summary else {
-                "total_relationships": 0,
-                "by_type": {},
-                "cross_file_relationships": 0
             },
             "status": "success"
         }

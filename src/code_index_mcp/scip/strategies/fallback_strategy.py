@@ -347,7 +347,7 @@ class FallbackStrategy(SCIPIndexerStrategy):
             symbol_id=symbol_id,
             file_path=file_path,
             definition_range=dummy_range,
-            symbol_kind=scip_pb2.UnspecifiedKind,
+            symbol_kind=scip_pb2.UnspecifiedSymbolKind,
             display_name=name,
             documentation=[description]
         )

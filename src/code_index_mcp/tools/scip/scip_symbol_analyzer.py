@@ -584,8 +584,6 @@ class SCIPSymbolAnalyzer:
         # Extract import information
         self._extract_imports(document, result.imports)
         
-        # Calculate relationships summary
-        result.calculate_relationships_summary()
         
         return result
 
