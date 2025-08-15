@@ -10,9 +10,16 @@ from ..core.position_calculator import PositionCalculator
 from ..core.relationship_types import InternalRelationshipType
 
 # Tree-sitter imports
-import tree_sitter
-from tree_sitter_javascript import language as js_language
-from tree_sitter_typescript import language_typescript as ts_language
+try:
+    import tree_sitter
+    from tree_sitter_javascript import language as js_language
+    from tree_sitter_typescript import language as ts_language
+    TREE_SITTER_AVAILABLE = True
+except ImportError:
+    TREE_SITTER_AVAILABLE = False
+    tree_sitter = None
+    js_language = None
+    ts_language = None
 
 logger = logging.getLogger(__name__)
 
@@ -26,13 +33,23 @@ class JavaScriptStrategy(SCIPIndexerStrategy):
         """Initialize the JavaScript/TypeScript strategy."""
         super().__init__(priority)
         
-        # Initialize parsers
-        js_lang = tree_sitter.Language(js_language())
-        ts_lang = tree_sitter.Language(ts_language())
-        
-        self.js_parser = tree_sitter.Parser(js_lang)
-        self.ts_parser = tree_sitter.Parser(ts_lang)
-        logger.info("JavaScript strategy initialized with Tree-sitter support")
+        # Initialize parsers if Tree-sitter is available
+        if TREE_SITTER_AVAILABLE:
+            try:
+                js_lang = tree_sitter.Language(js_language())
+                ts_lang = tree_sitter.Language(ts_language())
+                
+                self.js_parser = tree_sitter.Parser(js_lang)
+                self.ts_parser = tree_sitter.Parser(ts_lang)
+                logger.info("JavaScript strategy initialized with Tree-sitter support")
+            except Exception as e:
+                logger.warning(f"Failed to initialize Tree-sitter parsers: {e}")
+                self.js_parser = None
+                self.ts_parser = None
+        else:
+            self.js_parser = None
+            self.ts_parser = None
+            raise StrategyError("Tree-sitter not available for JavaScript/TypeScript strategy")
 
     def can_handle(self, extension: str, file_path: str) -> bool:
         """Check if this strategy can handle the file type."""
@@ -44,7 +61,9 @@ class JavaScriptStrategy(SCIPIndexerStrategy):
 
     def is_available(self) -> bool:
         """Check if this strategy is available."""
-        return self.js_parser is not None and self.ts_parser is not None
+        if not TREE_SITTER_AVAILABLE or not self.js_parser or not self.ts_parser:
+            raise StrategyError("Tree-sitter not available for JavaScript/TypeScript strategy")
+        return True
 
     def _collect_symbol_definitions(self, files: List[str], project_path: str) -> None:
         """Phase 1: Collect all symbol definitions from JavaScript/TypeScript files."""
@@ -216,6 +235,9 @@ class JavaScriptStrategy(SCIPIndexerStrategy):
 
     def _parse_js_content(self, content: str, file_path: str):
         """Parse JavaScript/TypeScript content using Tree-sitter parser."""
+        if not TREE_SITTER_AVAILABLE or not self.js_parser or not self.ts_parser:
+            raise StrategyError("Tree-sitter not available for JavaScript/TypeScript parsing")
+            
         # Determine parser based on file extension
         extension = os.path.splitext(file_path)[1].lower()
         
@@ -224,8 +246,11 @@ class JavaScriptStrategy(SCIPIndexerStrategy):
         else:
             parser = self.js_parser
         
-        content_bytes = content.encode('utf-8')
-        return parser.parse(content_bytes)
+        try:
+            content_bytes = content.encode('utf-8')
+            return parser.parse(content_bytes)
+        except Exception as e:
+            raise StrategyError(f"Failed to parse {file_path} with Tree-sitter: {e}")
     
 
     def _collect_symbols_from_tree(self, tree, file_path: str, content: str) -> None:

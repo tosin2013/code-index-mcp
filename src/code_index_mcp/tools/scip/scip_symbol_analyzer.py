@@ -12,9 +12,10 @@ from typing import Dict, List, Optional, Any, Set
 from functools import lru_cache
 
 from .symbol_definitions import (
-    SymbolDefinition, CallRelationships, FileAnalysis, ImportGroup, LocationInfo,
+    SymbolDefinition, FileAnalysis, ImportGroup, LocationInfo,
     SymbolLocationError, SymbolResolutionError
 )
+from .relationship_info import SCIPRelationshipReader
 from ...scip.core.symbol_manager import SCIPSymbolManager
 
 logger = logging.getLogger(__name__)
@@ -46,6 +47,7 @@ class SCIPSymbolAnalyzer:
         self._symbol_kind_cache: Dict[int, str] = {}
         self._scip_symbol_cache: Dict[str, Dict[str, Any]] = {}
         self._symbol_parser: Optional[SCIPSymbolManager] = None
+        self._relationship_reader = SCIPRelationshipReader()
         
         # Initialize SCIP symbol kind mapping
         self._init_symbol_kind_mapping()
@@ -195,6 +197,11 @@ class SCIPSymbolAnalyzer:
                 # Extract precise location
                 # Extract location (never fails now)
                 location = self._extract_precise_location(scip_symbol, document)
+                
+                # Debug: Check location type
+                if not isinstance(location, LocationInfo):
+                    logger.error(f"Location extraction returned wrong type: {type(location)} for symbol {scip_symbol}")
+                    location = LocationInfo(line=1, column=1)  # Fallback
                 
                 # Create symbol definition
                 symbol_def = SymbolDefinition(
@@ -531,40 +538,25 @@ class SCIPSymbolAnalyzer:
     
     def _extract_call_relationships(self, document, symbols: Dict[str, SymbolDefinition], scip_index):
         """
-        Extract call relationships between functions using SCIP occurrence data.
+        Extract all relationships from SCIP document using the new relationship reader.
         
         Args:
-            document: SCIP document containing occurrences
+            document: SCIP document containing symbols and relationships
             symbols: Dictionary of extracted symbols
             scip_index: Full SCIP index for cross-file resolution
         """
-        logger.debug("Starting call relationship extraction")
+        logger.debug("Starting relationship extraction using SCIP relationship reader")
         
-        # Build function lookup map for efficiency
-        function_symbols = {
-            scip_sym: sym_def for scip_sym, sym_def in symbols.items()
-            if sym_def.is_callable()
-        }
+        # Use the new relationship reader to extract all relationships
+        all_relationships = self._relationship_reader.extract_relationships_from_document(document)
         
-        if not function_symbols:
-            logger.debug("No callable symbols found, skipping call analysis")
-            return
+        # Assign relationships to symbols
+        for symbol_id, symbol_def in symbols.items():
+            if symbol_id in all_relationships:
+                symbol_def.relationships = all_relationships[symbol_id]
+                logger.debug(f"Assigned {symbol_def.relationships.get_total_count()} relationships to {symbol_def.name}")
         
-        # Extract calls from occurrences
-        for occurrence in document.occurrences:
-            if self._is_function_call(occurrence):
-                # Find the caller function
-                caller = self._find_containing_function(occurrence, function_symbols, document)
-                if caller:
-                    # Resolve the call target
-                    target_info = self._resolve_call_target(occurrence.symbol, scip_index, document)
-                    if target_info:
-                        self._add_call_relationship(caller, target_info)
-        
-        # Build reverse relationships (called_by)
-        self._build_called_by_relationships(symbols, scip_index)
-        
-        logger.debug(f"Call relationship extraction completed for {len(function_symbols)} functions")
+        logger.debug(f"Relationship extraction completed for {len(symbols)} symbols")
     
     def _organize_results(self, document, symbols: Dict[str, SymbolDefinition]) -> FileAnalysis:
         """
@@ -591,6 +583,9 @@ class SCIPSymbolAnalyzer:
         
         # Extract import information
         self._extract_imports(document, result.imports)
+        
+        # Calculate relationships summary
+        result.calculate_relationships_summary()
         
         return result
 
@@ -838,64 +833,7 @@ class SCIPSymbolAnalyzer:
             logger.debug(f"Error finding local symbol location: {e}")
         return 0
     
-    def _add_call_relationship(self, caller: SymbolDefinition, target_info: Dict[str, Any]):
-        """
-        Add a call relationship to the caller function.
-        
-        Args:
-            caller: Function making the call
-            target_info: Information about the called function
-        """
-        # Only add meaningful calls (filter out variable references)
-        target_name = target_info['name']
-        
-        # Skip if it's clearly not a function call
-        if self._is_likely_variable_reference(target_name):
-            return
-            
-        if target_info['scope'] == 'local':
-            caller.calls.add_local_call(target_name)
-        else:
-            caller.calls.add_external_call(
-                target_name,
-                target_info['file'],
-                target_info['line']
-            )
-    
-    def _is_likely_variable_reference(self, name: str) -> bool:
-        """More precise variable identification to reduce false positives."""
-        # Only filter obvious variables or language keywords
-        obvious_non_functions = {
-            'self', 'cls', '__name__', '__file__', '__main__',
-            'True', 'False', 'None', 'and', 'or', 'not', 'in', 'is'
-        }
-        return name in obvious_non_functions
-    
-    def _build_called_by_relationships(self, symbols: Dict[str, SymbolDefinition], scip_index):
-        """
-        Build reverse call relationships (called_by) for all functions.
-        
-        Args:
-            symbols: All symbols in current file
-            scip_index: Full SCIP index for cross-file analysis
-        """
-        # This is a simplified implementation
-        # For a complete implementation, we would need to analyze all files
-        # and build a global call graph
-        
-        function_symbols = {
-            scip_sym: sym_def for scip_sym, sym_def in symbols.items()
-            if sym_def.is_callable()
-        }
-        
-        # For now, just build local called_by relationships
-        for caller_symbol, caller_def in function_symbols.items():
-            for called_name in caller_def.calls.local:
-                # Find the called function in our symbols
-                for target_symbol, target_def in function_symbols.items():
-                    if target_def.name == called_name:
-                        target_def.called_by.add_local_call(caller_def.name)
-                        break
+
     
     def _extract_imports(self, document, imports: ImportGroup):
         """Use SCIPSymbolManager to correctly parse imports."""
@@ -1310,3 +1248,77 @@ class SCIPSymbolAnalyzer:
         except Exception as e:
             logger.debug(f"Error extracting constant value for {scip_symbol}: {e}")
         return None
+    
+    def extract_scip_relationships(self, file_path: str, scip_index) -> Dict[str, List[tuple]]:
+        """
+        Extract SCIP relationships from a file using the enhanced analysis pipeline.
+        
+        This method provides integration between the symbol analyzer and the new
+        SCIP relationship management system introduced in the implementation plan.
+        
+        Args:
+            file_path: Relative path to the file to analyze
+            scip_index: SCIP index containing all project data
+            
+        Returns:
+            Dictionary mapping source_symbol_id -> [(target_symbol_id, relationship_type), ...]
+            Compatible with SCIPRelationshipManager input format
+            
+        Raises:
+            ValueError: If file analysis fails or file not found
+        """
+        try:
+            # Perform complete file analysis
+            file_analysis = self.analyze_file(file_path, scip_index)
+            
+            # Extract all SCIP relationships using the enhanced data structures
+            relationships = file_analysis.to_scip_relationships(self._symbol_parser)
+            
+            logger.debug(f"Extracted SCIP relationships for {file_path}: "
+                        f"{len(relationships)} symbols with relationships, "
+                        f"{sum(len(rels) for rels in relationships.values())} total relationships")
+            
+            return relationships
+            
+        except Exception as e:
+            logger.error(f"Failed to extract SCIP relationships from {file_path}: {e}")
+            raise ValueError(f"SCIP relationship extraction failed: {e}")
+    
+    def batch_extract_relationships(self, file_paths: List[str], scip_index) -> Dict[str, Dict[str, List[tuple]]]:
+        """
+        Extract SCIP relationships from multiple files efficiently.
+        
+        This method provides batch processing capabilities for the relationship
+        management system, optimizing performance for large codebases.
+        
+        Args:
+            file_paths: List of relative file paths to analyze
+            scip_index: SCIP index containing all project data
+            
+        Returns:
+            Dictionary mapping file_path -> {source_symbol_id -> [(target_symbol_id, relationship_type), ...]}
+        """
+        results = {}
+        
+        for i, file_path in enumerate(file_paths, 1):
+            try:
+                relationships = self.extract_scip_relationships(file_path, scip_index)
+                results[file_path] = relationships
+                
+                if i % 10 == 0 or i == len(file_paths):
+                    logger.debug(f"Batch relationship extraction progress: {i}/{len(file_paths)} files")
+                    
+            except Exception as e:
+                logger.warning(f"Failed to extract relationships from {file_path}: {e}")
+                results[file_path] = {}  # Empty result for failed files
+                continue
+        
+        total_files = len(results)
+        total_relationships = sum(
+            sum(len(rels) for rels in file_rels.values())
+            for file_rels in results.values()
+        )
+        
+        logger.info(f"Batch relationship extraction completed: {total_files} files, {total_relationships} total relationships")
+        
+        return results

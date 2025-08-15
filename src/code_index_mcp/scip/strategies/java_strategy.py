@@ -5,16 +5,13 @@ import os
 from typing import List, Optional, Dict, Any, Set
 from pathlib import Path
 
-try:
-    import tree_sitter
-    from tree_sitter_java import language as java_language
-    TREE_SITTER_AVAILABLE = True
-except ImportError:
-    TREE_SITTER_AVAILABLE = False
+import tree_sitter
+from tree_sitter_java import language as java_language
 
 from .base_strategy import SCIPIndexerStrategy, StrategyError
 from ..proto import scip_pb2
 from ..core.position_calculator import PositionCalculator
+from ..core.relationship_types import InternalRelationshipType
 
 
 logger = logging.getLogger(__name__)
@@ -29,16 +26,13 @@ class JavaStrategy(SCIPIndexerStrategy):
         """Initialize the Java strategy v2."""
         super().__init__(priority)
         
-        if not TREE_SITTER_AVAILABLE:
-            raise StrategyError("Tree-sitter not available for Java strategy")
-        
         # Initialize Java parser
         java_lang = tree_sitter.Language(java_language())
         self.parser = tree_sitter.Parser(java_lang)
 
     def can_handle(self, extension: str, file_path: str) -> bool:
         """Check if this strategy can handle the file type."""
-        return extension.lower() in self.SUPPORTED_EXTENSIONS and TREE_SITTER_AVAILABLE
+        return extension.lower() in self.SUPPORTED_EXTENSIONS
 
     def get_language_name(self) -> str:
         """Get the language name for SCIP symbol generation."""
@@ -46,7 +40,7 @@ class JavaStrategy(SCIPIndexerStrategy):
 
     def is_available(self) -> bool:
         """Check if this strategy is available."""
-        return TREE_SITTER_AVAILABLE
+        return True
 
     def _collect_symbol_definitions(self, files: List[str], project_path: str) -> None:
         """Phase 1: Collect all symbol definitions from Java files."""
@@ -57,7 +51,7 @@ class JavaStrategy(SCIPIndexerStrategy):
                 logger.warning(f"Failed to collect symbols from {file_path}: {e}")
                 continue
 
-    def _generate_documents_with_references(self, files: List[str], project_path: str) -> List[scip_pb2.Document]:
+    def _generate_documents_with_references(self, files: List[str], project_path: str, relationships: Optional[Dict[str, List[tuple]]] = None) -> List[scip_pb2.Document]:
         """Phase 2: Generate complete SCIP documents with resolved references."""
         documents = []
         
@@ -137,6 +131,64 @@ class JavaStrategy(SCIPIndexerStrategy):
         except Exception as e:
             logger.error(f"Failed to parse Java content: {e}")
             return None
+
+    def _build_symbol_relationships(self, files: List[str], project_path: str) -> Dict[str, List[tuple]]:
+        """
+        Build relationships between Java symbols.
+        
+        Args:
+            files: List of file paths to process
+            project_path: Project root path
+            
+        Returns:
+            Dictionary mapping symbol_id -> [(target_symbol_id, relationship_type), ...]
+        """
+        logger.debug(f"JavaStrategy: Building symbol relationships for {len(files)} files")
+        
+        all_relationships = {}
+        
+        for file_path in files:
+            try:
+                file_relationships = self._extract_java_relationships_from_file(file_path, project_path)
+                all_relationships.update(file_relationships)
+            except Exception as e:
+                logger.warning(f"Failed to extract relationships from {file_path}: {e}")
+        
+        total_symbols_with_relationships = len(all_relationships)
+        total_relationships = sum(len(rels) for rels in all_relationships.values())
+        
+        logger.debug(f"JavaStrategy: Built {total_relationships} relationships for {total_symbols_with_relationships} symbols")
+        return all_relationships
+
+    def _extract_java_relationships_from_file(self, file_path: str, project_path: str) -> Dict[str, List[tuple]]:
+        """Extract relationships from a single Java file."""
+        logger.debug(f"JavaStrategy: Starting relationship extraction from {file_path}")
+        
+        content = self._read_file_content(file_path)
+        if not content:
+            logger.debug(f"JavaStrategy: No content found in {file_path}")
+            return {}
+        
+        # Parse with Tree-sitter
+        tree = self._parse_content(content)
+        if not tree:
+            logger.debug(f"JavaStrategy: Failed to parse {file_path} with tree-sitter")
+            return {}
+        
+        # Use the existing JavaRelationshipExtractor
+        relative_path = self._get_relative_path(file_path, project_path)
+        logger.debug(f"JavaStrategy: Creating JavaRelationshipExtractor for {relative_path}")
+        
+        extractor = JavaRelationshipExtractor(
+            relative_path, 
+            content, 
+            self.symbol_manager
+        )
+        extractor.extract_from_tree(tree.root_node)
+        relationships = extractor.get_relationships()
+        
+        logger.debug(f"JavaStrategy: Extracted {len(relationships)} relationships from {relative_path}")
+        return relationships
 
 
 class JavaSymbolCollector:
@@ -272,14 +324,15 @@ class JavaSymbolCollector:
         dummy_range.start.extend([0, 0])
         dummy_range.end.extend([0, 1])
         
-        self.reference_resolver.register_symbol_definition(
-            symbol_id=symbol_id,
-            file_path=self.file_path,
-            definition_range=dummy_range,
-            symbol_kind=symbol_kind,
-            display_name=name,
-            documentation=documentation
-        )
+        if self.reference_resolver:
+            self.reference_resolver.register_symbol_definition(
+                symbol_id=symbol_id,
+                file_path=self.file_path,
+                definition_range=dummy_range,
+                symbol_kind=symbol_kind,
+                display_name=name,
+                documentation=documentation
+            )
 
     def _find_child_by_type(self, node: tree_sitter.Node, node_type: str) -> Optional[tree_sitter.Node]:
         """Find first child node of the given type."""
@@ -638,3 +691,213 @@ class JavaAnalyzer:
             symbol_info.documentation.extend(documentation)
         
         return symbol_info
+
+
+
+class JavaRelationshipExtractor:
+    """
+    Tree-sitter based relationship extractor for Java.
+    """
+    
+    def __init__(self, file_path: str, content: str, symbol_manager):
+        self.file_path = file_path
+        self.content = content
+        self.symbol_manager = symbol_manager
+        self.relationships = {}
+        self.current_scope = []
+        self.current_package = ""
+        self.current_class = None
+        
+    def get_relationships(self) -> Dict[str, List[tuple]]:
+        """Get extracted relationships."""
+        return self.relationships
+    
+    def _add_relationship(self, source_symbol_id: str, target_symbol_id: str, relationship_type: InternalRelationshipType):
+        """Add a relationship to the collection."""
+        if source_symbol_id not in self.relationships:
+            self.relationships[source_symbol_id] = []
+        self.relationships[source_symbol_id].append((target_symbol_id, relationship_type))
+    
+    def extract_from_tree(self, node):
+        """Extract relationships from tree-sitter AST."""
+        self._visit_node(node)
+    
+    def _visit_node(self, node):
+        """Visit a tree-sitter node recursively."""
+        # Debug: Log all node types we encounter
+        if hasattr(node, 'type'):
+            logger.debug(f"Visiting node type: {node.type}")
+            
+        if node.type == "package_declaration":
+            self._handle_package_declaration(node)
+        elif node.type == "class_declaration":
+            self._handle_class_declaration(node)
+        elif node.type == "interface_declaration":
+            self._handle_interface_declaration(node)
+        elif node.type == "method_declaration":
+            self._handle_method_declaration(node)
+        elif node.type == "method_invocation":
+            self._handle_method_invocation(node)
+        
+        # Visit child nodes
+        for child in node.children:
+            self._visit_node(child)
+    
+    def _handle_package_declaration(self, node):
+        """Handle package declaration."""
+        for child in node.children:
+            if child.type == "scoped_identifier":
+                self.current_package = self._get_node_text(child)
+                break
+    
+    def _handle_class_declaration(self, node):
+        """Handle class declaration and inheritance."""
+        logger.debug(f"JavaRelationshipExtractor: Handling class declaration")
+        class_name = None
+        parent_class = None
+        interfaces = []
+        
+        # Log all child types for debugging
+        child_types = [child.type for child in node.children]
+        logger.debug(f"JavaRelationshipExtractor: Class declaration child types: {child_types}")
+        
+        for child in node.children:
+            if child.type == "identifier" and class_name is None:
+                class_name = self._get_node_text(child)
+                logger.debug(f"JavaRelationshipExtractor: Found class name: {class_name}")
+            elif child.type == "superclass":
+                logger.debug(f"JavaRelationshipExtractor: Found superclass node")
+                # Find extends clause
+                for super_child in child.children:
+                    logger.debug(f"JavaRelationshipExtractor: Superclass child type: {super_child.type}")
+                    if super_child.type == "type_identifier":
+                        parent_class = self._get_node_text(super_child)
+                        logger.debug(f"JavaRelationshipExtractor: Found parent class: {parent_class}")
+                        break
+            elif child.type == "super_interfaces":
+                logger.debug(f"JavaRelationshipExtractor: Found super_interfaces node")
+                # Find implements clause
+                for interface_child in child.children:
+                    if interface_child.type == "type_list":
+                        for type_child in interface_child.children:
+                            if type_child.type == "type_identifier":
+                                interfaces.append(self._get_node_text(type_child))
+        
+        if class_name:
+            old_class = self.current_class
+            self.current_class = class_name
+            self.current_scope.append(class_name)
+            
+            class_symbol_id = self._generate_symbol_id([class_name], "#")
+            
+            # Add inheritance relationship
+            if parent_class:
+                parent_symbol_id = self._generate_symbol_id([parent_class], "#")
+                self._add_relationship(class_symbol_id, parent_symbol_id, InternalRelationshipType.INHERITS)
+            
+            # Add implementation relationships
+            for interface in interfaces:
+                interface_symbol_id = self._generate_symbol_id([interface], "#")
+                self._add_relationship(class_symbol_id, interface_symbol_id, InternalRelationshipType.IMPLEMENTS)
+            
+            # Continue processing class body
+            self._visit_class_body(node)
+            
+            self.current_scope.pop()
+            self.current_class = old_class
+    
+    def _handle_interface_declaration(self, node):
+        """Handle interface declaration."""
+        interface_name = None
+        
+        for child in node.children:
+            if child.type == "identifier":
+                interface_name = self._get_node_text(child)
+                break
+        
+        if interface_name:
+            old_class = self.current_class
+            self.current_class = interface_name
+            self.current_scope.append(interface_name)
+            
+            # Process interface body
+            self._visit_interface_body(node)
+            
+            self.current_scope.pop()
+            self.current_class = old_class
+    
+    def _handle_method_declaration(self, node):
+        """Handle method declaration."""
+        method_name = None
+        
+        for child in node.children:
+            if child.type == "identifier":
+                method_name = self._get_node_text(child)
+                break
+        
+        if method_name:
+            self.current_scope.append(method_name)
+            
+            # Extract method calls within this method
+            self._extract_method_calls(node, method_name)
+            
+            self.current_scope.pop()
+    
+    def _handle_method_invocation(self, node):
+        """Handle method invocation (function call)."""
+        if self.current_scope:
+            current_method = self.current_scope[-1] if self.current_scope else None
+            
+            # Extract called method name
+            called_method = None
+            
+            for child in node.children:
+                if child.type == "identifier":
+                    called_method = self._get_node_text(child)
+                    break
+            
+            if called_method and current_method:
+                source_symbol_id = self._generate_symbol_id(self.current_scope, "().")
+                target_symbol_id = self._generate_symbol_id([called_method], "().")
+                self._add_relationship(source_symbol_id, target_symbol_id, InternalRelationshipType.CALLS)
+    
+    def _visit_class_body(self, class_node):
+        """Visit class body for method declarations."""
+        for child in class_node.children:
+            if child.type == "class_body":
+                for body_child in child.children:
+                    self._visit_node(body_child)
+    
+    def _visit_interface_body(self, interface_node):
+        """Visit interface body for method declarations."""
+        for child in interface_node.children:
+            if child.type == "interface_body":
+                for body_child in child.children:
+                    self._visit_node(body_child)
+    
+    def _extract_method_calls(self, method_node, method_name: str):
+        """Extract all method calls within a method."""
+        self._visit_calls_in_node(method_node)
+    
+    def _visit_calls_in_node(self, node):
+        """Visit all method invocations in a node."""
+        if node.type == "method_invocation":
+            self._handle_method_invocation(node)
+        
+        for child in node.children:
+            self._visit_calls_in_node(child)
+    
+    def _get_node_text(self, node) -> str:
+        """Get text content of a tree-sitter node."""
+        return self.content[node.start_byte:node.end_byte]
+    
+    def _generate_symbol_id(self, symbol_path: List[str], descriptor: str) -> str:
+        """Generate SCIP symbol ID."""
+        if self.symbol_manager:
+            return self.symbol_manager.create_local_symbol(
+                language="java",
+                file_path=self.file_path,
+                symbol_path=symbol_path,
+                descriptor=descriptor
+            )
+        return f"local {'/'.join(symbol_path)}{descriptor}"

@@ -2,7 +2,7 @@
 
 import logging
 from typing import List, Dict, Set, Optional
-from .strategies.base_strategy import SCIPIndexerStrategy
+from .strategies.base_strategy import SCIPIndexerStrategy, StrategyError
 from .strategies.python_strategy import PythonStrategy
 from .strategies.javascript_strategy import JavaScriptStrategy
 from .strategies.java_strategy import JavaStrategy
@@ -30,17 +30,25 @@ class SCIPIndexerFactory:
         logger.info("Registering SCIP indexing strategies (SCIP compliant)...")
         
         # Language-specific strategies (high priority: 95)
-        language_strategies = [
-            PythonStrategy(priority=95),
-            JavaScriptStrategy(priority=95),
-            JavaStrategy(priority=95),
-            ObjectiveCStrategy(priority=95),
-            ZigStrategy(priority=95),
+        strategy_classes = [
+            (PythonStrategy, 95),
+            (JavaScriptStrategy, 95),
+            (JavaStrategy, 95),
+            (ObjectiveCStrategy, 95),
+            (ZigStrategy, 95),
         ]
         
-        for strategy in language_strategies:
-            self.register_strategy(strategy)
-            logger.debug(f"Registered {strategy.get_strategy_name()}")
+        for strategy_class, priority in strategy_classes:
+            try:
+                strategy = strategy_class(priority=priority)
+                if strategy.is_available():
+                    self.register_strategy(strategy)
+                    logger.debug(f"Registered {strategy.get_strategy_name()}")
+                else:
+                    logger.warning(f"Strategy {strategy_class.__name__} is not available")
+            except Exception as e:
+                logger.warning(f"Failed to initialize {strategy_class.__name__}: {e}")
+                continue
         
         # Fallback strategy (lowest priority: 10)
         fallback = FallbackStrategy(priority=10)

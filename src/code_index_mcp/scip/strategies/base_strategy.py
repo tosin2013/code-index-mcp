@@ -8,6 +8,8 @@ from ..proto import scip_pb2
 from ..core.symbol_manager import SCIPSymbolManager
 from ..core.position_calculator import PositionCalculator
 from ..core.local_reference_resolver import LocalReferenceResolver
+from ..core.relationship_manager import SCIPRelationshipManager
+from ..core.relationship_types import SCIPRelationshipMapper, InternalRelationshipType
 
 
 logger = logging.getLogger(__name__)
@@ -43,6 +45,8 @@ class SCIPIndexerStrategy(ABC):
         self.symbol_manager: Optional[SCIPSymbolManager] = None
         self.reference_resolver: Optional[LocalReferenceResolver] = None
         self.position_calculator: Optional[PositionCalculator] = None
+        self.relationship_manager: Optional[SCIPRelationshipManager] = None
+        self.relationship_mapper: Optional[SCIPRelationshipMapper] = None
 
     @abstractmethod
     def can_handle(self, extension: str, file_path: str) -> bool:
@@ -99,10 +103,16 @@ class SCIPIndexerStrategy(ABC):
             self._collect_symbol_definitions(files, project_path)
             logger.info(f"✅ {strategy_name}: Phase 1 completed")
             
-            # Phase 2: Generate complete SCIP documents with resolved references
-            logger.info(f"🔗 {strategy_name}: Phase 2 - Generating SCIP documents with resolved references")
-            documents = self._generate_documents_with_references(files, project_path)
-            logger.info(f"✅ {strategy_name}: Phase 2 completed, generated {len(documents)} documents")
+            # Phase 2: Build symbol relationships
+            logger.info(f"🔗 {strategy_name}: Phase 2 - Building symbol relationships")
+            relationships = self._build_symbol_relationships(files, project_path)
+            total_relationships = sum(len(rels) for rels in relationships.values())
+            logger.info(f"✅ {strategy_name}: Phase 2 completed, built {total_relationships} relationships for {len(relationships)} symbols")
+            
+            # Phase 3: Generate complete SCIP documents with resolved references and relationships
+            logger.info(f"📄 {strategy_name}: Phase 3 - Generating SCIP documents with resolved references and relationships")
+            documents = self._generate_documents_with_references(files, project_path, relationships)
+            logger.info(f"✅ {strategy_name}: Phase 3 completed, generated {len(documents)} documents")
             
             # Log statistics
             if self.reference_resolver:
@@ -137,6 +147,8 @@ class SCIPIndexerStrategy(ABC):
         
         self.symbol_manager = SCIPSymbolManager(project_path, project_name)
         self.reference_resolver = LocalReferenceResolver(project_path)
+        self.relationship_manager = SCIPRelationshipManager()
+        self.relationship_mapper = SCIPRelationshipMapper()
         
         logger.debug(f"Initialized components for project: {project_name}")
 
@@ -156,23 +168,78 @@ class SCIPIndexerStrategy(ABC):
         """
 
     @abstractmethod
-    def _generate_documents_with_references(self, files: List[str], project_path: str) -> List[scip_pb2.Document]:
+    def _generate_documents_with_references(self, files: List[str], project_path: str, relationships: Optional[Dict[str, List[tuple]]] = None) -> List[scip_pb2.Document]:
         """
-        Phase 2: Generate complete SCIP documents with resolved references.
+        Phase 3: Generate complete SCIP documents with resolved references and relationships.
         
         This phase should:
         1. Parse each file again
         2. Generate occurrences for definitions and references
         3. Resolve references using the reference resolver
-        4. Create complete SCIP documents
+        4. Add relationships to symbol information
+        5. Create complete SCIP documents
+        
+        Args:
+            files: List of file paths to process
+            project_path: Project root path
+            relationships: Optional dictionary mapping symbol_id -> [(target_symbol_id, relationship_type), ...]
+            
+        Returns:
+            List of complete SCIP documents
+        """
+
+    @abstractmethod
+    def _build_symbol_relationships(self, files: List[str], project_path: str) -> Dict[str, List[tuple]]:
+        """
+        Build relationships between symbols.
+        
+        This method should analyze symbol relationships and return a mapping
+        from symbol IDs to their relationships.
         
         Args:
             files: List of file paths to process
             project_path: Project root path
             
         Returns:
-            List of complete SCIP documents
+            Dictionary mapping symbol_id -> [(target_symbol_id, relationship_type), ...]
         """
+
+    def _create_scip_relationships(self, symbol_relationships: List[tuple]) -> List[scip_pb2.Relationship]:
+        """
+        Create SCIP relationships from symbol relationship tuples.
+        
+        Args:
+            symbol_relationships: List of (target_symbol, relationship_type) tuples
+            
+        Returns:
+            List of SCIP Relationship objects
+        """
+        if not self.relationship_mapper:
+            logger.warning("Relationship mapper not initialized, returning empty relationships")
+            return []
+        
+        try:
+            relationships = []
+            for target_symbol, relationship_type in symbol_relationships:
+                if isinstance(relationship_type, str):
+                    # Convert string to enum if needed
+                    try:
+                        relationship_type = InternalRelationshipType(relationship_type)
+                    except ValueError:
+                        logger.warning(f"Unknown relationship type: {relationship_type}")
+                        continue
+                
+                scip_rel = self.relationship_mapper.map_to_scip_relationship(
+                    target_symbol, relationship_type
+                )
+                relationships.append(scip_rel)
+            
+            logger.debug(f"Created {len(relationships)} SCIP relationships")
+            return relationships
+            
+        except Exception as e:
+            logger.error(f"Failed to create SCIP relationships: {e}")
+            return []
 
     def get_priority(self) -> int:
         """Return the strategy priority."""
@@ -270,18 +337,20 @@ class SCIPIndexerStrategy(ABC):
                                        symbol_id: str,
                                        display_name: str,
                                        symbol_kind: int,
-                                       documentation: List[str] = None) -> scip_pb2.SymbolInformation:
+                                       documentation: List[str] = None,
+                                       relationships: List[scip_pb2.Relationship] = None) -> scip_pb2.SymbolInformation:
         """
-        Create SCIP symbol information.
+        Create SCIP symbol information with relationships.
         
         Args:
             symbol_id: SCIP symbol ID
             display_name: Human-readable name
             symbol_kind: SCIP symbol kind
             documentation: Optional documentation
+            relationships: Optional relationships
             
         Returns:
-            SCIP SymbolInformation object
+            SCIP SymbolInformation object with relationships
         """
         symbol_info = scip_pb2.SymbolInformation()
         symbol_info.symbol = symbol_id
@@ -291,7 +360,64 @@ class SCIPIndexerStrategy(ABC):
         if documentation:
             symbol_info.documentation.extend(documentation)
         
+        # Add relationships if provided
+        if relationships and self.relationship_manager:
+            self.relationship_manager.add_relationships_to_symbol(symbol_info, relationships)
+        
         return symbol_info
+
+    def _register_symbol_definition(self, symbol_id: str, file_path: str, 
+                                  definition_range: scip_pb2.Range, symbol_kind: int,
+                                  display_name: str, documentation: List[str] = None) -> None:
+        """
+        Register a symbol definition with the reference resolver.
+        
+        Args:
+            symbol_id: SCIP symbol ID
+            file_path: File path where symbol is defined
+            definition_range: SCIP range object for definition
+            symbol_kind: SCIP symbol kind
+            display_name: Human-readable name
+            documentation: Optional documentation
+        """
+        if not self.reference_resolver:
+            logger.warning("Reference resolver not initialized, skipping symbol registration")
+            return
+            
+        self.reference_resolver.register_symbol_definition(
+            symbol_id=symbol_id,
+            file_path=file_path,
+            definition_range=definition_range,
+            symbol_kind=symbol_kind,
+            display_name=display_name,
+            documentation=documentation or []
+        )
+
+    def _check_components_initialized(self) -> bool:
+        """
+        Check if all required components are initialized.
+        
+        Returns:
+            True if all components are ready
+            
+        Raises:
+            StrategyError: If required components are not initialized
+        """
+        missing_components = []
+        
+        if not self.symbol_manager:
+            missing_components.append("symbol_manager")
+        if not self.reference_resolver:
+            missing_components.append("reference_resolver")
+        if not self.relationship_manager:
+            missing_components.append("relationship_manager")
+        if not self.relationship_mapper:
+            missing_components.append("relationship_mapper")
+            
+        if missing_components:
+            raise StrategyError(f"Required components not initialized: {', '.join(missing_components)}")
+            
+        return True
 
 
 class StrategyError(Exception):

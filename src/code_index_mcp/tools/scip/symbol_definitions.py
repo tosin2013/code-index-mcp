@@ -8,6 +8,8 @@ accurate symbol information and call relationships in a format optimized for LLM
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, field
 
+from .relationship_info import SymbolRelationships, RelationshipsSummary
+
 
 class SymbolLocationError(Exception):
     """Raised when symbol location cannot be determined from SCIP data."""
@@ -31,29 +33,7 @@ class LocationInfo:
         return {"line": self.line, "column": self.column}
 
 
-@dataclass
-class CallRelationships:
-    """Call relationship tracking for functions and methods."""
-    local: List[str] = field(default_factory=list)
-    external: List[Dict[str, Any]] = field(default_factory=list)
-    
-    def add_local_call(self, function_name: str):
-        """Add a local function call."""
-        if function_name not in self.local:
-            self.local.append(function_name)
-    
-    def add_external_call(self, name: str, file: str, line: int):
-        """Add an external function call."""
-        call_info = {"name": name, "file": file, "line": line}
-        if call_info not in self.external:
-            self.external.append(call_info)
-    
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary format for JSON output."""
-        return {
-            "local": self.local,
-            "external": self.external
-        }
+# CallRelationships class removed - now using unified SymbolRelationships
 
 
 @dataclass
@@ -70,9 +50,8 @@ class SymbolDefinition:
     return_type: Optional[str] = None
     is_async: bool = False
     
-    # Call relationships (only for functions/methods)
-    calls: CallRelationships = field(default_factory=lambda: CallRelationships())
-    called_by: CallRelationships = field(default_factory=lambda: CallRelationships())
+    # Unified relationships (for all symbol types)
+    relationships: SymbolRelationships = field(default_factory=lambda: SymbolRelationships())
     
     # Additional class-specific fields
     methods: List[str] = field(default_factory=list)  # For classes
@@ -97,21 +76,26 @@ class SymbolDefinition:
     
     def to_function_dict(self) -> Dict[str, Any]:
         """Convert to function format for JSON output."""
-        return {
+        result = {
             "name": self.name,
             "line": self.line,
             "column": self.column,
             "class": self.class_name,
             "parameters": self.parameters,
             "return_type": self.return_type,
-            "is_async": self.is_async,
-            "calls": self.calls.to_dict(),
-            "called_by": self.called_by.to_dict()
+            "is_async": self.is_async
         }
+        
+        # Add relationships if they exist
+        relationships_dict = self.relationships.to_dict()
+        if relationships_dict:
+            result["relationships"] = relationships_dict
+            
+        return result
     
     def to_class_dict(self) -> Dict[str, Any]:
         """Convert to class format for JSON output."""
-        return {
+        result = {
             "name": self.name,
             "line": self.line,
             "column": self.column,
@@ -119,16 +103,30 @@ class SymbolDefinition:
             "attributes": self.attributes,
             "inherits_from": self.inherits_from
         }
+        
+        # Add relationships if they exist
+        relationships_dict = self.relationships.to_dict()
+        if relationships_dict:
+            result["relationships"] = relationships_dict
+            
+        return result
     
     def to_variable_dict(self) -> Dict[str, Any]:
         """Convert to variable format for JSON output."""
-        return {
+        result = {
             "name": self.name,
             "line": self.line,
             "column": self.column,
             "is_global": self.is_global,
             "type": self.type
         }
+        
+        # Add relationships if they exist
+        relationships_dict = self.relationships.to_dict()
+        if relationships_dict:
+            result["relationships"] = relationships_dict
+            
+        return result
     
     def to_constant_dict(self) -> Dict[str, Any]:
         """Convert to constant format for JSON output."""
@@ -138,6 +136,8 @@ class SymbolDefinition:
             "column": self.column,
             "value": self.value
         }
+    
+    # to_scip_relationships method removed - now using unified SymbolRelationships structure
 
 
 @dataclass
@@ -185,6 +185,9 @@ class FileAnalysis:
     # Dependency information
     imports: ImportGroup = field(default_factory=lambda: ImportGroup())
     
+    # Relationship summary
+    relationships_summary: Optional[RelationshipsSummary] = None
+    
     def add_symbol(self, symbol: SymbolDefinition):
         """Add a symbol to the appropriate collection based on its type."""
         if symbol.symbol_type == 'function' or symbol.symbol_type == 'method':
@@ -210,6 +213,7 @@ class FileAnalysis:
                 return cls
         return None
     
+    
     def to_dict(self) -> Dict[str, Any]:
         """Convert to final JSON output format - EXACT specification."""
         return {
@@ -227,5 +231,57 @@ class FileAnalysis:
             "dependencies": {
                 "imports": self.imports.to_dict()
             },
+            "relationships_summary": self.relationships_summary.to_dict() if self.relationships_summary else {
+                "total_relationships": 0,
+                "by_type": {},
+                "cross_file_relationships": 0
+            },
             "status": "success"
         }
+    
+    def to_scip_relationships(self, symbol_manager=None) -> Dict[str, List[tuple]]:
+        """
+        Extract all SCIP relationships from this file analysis.
+        
+        This method provides a unified interface to get all symbol relationships
+        in SCIP format, compatible with the relationship management system.
+        
+        Args:
+            symbol_manager: Optional symbol manager for generating proper symbol IDs
+            
+        Returns:
+            Dictionary mapping source_symbol_id -> [(target_symbol_id, relationship_type), ...]
+        """
+        all_relationships = {}
+        
+        # Process all symbol types
+        all_symbols = self.functions + self.classes + self.variables + self.constants
+        
+        for symbol in all_symbols:
+            # Create source symbol ID
+            if symbol_manager:
+                source_symbol_id = symbol_manager.create_local_symbol(
+                    language=self.language,
+                    file_path=self.file_path,
+                    symbol_path=[symbol.name],
+                    descriptor=self._get_symbol_descriptor(symbol)
+                )
+            else:
+                source_symbol_id = f"local {symbol.name}{self._get_symbol_descriptor(symbol)}"
+            
+            # Get relationships for this symbol
+            symbol_relationships = symbol.to_scip_relationships(symbol_manager, self.language, self.file_path)
+            
+            if symbol_relationships:
+                all_relationships[source_symbol_id] = symbol_relationships
+        
+        return all_relationships
+    
+    def _get_symbol_descriptor(self, symbol: SymbolDefinition) -> str:
+        """Get SCIP descriptor suffix for a symbol."""
+        if symbol.symbol_type in ['function', 'method']:
+            return "()."
+        elif symbol.symbol_type == 'class':
+            return "#"
+        else:
+            return ""

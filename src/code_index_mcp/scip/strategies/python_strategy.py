@@ -9,6 +9,7 @@ from pathlib import Path
 from .base_strategy import SCIPIndexerStrategy, StrategyError
 from ..proto import scip_pb2
 from ..core.position_calculator import PositionCalculator
+from ..core.relationship_types import InternalRelationshipType
 
 
 logger = logging.getLogger(__name__)
@@ -33,7 +34,7 @@ class PythonStrategy(SCIPIndexerStrategy):
 
     def _collect_symbol_definitions(self, files: List[str], project_path: str) -> None:
         """Phase 1: Collect all symbol definitions from Python files."""
-        logger.debug(f"🔍 PythonStrategy Phase 1: Processing {len(files)} files for symbol collection")
+        logger.debug(f"PythonStrategy Phase 1: Processing {len(files)} files for symbol collection")
         processed_count = 0
         error_count = 0
         
@@ -45,19 +46,19 @@ class PythonStrategy(SCIPIndexerStrategy):
                 processed_count += 1
                 
                 if i % 10 == 0 or i == len(files):  # Progress every 10 files or at end
-                    logger.debug(f"📊 Phase 1 progress: {i}/{len(files)} files, last file: {relative_path}")
+                    logger.debug(f"Phase 1 progress: {i}/{len(files)} files, last file: {relative_path}")
                     
             except Exception as e:
                 error_count += 1
-                logger.warning(f"❌ Phase 1 failed for {relative_path}: {e}")
+                logger.warning(f"Phase 1 failed for {relative_path}: {e}")
                 continue
         
-        logger.info(f"✅ Phase 1 summary: {processed_count} files processed, {error_count} errors")
+        logger.info(f"Phase 1 summary: {processed_count} files processed, {error_count} errors")
 
-    def _generate_documents_with_references(self, files: List[str], project_path: str) -> List[scip_pb2.Document]:
+    def _generate_documents_with_references(self, files: List[str], project_path: str, relationships: Optional[Dict[str, List[tuple]]] = None) -> List[scip_pb2.Document]:
         """Phase 2: Generate complete SCIP documents with resolved references."""
         documents = []
-        logger.debug(f"📝 PythonStrategy Phase 2: Generating documents for {len(files)} files")
+        logger.debug(f"PythonStrategy Phase 2: Generating documents for {len(files)} files")
         processed_count = 0
         error_count = 0
         total_occurrences = 0
@@ -67,7 +68,7 @@ class PythonStrategy(SCIPIndexerStrategy):
             relative_path = os.path.relpath(file_path, project_path)
             
             try:
-                document = self._analyze_python_file(file_path, project_path)
+                document = self._analyze_python_file(file_path, project_path, relationships)
                 if document:
                     documents.append(document)
                     total_occurrences += len(document.occurrences)
@@ -75,19 +76,47 @@ class PythonStrategy(SCIPIndexerStrategy):
                     processed_count += 1
                     
                 if i % 10 == 0 or i == len(files):  # Progress every 10 files or at end
-                    logger.debug(f"📊 Phase 2 progress: {i}/{len(files)} files, "
+                    logger.debug(f"Phase 2 progress: {i}/{len(files)} files, "
                                f"last file: {relative_path}, "
                                f"{len(document.occurrences) if document else 0} occurrences")
                     
             except Exception as e:
                 error_count += 1
-                logger.error(f"❌ Phase 2 failed for {relative_path}: {e}")
+                logger.error(f"Phase 2 failed for {relative_path}: {e}")
                 continue
         
-        logger.info(f"✅ Phase 2 summary: {processed_count} documents generated, {error_count} errors, "
+        logger.info(f"Phase 2 summary: {processed_count} documents generated, {error_count} errors, "
                    f"{total_occurrences} total occurrences, {total_symbols} total symbols")
         
         return documents
+
+    def _build_symbol_relationships(self, files: List[str], project_path: str) -> Dict[str, List[tuple]]:
+        """
+        Build relationships between Python symbols.
+        
+        Args:
+            files: List of file paths to process
+            project_path: Project root path
+            
+        Returns:
+            Dictionary mapping symbol_id -> [(target_symbol_id, relationship_type), ...]
+        """
+        logger.debug(f"PythonStrategy: Building symbol relationships for {len(files)} files")
+        
+        all_relationships = {}
+        
+        for file_path in files:
+            try:
+                file_relationships = self._extract_relationships_from_file(file_path, project_path)
+                all_relationships.update(file_relationships)
+            except Exception as e:
+                logger.warning(f"Failed to extract relationships from {file_path}: {e}")
+        
+        total_symbols_with_relationships = len(all_relationships)
+        total_relationships = sum(len(rels) for rels in all_relationships.values())
+        
+        logger.debug(f"PythonStrategy: Built {total_relationships} relationships for {total_symbols_with_relationships} symbols")
+        return all_relationships
 
     def _collect_symbols_from_file(self, file_path: str, project_path: str) -> None:
         """Collect symbol definitions from a single Python file."""
@@ -95,39 +124,36 @@ class PythonStrategy(SCIPIndexerStrategy):
         # Read file content
         content = self._read_file_content(file_path)
         if not content:
-            logger.debug(f"📄 Empty file skipped: {os.path.relpath(file_path, project_path)}")
+            logger.debug(f"Empty file skipped: {os.path.relpath(file_path, project_path)}")
             return
 
         # Parse AST
         try:
             tree = ast.parse(content, filename=file_path)
         except SyntaxError as e:
-            logger.warning(f"❌ Syntax error in {os.path.relpath(file_path, project_path)}: {e}")
+            logger.warning(f"Syntax error in {os.path.relpath(file_path, project_path)}: {e}")
             return
 
-        # Collect symbols
+        # Collect symbols using integrated visitor
         relative_path = self._get_relative_path(file_path, project_path)
-        collector = PythonSymbolCollector(
-            relative_path, content, self.symbol_manager, self.reference_resolver
-        )
-        collector.visit(tree)
-        logger.debug(f"🔍 Symbol collection - {relative_path}")
+        self._collect_symbols_from_ast(tree, relative_path, content)
+        logger.debug(f"Symbol collection - {relative_path}")
 
-    def _analyze_python_file(self, file_path: str, project_path: str) -> Optional[scip_pb2.Document]:
+    def _analyze_python_file(self, file_path: str, project_path: str, relationships: Optional[Dict[str, List[tuple]]] = None) -> Optional[scip_pb2.Document]:
         """Analyze a single Python file and generate complete SCIP document."""
         relative_path = self._get_relative_path(file_path, project_path)
         
         # Read file content
         content = self._read_file_content(file_path)
         if not content:
-            logger.debug(f"📄 Empty file skipped: {relative_path}")
+            logger.debug(f"Empty file skipped: {relative_path}")
             return None
 
         # Parse AST
         try:
             tree = ast.parse(content, filename=file_path)
         except SyntaxError as e:
-            logger.warning(f"❌ Syntax error in {relative_path}: {e}")
+            logger.warning(f"Syntax error in {relative_path}: {e}")
             return None
 
         # Create SCIP document
@@ -138,96 +164,151 @@ class PythonStrategy(SCIPIndexerStrategy):
         # Analyze AST and generate occurrences
         self.position_calculator = PositionCalculator(content)
         
-        analyzer = PythonAnalyzer(
-            document.relative_path,
-            content,
-            self.symbol_manager,
-            self.position_calculator,
-            self.reference_resolver
-        )
+        occurrences, symbols = self._analyze_ast_for_document(tree, relative_path, content, relationships)
         
-        analyzer.visit(tree)
-
         # Add results to document
-        document.occurrences.extend(analyzer.occurrences)
-        document.symbols.extend(analyzer.symbols)
+        document.occurrences.extend(occurrences)
+        document.symbols.extend(symbols)
         
-        logger.debug(f"📝 Document analysis - {relative_path}: "
-                    f"→ {len(document.occurrences)} occurrences, {len(document.symbols)} symbols")
+        logger.debug(f"Document analysis - {relative_path}: "
+                    f"-> {len(document.occurrences)} occurrences, {len(document.symbols)} symbols")
 
         return document
 
-
-class PythonSymbolCollector(ast.NodeVisitor):
-    """AST visitor that collects Python symbol definitions (Phase 1)."""
-
-    def __init__(self, file_path: str, content: str, symbol_manager, reference_resolver):
-        self.file_path = file_path
-        self.content = content
-        self.symbol_manager = symbol_manager
-        self.reference_resolver = reference_resolver
-        self.scope_stack: List[str] = []  # Track current scope
-
-    def visit_FunctionDef(self, node: ast.FunctionDef):
-        """Visit function definition."""
-        self._register_function_symbol(node, node.name, is_async=False)
+    def _extract_relationships_from_file(self, file_path: str, project_path: str) -> Dict[str, List[tuple]]:
+        """
+        Extract relationships from a single Python file.
         
-        # Enter function scope
-        self.scope_stack.append(node.name)
-        self.generic_visit(node)
-        self.scope_stack.pop()
-
-    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef):
-        """Visit async function definition."""
-        self._register_function_symbol(node, node.name, is_async=True)
+        Args:
+            file_path: File to analyze
+            project_path: Project root path
+            
+        Returns:
+            Dictionary mapping symbol_id -> [(target_symbol_id, relationship_type), ...]
+        """
+        content = self._read_file_content(file_path)
+        if not content:
+            return {}
         
-        # Enter function scope
-        self.scope_stack.append(node.name)
-        self.generic_visit(node)
-        self.scope_stack.pop()
-
-    def visit_ClassDef(self, node: ast.ClassDef):
-        """Visit class definition."""
-        self._register_class_symbol(node, node.name)
+        try:
+            tree = ast.parse(content)
+        except SyntaxError as e:
+            logger.warning(f"Syntax error in {file_path}: {e}")
+            return {}
         
-        # Enter class scope
-        self.scope_stack.append(node.name)
-        self.generic_visit(node)
-        self.scope_stack.pop()
+        return self._extract_relationships_from_ast(tree, file_path, project_path)
 
-    def _register_function_symbol(self, node: ast.AST, name: str, is_async: bool = False):
+    def _collect_symbols_from_ast(self, tree: ast.AST, file_path: str, content: str) -> None:
+        """Collect symbols from AST using integrated visitor."""
+        scope_stack = []
+        
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef) or isinstance(node, ast.AsyncFunctionDef):
+                self._register_function_symbol(node, node.name, file_path, scope_stack)
+            elif isinstance(node, ast.ClassDef):
+                self._register_class_symbol(node, node.name, file_path, scope_stack)
+
+    def _analyze_ast_for_document(self, tree: ast.AST, file_path: str, content: str, relationships: Optional[Dict[str, List[tuple]]] = None) -> tuple[List[scip_pb2.Occurrence], List[scip_pb2.SymbolInformation]]:
+        """Analyze AST to generate occurrences and symbols for SCIP document."""
+        occurrences = []
+        symbols = []
+        scope_stack = []
+        
+        # Simple implementation - can be enhanced later
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef) or isinstance(node, ast.AsyncFunctionDef):
+                symbol_id = self._create_function_symbol_id(node.name, file_path, scope_stack)
+                occurrence = self._create_function_occurrence(node, symbol_id)
+                # Get relationships for this symbol
+                symbol_relationships = relationships.get(symbol_id, []) if relationships else []
+                scip_relationships = self._create_scip_relationships(symbol_relationships) if symbol_relationships else []
+                
+                symbol_info = self._create_function_symbol_info(node, symbol_id, scip_relationships)
+                
+                if occurrence:
+                    occurrences.append(occurrence)
+                if symbol_info:
+                    symbols.append(symbol_info)
+                    
+            elif isinstance(node, ast.ClassDef):
+                symbol_id = self._create_class_symbol_id(node.name, file_path, scope_stack)
+                occurrence = self._create_class_occurrence(node, symbol_id)
+                # Get relationships for this symbol
+                symbol_relationships = relationships.get(symbol_id, []) if relationships else []
+                scip_relationships = self._create_scip_relationships(symbol_relationships) if symbol_relationships else []
+                
+                symbol_info = self._create_class_symbol_info(node, symbol_id, scip_relationships)
+                
+                if occurrence:
+                    occurrences.append(occurrence)
+                if symbol_info:
+                    symbols.append(symbol_info)
+        
+        return occurrences, symbols
+
+    def _extract_relationships_from_ast(self, tree: ast.AST, file_path: str, project_path: str) -> Dict[str, List[tuple]]:
+        """Extract relationships from AST."""
+        relationships = {}
+        scope_stack = []
+        
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ClassDef):
+                # Extract inheritance relationships
+                relative_path = self._get_relative_path(file_path, project_path)
+                class_symbol_id = self._create_class_symbol_id(node.name, relative_path, scope_stack)
+                
+                for base in node.bases:
+                    if isinstance(base, ast.Name):
+                        parent_symbol_id = self._create_class_symbol_id(base.id, relative_path, scope_stack)
+                        if class_symbol_id not in relationships:
+                            relationships[class_symbol_id] = []
+                        relationships[class_symbol_id].append((parent_symbol_id, InternalRelationshipType.INHERITS))
+                        
+            elif isinstance(node, ast.FunctionDef) or isinstance(node, ast.AsyncFunctionDef):
+                # Extract function call relationships
+                relative_path = self._get_relative_path(file_path, project_path)
+                function_symbol_id = self._create_function_symbol_id(node.name, relative_path, scope_stack)
+                
+                for child in ast.walk(node):
+                    if isinstance(child, ast.Call):
+                        if isinstance(child.func, ast.Name):
+                            target_symbol_id = self._create_function_symbol_id(child.func.id, relative_path, scope_stack)
+                            if function_symbol_id not in relationships:
+                                relationships[function_symbol_id] = []
+                            relationships[function_symbol_id].append((target_symbol_id, InternalRelationshipType.CALLS))
+        
+        return relationships
+
+    # Helper methods
+    def _register_function_symbol(self, node: ast.AST, name: str, file_path: str, scope_stack: List[str]) -> None:
         """Register a function symbol definition."""
         symbol_id = self.symbol_manager.create_local_symbol(
             language="python",
-            file_path=self.file_path,
-            symbol_path=self.scope_stack + [name],
+            file_path=file_path,
+            symbol_path=scope_stack + [name],
             descriptor="()."
         )
         
-        # Create a dummy range for registration (will be calculated properly in Phase 2)
+        # Create a dummy range for registration
         dummy_range = scip_pb2.Range()
         dummy_range.start.extend([0, 0])
         dummy_range.end.extend([0, 1])
         
-        documentation = []
-        if is_async:
-            documentation.append("Async function")
-        
         self.reference_resolver.register_symbol_definition(
             symbol_id=symbol_id,
-            file_path=self.file_path,
+            file_path=file_path,
             definition_range=dummy_range,
             symbol_kind=scip_pb2.Function,
             display_name=name,
-            documentation=documentation
+            documentation=["Python function"]
         )
 
-    def _register_class_symbol(self, node: ast.AST, name: str):
+    def _register_class_symbol(self, node: ast.AST, name: str, file_path: str, scope_stack: List[str]) -> None:
         """Register a class symbol definition."""
         symbol_id = self.symbol_manager.create_local_symbol(
             language="python",
-            file_path=self.file_path,
-            symbol_path=self.scope_stack + [name],
+            file_path=file_path,
+            symbol_path=scope_stack + [name],
             descriptor="#"
         )
         
@@ -238,395 +319,95 @@ class PythonSymbolCollector(ast.NodeVisitor):
         
         self.reference_resolver.register_symbol_definition(
             symbol_id=symbol_id,
-            file_path=self.file_path,
+            file_path=file_path,
             definition_range=dummy_range,
             symbol_kind=scip_pb2.Class,
             display_name=name,
             documentation=["Python class"]
         )
 
-
-class PythonAnalyzer(ast.NodeVisitor):
-    """AST visitor that generates complete SCIP data (Phase 2)."""
-
-    def __init__(self, file_path: str, content: str, symbol_manager, position_calculator, reference_resolver):
-        self.file_path = file_path
-        self.content = content
-        self.symbol_manager = symbol_manager
-        self.position_calculator = position_calculator
-        self.reference_resolver = reference_resolver
-        self.scope_stack: List[str] = []
-        
-        # Results
-        self.occurrences: List[scip_pb2.Occurrence] = []
-        self.symbols: List[scip_pb2.SymbolInformation] = []
-
-    def visit_FunctionDef(self, node: ast.FunctionDef):
-        """Visit function definition."""
-        self._handle_function_definition(node, node.name, is_async=False)
-        
-        # Enter function scope
-        self.scope_stack.append(node.name)
-        self.generic_visit(node)
-        self.scope_stack.pop()
-
-    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef):
-        """Visit async function definition."""
-        self._handle_function_definition(node, node.name, is_async=True)
-        
-        # Enter function scope
-        self.scope_stack.append(node.name)
-        self.generic_visit(node)
-        self.scope_stack.pop()
-
-    def visit_ClassDef(self, node: ast.ClassDef):
-        """Visit class definition."""
-        self._handle_class_definition(node, node.name)
-        
-        # Enter class scope
-        self.scope_stack.append(node.name)
-        self.generic_visit(node)
-        self.scope_stack.pop()
-
-    def visit_Import(self, node: ast.Import):
-        """Visit import statement."""
-        for alias in node.names:
-            self._handle_import(node, alias.name, alias.asname)
-        self.generic_visit(node)
-
-    def visit_ImportFrom(self, node: ast.ImportFrom):
-        """Visit from ... import ... statement."""
-        module_name = node.module or ""
-        for alias in node.names:
-            self._handle_from_import(node, module_name, alias.name, alias.asname)
-        self.generic_visit(node)
-
-    def visit_Name(self, node: ast.Name):
-        """Visit name references."""
-        if isinstance(node.ctx, ast.Load):
-            # This is a reference to a name
-            self._handle_name_reference(node, node.id)
-        self.generic_visit(node)
-
-    def visit_Attribute(self, node: ast.Attribute):
-        """Visit attribute access."""
-        if isinstance(node.ctx, ast.Load):
-            self._handle_attribute_reference(node, node.attr)
-        self.generic_visit(node)
-
-    def _handle_function_definition(self, node: ast.AST, name: str, is_async: bool = False):
-        """Handle function definition."""
-        symbol_id = self.symbol_manager.create_local_symbol(
+    def _create_function_symbol_id(self, name: str, file_path: str, scope_stack: List[str]) -> str:
+        """Create symbol ID for function."""
+        return self.symbol_manager.create_local_symbol(
             language="python",
-            file_path=self.file_path,
-            symbol_path=self.scope_stack + [name],
+            file_path=file_path,
+            symbol_path=scope_stack + [name],
             descriptor="()."
         )
-        
-        # Create definition occurrence
-        range_obj = self.position_calculator.ast_node_to_range(node)
-        occurrence = self._create_occurrence(
-            symbol_id, range_obj, scip_pb2.Definition, scip_pb2.IdentifierFunction
-        )
-        self.occurrences.append(occurrence)
-        
-        # Create symbol information
-        documentation = []
-        if is_async:
-            documentation.append("Async function")
-        
-        # Add docstring if available
-        docstring = ast.get_docstring(node)
-        if docstring:
-            documentation.append(docstring)
-        
-        # Add parameter information
-        if hasattr(node, 'args') and node.args.args:
-            params = [arg.arg for arg in node.args.args]
-            documentation.append(f"Parameters: {', '.join(params)}")
-        
-        symbol_info = self._create_symbol_information(
-            symbol_id, name, scip_pb2.Function, documentation
-        )
-        self.symbols.append(symbol_info)
 
-    def _handle_class_definition(self, node: ast.AST, name: str):
-        """Handle class definition."""
-        symbol_id = self.symbol_manager.create_local_symbol(
+    def _create_class_symbol_id(self, name: str, file_path: str, scope_stack: List[str]) -> str:
+        """Create symbol ID for class."""
+        return self.symbol_manager.create_local_symbol(
             language="python",
-            file_path=self.file_path,
-            symbol_path=self.scope_stack + [name],
+            file_path=file_path,
+            symbol_path=scope_stack + [name],
             descriptor="#"
         )
-        
-        # Create definition occurrence
-        range_obj = self.position_calculator.ast_node_to_range(node)
-        occurrence = self._create_occurrence(
-            symbol_id, range_obj, scip_pb2.Definition, scip_pb2.IdentifierType
-        )
-        self.occurrences.append(occurrence)
-        
-        # Create symbol information
-        documentation = ["Python class"]
+
+    def _create_function_occurrence(self, node: ast.AST, symbol_id: str) -> Optional[scip_pb2.Occurrence]:
+        """Create SCIP occurrence for function."""
+        if not self.position_calculator:
+            return None
+            
+        try:
+            range_obj = self.position_calculator.ast_node_to_range(node)
+            occurrence = scip_pb2.Occurrence()
+            occurrence.symbol = symbol_id
+            occurrence.symbol_roles = scip_pb2.Definition
+            occurrence.syntax_kind = scip_pb2.IdentifierFunction
+            occurrence.range.CopyFrom(range_obj)
+            return occurrence
+        except:
+            return None
+
+    def _create_class_occurrence(self, node: ast.AST, symbol_id: str) -> Optional[scip_pb2.Occurrence]:
+        """Create SCIP occurrence for class."""
+        if not self.position_calculator:
+            return None
+            
+        try:
+            range_obj = self.position_calculator.ast_node_to_range(node)
+            occurrence = scip_pb2.Occurrence()
+            occurrence.symbol = symbol_id
+            occurrence.symbol_roles = scip_pb2.Definition
+            occurrence.syntax_kind = scip_pb2.IdentifierType
+            occurrence.range.CopyFrom(range_obj)
+            return occurrence
+        except:
+            return None
+
+    def _create_function_symbol_info(self, node: ast.AST, symbol_id: str, relationships: Optional[List[scip_pb2.Relationship]] = None) -> scip_pb2.SymbolInformation:
+        """Create SCIP symbol information for function."""
+        symbol_info = scip_pb2.SymbolInformation()
+        symbol_info.symbol = symbol_id
+        symbol_info.display_name = node.name
+        symbol_info.kind = scip_pb2.Function
         
         # Add docstring if available
         docstring = ast.get_docstring(node)
         if docstring:
-            documentation.append(docstring)
+            symbol_info.documentation.append(docstring)
         
-        # Add base class information
-        if hasattr(node, 'bases') and node.bases:
-            base_names = []
-            for base in node.bases:
-                if isinstance(base, ast.Name):
-                    base_names.append(base.id)
-                elif isinstance(base, ast.Attribute):
-                    base_names.append(ast.unparse(base))
-            if base_names:
-                documentation.append(f"Inherits from: {', '.join(base_names)}")
-        
-        symbol_info = self._create_symbol_information(
-            symbol_id, name, scip_pb2.Class, documentation
-        )
-        self.symbols.append(symbol_info)
-
-    def _handle_import(self, node: ast.AST, module_name: str, alias_name: Optional[str]):
-        """Handle import statement with moniker support."""
-        display_name = alias_name or module_name
-        
-        # Determine if this is a standard library or external package import
-        if self._is_stdlib_module(module_name):
-            # Standard library import
-            symbol_id = self.symbol_manager.create_stdlib_symbol(
-                language="python",
-                module_name=module_name,
-                symbol_name="",
-                descriptor=""
-            )
-        elif self._is_external_package(module_name):
-            # External package import using moniker system
-            symbol_id = self.symbol_manager.create_external_symbol(
-                language="python",
-                package_name=self._extract_package_name(module_name),
-                module_path=self._extract_module_path(module_name),
-                symbol_name="",
-                alias=alias_name
-            )
-        else:
-            # Local project import
-            symbol_id = self.symbol_manager.create_local_symbol(
-                language="python",
-                file_path=f"{module_name.replace('.', '/')}.py",
-                symbol_path=[],
-                descriptor=""
-            )
-        
-        range_obj = self.position_calculator.ast_node_to_range(node)
-        occurrence = self._create_occurrence(
-            symbol_id, range_obj, scip_pb2.Import, scip_pb2.IdentifierNamespace
-        )
-        self.occurrences.append(occurrence)
-
-    def _handle_from_import(self, node: ast.AST, module_name: str, import_name: str, alias_name: Optional[str]):
-        """Handle from ... import ... statement with moniker support."""
-        display_name = alias_name or import_name
-        
-        # Determine if this is a standard library or external package import
-        if self._is_stdlib_module(module_name):
-            # Standard library import
-            symbol_id = self.symbol_manager.create_stdlib_symbol(
-                language="python",
-                module_name=module_name,
-                symbol_name=import_name,
-                descriptor=""
-            )
-        elif self._is_external_package(module_name):
-            # External package import using moniker system
-            symbol_id = self.symbol_manager.create_external_symbol(
-                language="python",
-                package_name=self._extract_package_name(module_name),
-                module_path=self._extract_module_path(module_name),
-                symbol_name=import_name,
-                alias=alias_name,
-                descriptor=self._infer_descriptor_from_name(import_name)
-            )
-        else:
-            # Local project import
-            symbol_id = self.symbol_manager.create_local_symbol(
-                language="python",
-                file_path=f"{module_name.replace('.', '/')}.py",
-                symbol_path=[import_name],
-                descriptor=self._infer_descriptor_from_name(import_name)
-            )
-        
-        range_obj = self.position_calculator.ast_node_to_range(node)
-        occurrence = self._create_occurrence(
-            symbol_id, range_obj, scip_pb2.Import, scip_pb2.Identifier
-        )
-        self.occurrences.append(occurrence)
-
-    def _handle_name_reference(self, node: ast.AST, name: str):
-        """Handle name reference with import resolution."""
-        # First try to resolve to imported external symbol
-        imported_symbol_id = self.symbol_manager.resolve_import_reference(name, self.file_path)
-        
-        if imported_symbol_id:
-            # This is a reference to an imported symbol
-            range_obj = self.position_calculator.ast_node_to_range(node)
-            occurrence = self._create_occurrence(
-                imported_symbol_id, range_obj, 0, scip_pb2.Identifier  # 0 = reference role
-            )
-            self.occurrences.append(occurrence)
-            return
-            
-        # Try to resolve local reference
-        resolved_symbol_id = self.reference_resolver.resolve_reference_by_name(
-            symbol_name=name,
-            context_file=self.file_path,
-            context_scope=self.scope_stack
-        )
-        
-        if resolved_symbol_id:
-            # Create reference occurrence
-            range_obj = self.position_calculator.ast_node_to_range(node)
-            occurrence = self._create_occurrence(
-                resolved_symbol_id, range_obj, 0, scip_pb2.Identifier  # 0 = reference role
-            )
-            self.occurrences.append(occurrence)
-            
-            # Register the reference
-            self.reference_resolver.register_symbol_reference(
-                symbol_id=resolved_symbol_id,
-                file_path=self.file_path,
-                reference_range=range_obj,
-                context_scope=self.scope_stack
-            )
-
-    def _handle_attribute_reference(self, node: ast.AST, attr_name: str):
-        """Handle attribute reference."""
-        # For now, create a simple local reference
-        # In a full implementation, this would resolve through the object type
-        range_obj = self.position_calculator.ast_node_to_range(node)
-        
-        # Try to create a local symbol for the attribute
-        symbol_id = self.symbol_manager.create_local_symbol(
-            language="python",
-            file_path=self.file_path,
-            symbol_path=self.scope_stack + [attr_name],
-            descriptor=""
-        )
-        
-        occurrence = self._create_occurrence(
-            symbol_id, range_obj, 0, scip_pb2.Identifier
-        )
-        self.occurrences.append(occurrence)
-
-    def _create_occurrence(self, symbol_id: str, range_obj: scip_pb2.Range, 
-                          symbol_roles: int, syntax_kind: int) -> scip_pb2.Occurrence:
-        """Create a SCIP occurrence."""
-        occurrence = scip_pb2.Occurrence()
-        occurrence.symbol = symbol_id
-        occurrence.symbol_roles = symbol_roles
-        occurrence.syntax_kind = syntax_kind
-        occurrence.range.CopyFrom(range_obj)
-        return occurrence
-
-    def _create_symbol_information(self, symbol_id: str, display_name: str, 
-                                  symbol_kind: int, documentation: List[str] = None) -> scip_pb2.SymbolInformation:
-        """Create SCIP symbol information."""
-        symbol_info = scip_pb2.SymbolInformation()
-        symbol_info.symbol = symbol_id
-        symbol_info.display_name = display_name
-        symbol_info.kind = symbol_kind
-        
-        if documentation:
-            symbol_info.documentation.extend(documentation)
+        # Add relationships if provided
+        if relationships and self.relationship_manager:
+            self.relationship_manager.add_relationships_to_symbol(symbol_info, relationships)
         
         return symbol_info
 
-    def _is_stdlib_module(self, module_name: str) -> bool:
-        """Check if module is part of Python standard library."""
-        # Standard library modules (partial list - could be expanded)
-        stdlib_modules = {
-            'os', 'sys', 'json', 'datetime', 'collections', 'itertools',
-            'functools', 'typing', 're', 'math', 'random', 'pathlib',
-            'urllib', 'http', 'email', 'csv', 'xml', 'html', 'sqlite3',
-            'threading', 'asyncio', 'multiprocessing', 'subprocess',
-            'unittest', 'logging', 'configparser', 'argparse', 'io',
-            'shutil', 'glob', 'tempfile', 'zipfile', 'tarfile',
-            'pickle', 'base64', 'hashlib', 'hmac', 'secrets', 'uuid',
-            'time', 'calendar', 'zoneinfo', 'locale', 'gettext',
-            'decimal', 'fractions', 'statistics', 'cmath', 'bisect',
-            'heapq', 'queue', 'weakref', 'copy', 'pprint', 'reprlib',
-            'enum', 'dataclasses', 'contextlib', 'abc', 'atexit',
-            'traceback', 'gc', 'inspect', 'site', 'warnings', 'keyword',
-            'builtins', '__future__', 'imp', 'importlib', 'pkgutil',
-            'modulefinder', 'runpy', 'ast', 'dis', 'pickletools'
-        }
+    def _create_class_symbol_info(self, node: ast.AST, symbol_id: str, relationships: Optional[List[scip_pb2.Relationship]] = None) -> scip_pb2.SymbolInformation:
+        """Create SCIP symbol information for class."""
+        symbol_info = scip_pb2.SymbolInformation()
+        symbol_info.symbol = symbol_id
+        symbol_info.display_name = node.name
+        symbol_info.kind = scip_pb2.Class
         
-        # Get the root module name (e.g., 'os.path' -> 'os')
-        root_module = module_name.split('.')[0]
-        return root_module in stdlib_modules
-
-    def _is_external_package(self, module_name: str) -> bool:
-        """Check if module is from an external package (not stdlib, not local)."""
-        # If it's stdlib, it's not external
-        if self._is_stdlib_module(module_name):
-            return False
-            
-        # Check if it starts with known external package patterns
-        # (This could be enhanced with actual dependency parsing)
-        external_patterns = [
-            'numpy', 'pandas', 'scipy', 'matplotlib', 'seaborn',
-            'sklearn', 'torch', 'tensorflow', 'keras', 'cv2',
-            'requests', 'urllib3', 'httpx', 'aiohttp',
-            'flask', 'django', 'fastapi', 'starlette',
-            'sqlalchemy', 'psycopg2', 'pymongo', 'redis',
-            'pytest', 'unittest2', 'mock', 'nose',
-            'click', 'typer', 'argparse', 'fire',
-            'pyyaml', 'toml', 'configparser', 'python-dotenv',
-            'pillow', 'imageio', 'opencv', 'scikit',
-            'beautifulsoup4', 'lxml', 'scrapy',
-            'celery', 'rq', 'dramatiq',
-            'pydantic', 'marshmallow', 'cerberus',
-            'cryptography', 'bcrypt', 'passlib'
-        ]
+        # Add docstring if available
+        docstring = ast.get_docstring(node)
+        if docstring:
+            symbol_info.documentation.append(docstring)
         
-        root_module = module_name.split('.')[0]
-        return any(root_module.startswith(pattern) for pattern in external_patterns)
-
-    def _extract_package_name(self, module_name: str) -> str:
-        """Extract package name from module path."""
-        # For most packages, the root module is the package name
-        root_module = module_name.split('.')[0]
+        # Add relationships if provided
+        if relationships and self.relationship_manager:
+            self.relationship_manager.add_relationships_to_symbol(symbol_info, relationships)
         
-        # Handle special cases where module name differs from package name
-        package_mapping = {
-            'cv2': 'opencv-python',
-            'sklearn': 'scikit-learn',
-            'PIL': 'Pillow',
-            'bs4': 'beautifulsoup4',
-            'yaml': 'PyYAML',
-        }
-        
-        return package_mapping.get(root_module, root_module)
-
-    def _extract_module_path(self, module_name: str) -> str:
-        """Extract module path within package."""
-        parts = module_name.split('.')
-        if len(parts) > 1:
-            # Return submodule path (everything after package name)
-            return '/'.join(parts[1:])
-        return ""
-
-    def _infer_descriptor_from_name(self, name: str) -> str:
-        """Infer SCIP descriptor from symbol name."""
-        # Simple heuristics for Python symbols
-        if name.isupper():  # Constants like MAX_SIZE
-            return "."
-        elif name.istitle():  # Classes like MyClass
-            return "#"
-        elif name.endswith('Error') or name.endswith('Exception'):  # Exception classes
-            return "#"
-        else:  # Functions, variables, etc.
-            return "()." if name.islower() else "."
+        return symbol_info

@@ -1,7 +1,7 @@
 """Local Reference Resolver - Cross-file reference resolution within a project."""
 
 import logging
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple, Any
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -31,6 +31,15 @@ class SymbolReference:
     context_scope: List[str]
 
 
+@dataclass
+class SymbolRelationship:
+    """Information about a relationship between symbols."""
+    source_symbol_id: str
+    target_symbol_id: str
+    relationship_type: str  # InternalRelationshipType enum value
+    relationship_data: Dict[str, Any]  # Additional relationship metadata
+
+
 class LocalReferenceResolver:
     """
     Resolves references within a local project.
@@ -51,6 +60,10 @@ class LocalReferenceResolver:
         # Symbol tables
         self.symbol_definitions: Dict[str, SymbolDefinition] = {}
         self.symbol_references: Dict[str, List[SymbolReference]] = {}
+        
+        # Relationship storage
+        self.symbol_relationships: Dict[str, List[SymbolRelationship]] = {}  # source_symbol_id -> relationships
+        self.reverse_relationships: Dict[str, List[SymbolRelationship]] = {}  # target_symbol_id -> relationships
 
         # File-based indexes for faster lookup
         self.file_symbols: Dict[str, Set[str]] = {}  # file_path -> symbol_ids
@@ -214,18 +227,21 @@ class LocalReferenceResolver:
 
     def get_project_statistics(self) -> Dict[str, int]:
         """
-        Get statistics about the symbol table.
+        Get statistics about the symbol table including relationships.
 
         Returns:
             Dictionary with statistics
         """
         total_references = sum(len(refs) for refs in self.symbol_references.values())
+        total_relationships = sum(len(rels) for rels in self.symbol_relationships.values())
 
         return {
             'total_definitions': len(self.symbol_definitions),
             'total_references': total_references,
+            'total_relationships': total_relationships,
             'files_with_symbols': len(self.file_symbols),
-            'unique_symbol_names': len(self.symbol_by_name)
+            'unique_symbol_names': len(self.symbol_by_name),
+            'symbols_with_relationships': len(self.symbol_relationships)
         }
 
     def _resolve_with_scope(self,
@@ -312,5 +328,143 @@ class LocalReferenceResolver:
                 symbol_id: len(refs)
                 for symbol_id, refs in self.symbol_references.items()
             },
+            'relationships': {
+                symbol_id: len(rels)
+                for symbol_id, rels in self.symbol_relationships.items()
+            },
             'statistics': self.get_project_statistics()
+        }
+
+    def add_symbol_relationship(self,
+                              source_symbol_id: str,
+                              target_symbol_id: str,
+                              relationship_type: str,
+                              relationship_data: Dict[str, Any] = None) -> None:
+        """
+        Add a relationship between symbols.
+
+        Args:
+            source_symbol_id: Source symbol ID
+            target_symbol_id: Target symbol ID
+            relationship_type: Type of relationship (enum value as string)
+            relationship_data: Additional relationship metadata
+        """
+        relationship = SymbolRelationship(
+            source_symbol_id=source_symbol_id,
+            target_symbol_id=target_symbol_id,
+            relationship_type=relationship_type,
+            relationship_data=relationship_data or {}
+        )
+
+        # Add to forward relationships
+        if source_symbol_id not in self.symbol_relationships:
+            self.symbol_relationships[source_symbol_id] = []
+        self.symbol_relationships[source_symbol_id].append(relationship)
+
+        # Add to reverse relationships for quick lookup
+        if target_symbol_id not in self.reverse_relationships:
+            self.reverse_relationships[target_symbol_id] = []
+        self.reverse_relationships[target_symbol_id].append(relationship)
+
+        logger.debug(f"Added relationship: {source_symbol_id} --{relationship_type}--> {target_symbol_id}")
+
+    def get_symbol_relationships(self, symbol_id: str) -> List[SymbolRelationship]:
+        """
+        Get all relationships where the symbol is the source.
+
+        Args:
+            symbol_id: Symbol ID
+
+        Returns:
+            List of relationships
+        """
+        return self.symbol_relationships.get(symbol_id, [])
+
+    def get_reverse_relationships(self, symbol_id: str) -> List[SymbolRelationship]:
+        """
+        Get all relationships where the symbol is the target.
+
+        Args:
+            symbol_id: Symbol ID
+
+        Returns:
+            List of relationships where this symbol is the target
+        """
+        return self.reverse_relationships.get(symbol_id, [])
+
+    def get_all_relationships_for_symbol(self, symbol_id: str) -> Dict[str, List[SymbolRelationship]]:
+        """
+        Get both forward and reverse relationships for a symbol.
+
+        Args:
+            symbol_id: Symbol ID
+
+        Returns:
+            Dictionary with 'outgoing' and 'incoming' relationship lists
+        """
+        return {
+            'outgoing': self.get_symbol_relationships(symbol_id),
+            'incoming': self.get_reverse_relationships(symbol_id)
+        }
+
+    def find_relationships_by_type(self, relationship_type: str) -> List[SymbolRelationship]:
+        """
+        Find all relationships of a specific type.
+
+        Args:
+            relationship_type: Type of relationship to find
+
+        Returns:
+            List of matching relationships
+        """
+        matches = []
+        for relationships in self.symbol_relationships.values():
+            for rel in relationships:
+                if rel.relationship_type == relationship_type:
+                    matches.append(rel)
+        return matches
+
+    def remove_symbol_relationships(self, symbol_id: str) -> None:
+        """
+        Remove all relationships for a symbol (both as source and target).
+
+        Args:
+            symbol_id: Symbol ID to remove relationships for
+        """
+        # Remove as source
+        if symbol_id in self.symbol_relationships:
+            del self.symbol_relationships[symbol_id]
+
+        # Remove as target
+        if symbol_id in self.reverse_relationships:
+            del self.reverse_relationships[symbol_id]
+
+        # Remove from other symbols' relationships where this symbol is referenced
+        for source_id, relationships in self.symbol_relationships.items():
+            self.symbol_relationships[source_id] = [
+                rel for rel in relationships if rel.target_symbol_id != symbol_id
+            ]
+
+        logger.debug(f"Removed all relationships for symbol: {symbol_id}")
+
+    def get_relationship_statistics(self) -> Dict[str, Any]:
+        """
+        Get statistics about relationships.
+
+        Returns:
+            Dictionary with relationship statistics
+        """
+        total_relationships = sum(len(rels) for rels in self.symbol_relationships.values())
+        relationship_types = {}
+        
+        for relationships in self.symbol_relationships.values():
+            for rel in relationships:
+                rel_type = rel.relationship_type
+                relationship_types[rel_type] = relationship_types.get(rel_type, 0) + 1
+
+        return {
+            'total_relationships': total_relationships,
+            'symbols_with_outgoing_relationships': len(self.symbol_relationships),
+            'symbols_with_incoming_relationships': len(self.reverse_relationships),
+            'relationship_types': relationship_types
         }

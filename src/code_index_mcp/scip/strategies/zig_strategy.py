@@ -6,25 +6,13 @@ import re
 from typing import List, Optional, Dict, Any, Set
 from pathlib import Path
 
-try:
-    import tree_sitter
-    try:
-        from tree_sitter_zig import language as zig_language
-        TREE_SITTER_AVAILABLE = True
-    except ImportError:
-        # Try alternative import pattern
-        try:
-            import tree_sitter_zig
-            zig_language = tree_sitter_zig.language
-            TREE_SITTER_AVAILABLE = True
-        except ImportError:
-            TREE_SITTER_AVAILABLE = False
-except ImportError:
-    TREE_SITTER_AVAILABLE = False
+import tree_sitter
+from tree_sitter_zig import language as zig_language
 
 from .base_strategy import SCIPIndexerStrategy, StrategyError
 from ..proto import scip_pb2
 from ..core.position_calculator import PositionCalculator
+from ..core.relationship_types import InternalRelationshipType
 
 
 logger = logging.getLogger(__name__)
@@ -39,20 +27,10 @@ class ZigStrategy(SCIPIndexerStrategy):
         """Initialize the Zig strategy."""
         super().__init__(priority)
         
-        if TREE_SITTER_AVAILABLE:
-            try:
-                # Initialize parser
-                lang = tree_sitter.Language(zig_language())
-                self.parser = tree_sitter.Parser(lang)
-                self.use_tree_sitter = True
-            except Exception as e:
-                logger.warning(f"Failed to initialize tree-sitter-zig: {e}")
-                self.use_tree_sitter = False
-                self.parser = None
-        else:
-            self.use_tree_sitter = False
-            self.parser = None
-            logger.info("tree-sitter-zig not available, using regex-based parsing")
+        # Initialize parser
+        lang = tree_sitter.Language(zig_language())
+        self.parser = tree_sitter.Parser(lang)
+        self.use_tree_sitter = True
 
     def can_handle(self, extension: str, file_path: str) -> bool:
         """Check if this strategy can handle the file type."""
@@ -64,29 +42,63 @@ class ZigStrategy(SCIPIndexerStrategy):
 
     def is_available(self) -> bool:
         """Check if this strategy is available."""
-        return True  # Always available, fallback to regex if tree-sitter not available
+        return self.use_tree_sitter and self.parser is not None
 
     def _collect_symbol_definitions(self, files: List[str], project_path: str) -> None:
         """Phase 1: Collect all symbol definitions from Zig files."""
-        for file_path in files:
+        logger.debug(f"ZigStrategy Phase 1: Processing {len(files)} files for symbol collection")
+        processed_count = 0
+        error_count = 0
+        
+        for i, file_path in enumerate(files, 1):
+            relative_path = os.path.relpath(file_path, project_path)
+            
             try:
                 self._collect_symbols_from_file(file_path, project_path)
+                processed_count += 1
+                
+                if i % 10 == 0 or i == len(files):
+                    logger.debug(f"Phase 1 progress: {i}/{len(files)} files, last file: {relative_path}")
+                    
             except Exception as e:
-                logger.warning(f"Failed to collect symbols from {file_path}: {e}")
+                error_count += 1
+                logger.warning(f"Phase 1 failed for {relative_path}: {e}")
                 continue
+        
+        logger.info(f"Phase 1 summary: {processed_count} files processed, {error_count} errors")
 
-    def _generate_documents_with_references(self, files: List[str], project_path: str) -> List[scip_pb2.Document]:
+    def _generate_documents_with_references(self, files: List[str], project_path: str, relationships: Optional[Dict[str, List[tuple]]] = None) -> List[scip_pb2.Document]:
         """Phase 2: Generate complete SCIP documents with resolved references."""
         documents = []
+        logger.debug(f"ZigStrategy Phase 2: Generating documents for {len(files)} files")
+        processed_count = 0
+        error_count = 0
+        total_occurrences = 0
+        total_symbols = 0
         
-        for file_path in files:
+        for i, file_path in enumerate(files, 1):
+            relative_path = os.path.relpath(file_path, project_path)
+            
             try:
-                document = self._analyze_zig_file(file_path, project_path)
+                document = self._analyze_zig_file(file_path, project_path, relationships)
                 if document:
                     documents.append(document)
+                    total_occurrences += len(document.occurrences)
+                    total_symbols += len(document.symbols)
+                    processed_count += 1
+                    
+                if i % 10 == 0 or i == len(files):
+                    logger.debug(f"Phase 2 progress: {i}/{len(files)} files, "
+                               f"last file: {relative_path}, "
+                               f"{len(document.occurrences) if document else 0} occurrences")
+                    
             except Exception as e:
-                logger.error(f"Failed to analyze Zig file {file_path}: {e}")
+                error_count += 1
+                logger.error(f"Phase 2 failed for {relative_path}: {e}")
                 continue
+        
+        logger.info(f"Phase 2 summary: {processed_count} documents generated, {error_count} errors, "
+                   f"{total_occurrences} total occurrences, {total_symbols} total symbols")
         
         return documents
 
@@ -95,6 +107,7 @@ class ZigStrategy(SCIPIndexerStrategy):
         # Read file content
         content = self._read_file_content(file_path)
         if not content:
+            logger.debug(f"Empty file skipped: {os.path.relpath(file_path, project_path)}")
             return
 
         relative_path = self._get_relative_path(file_path, project_path)
@@ -103,19 +116,13 @@ class ZigStrategy(SCIPIndexerStrategy):
             # Parse with Tree-sitter
             tree = self._parse_content(content)
             if tree:
-                collector = ZigTreeSitterSymbolCollector(
-                    relative_path, content, tree, self.symbol_manager, self.reference_resolver
-                )
-                collector.analyze()
+                self._collect_symbols_from_tree_sitter(tree, relative_path, content)
+                logger.debug(f"Tree-sitter symbol collection - {relative_path}")
                 return
 
-        # Fallback to regex-based collection
-        collector = ZigRegexSymbolCollector(
-            relative_path, content, self.symbol_manager, self.reference_resolver
-        )
-        collector.analyze()
+        raise StrategyError(f"Failed to parse {relative_path} with tree-sitter for symbol collection")
 
-    def _analyze_zig_file(self, file_path: str, project_path: str) -> Optional[scip_pb2.Document]:
+    def _analyze_zig_file(self, file_path: str, project_path: str, relationships: Optional[Dict[str, List[tuple]]] = None) -> Optional[scip_pb2.Document]:
         """Analyze a single Zig file and generate complete SCIP document."""
         # Read file content
         content = self._read_file_content(file_path)
@@ -134,43 +141,19 @@ class ZigStrategy(SCIPIndexerStrategy):
             # Parse with Tree-sitter
             tree = self._parse_content(content)
             if tree:
-                analyzer = ZigTreeSitterAnalyzer(
-                    document.relative_path,
-                    content,
-                    tree,
-                    document.language,
-                    self.symbol_manager,
-                    self.position_calculator,
-                    self.reference_resolver
-                )
-                analyzer.analyze()
-                document.occurrences.extend(analyzer.occurrences)
-                document.symbols.extend(analyzer.symbols)
+                occurrences, symbols = self._analyze_tree_sitter_for_document(tree, document.relative_path, content, relationships)
+                document.occurrences.extend(occurrences)
+                document.symbols.extend(symbols)
                 
                 logger.debug(f"Analyzed Zig file {document.relative_path}: "
                             f"{len(document.occurrences)} occurrences, {len(document.symbols)} symbols")
                 return document
 
-        # Fallback to regex-based analysis
-        analyzer = ZigRegexAnalyzer(
-            document.relative_path,
-            content,
-            document.language,
-            self.symbol_manager,
-            self.position_calculator,
-            self.reference_resolver
-        )
-        analyzer.analyze()
-        
-        document.occurrences.extend(analyzer.occurrences)
-        document.symbols.extend(analyzer.symbols)
-
-        logger.debug(f"Analyzed Zig file {document.relative_path} (regex): "
-                    f"{len(document.occurrences)} occurrences, {len(document.symbols)} symbols")
+        raise StrategyError(f"Failed to parse {document.relative_path} with tree-sitter for document analysis")
 
         return document
 
-    def _parse_content(self, content: str) -> Optional[tree_sitter.Tree]:
+    def _parse_content(self, content: str) -> Optional:
         """Parse content with tree-sitter parser."""
         if not self.parser:
             return None
@@ -182,557 +165,145 @@ class ZigStrategy(SCIPIndexerStrategy):
             logger.error(f"Failed to parse content with tree-sitter: {e}")
             return None
 
-
-class ZigTreeSitterSymbolCollector:
-    """Tree-sitter based symbol collector for Zig (Phase 1)."""
-
-    def __init__(self, file_path: str, content: str, tree: tree_sitter.Tree, symbol_manager, reference_resolver):
-        self.file_path = file_path
-        self.content = content
-        self.tree = tree
-        self.symbol_manager = symbol_manager
-        self.reference_resolver = reference_resolver
-        self.scope_stack: List[str] = []
-
-    def analyze(self):
-        """Analyze the tree-sitter AST to collect symbols."""
-        root = self.tree.root_node
-        self._analyze_node(root)
-
-    def _analyze_node(self, node: tree_sitter.Node):
-        """Recursively analyze AST nodes."""
-        node_type = node.type
-
-        # Function declarations
-        if node_type == 'function_declaration':
-            self._register_function_symbol(node)
-        # Struct declarations
-        elif node_type == 'struct_declaration':
-            self._register_struct_symbol(node)
-        # Enum declarations
-        elif node_type == 'enum_declaration':
-            self._register_enum_symbol(node)
-        # Const/var declarations
-        elif node_type in ['const_declaration', 'var_declaration']:
-            self._register_variable_symbol(node)
-        # Test declarations
-        elif node_type == 'test_declaration':
-            self._register_test_symbol(node)
-
-        # Recursively analyze child nodes
-        for child in node.children:
-            self._analyze_node(child)
-
-    def _register_function_symbol(self, node: tree_sitter.Node):
-        """Register a function symbol."""
-        # Try to find the function name
-        for child in node.children:
-            if child.type == 'identifier':
-                name = self.content[child.start_byte:child.end_byte]
-                symbol_id = self.symbol_manager.create_local_symbol(
-                    language="zig",
-                    file_path=self.file_path,
-                    symbol_path=self.scope_stack + [name],
-                    descriptor="()."
-                )
-                self.reference_resolver.register_definition(name, symbol_id, self.file_path)
-                break
-
-    def _register_struct_symbol(self, node: tree_sitter.Node):
-        """Register a struct symbol."""
-        # Look for the struct name (usually in a const declaration)
-        parent = node.parent
-        if parent and parent.type == 'const_declaration':
-            for child in parent.children:
-                if child.type == 'identifier':
-                    name = self.content[child.start_byte:child.end_byte]
-                    symbol_id = self.symbol_manager.create_local_symbol(
-                        language="zig",
-                        file_path=self.file_path,
-                        symbol_path=self.scope_stack + [name],
-                        descriptor="#"
-                    )
-                    self.reference_resolver.register_definition(name, symbol_id, self.file_path)
-                    break
-
-    def _register_enum_symbol(self, node: tree_sitter.Node):
-        """Register an enum symbol."""
-        # Look for the enum name (usually in a const declaration)
-        parent = node.parent
-        if parent and parent.type == 'const_declaration':
-            for child in parent.children:
-                if child.type == 'identifier':
-                    name = self.content[child.start_byte:child.end_byte]
-                    symbol_id = self.symbol_manager.create_local_symbol(
-                        language="zig",
-                        file_path=self.file_path,
-                        symbol_path=self.scope_stack + [name],
-                        descriptor="#"
-                    )
-                    self.reference_resolver.register_definition(name, symbol_id, self.file_path)
-                    break
-
-    def _register_variable_symbol(self, node: tree_sitter.Node):
-        """Register a variable or constant symbol."""
-        for child in node.children:
-            if child.type == 'identifier':
-                name = self.content[child.start_byte:child.end_byte]
-                symbol_id = self.symbol_manager.create_local_symbol(
-                    language="zig",
-                    file_path=self.file_path,
-                    symbol_path=self.scope_stack + [name],
-                    descriptor=""
-                )
-                self.reference_resolver.register_definition(name, symbol_id, self.file_path)
-                break
-
-    def _register_test_symbol(self, node: tree_sitter.Node):
-        """Register a test symbol."""
-        # Test names are usually string literals
-        for child in node.children:
-            if child.type == 'string_literal':
-                name = self.content[child.start_byte:child.end_byte].strip('"')
-                symbol_id = self.symbol_manager.create_local_symbol(
-                    language="zig",
-                    file_path=self.file_path,
-                    symbol_path=["test", name],
-                    descriptor="()."
-                )
-                self.reference_resolver.register_definition(f"test_{name}", symbol_id, self.file_path)
-                break
-
-
-class ZigTreeSitterAnalyzer:
-    """Tree-sitter based analyzer for Zig (Phase 2)."""
-
-    def __init__(self, file_path: str, content: str, tree: tree_sitter.Tree,
-                 language: str, symbol_manager, position_calculator, reference_resolver):
-        self.file_path = file_path
-        self.content = content
-        self.tree = tree
-        self.language = language
-        self.symbol_manager = symbol_manager
-        self.position_calculator = position_calculator
-        self.reference_resolver = reference_resolver
-        self.scope_stack: List[str] = []
-        self.occurrences: List[scip_pb2.Occurrence] = []
-        self.symbols: List[scip_pb2.SymbolInformation] = []
-
-    def analyze(self):
-        """Analyze the tree-sitter AST to generate SCIP occurrences."""
-        root = self.tree.root_node
-        self._analyze_node(root)
-
-    def _analyze_node(self, node: tree_sitter.Node):
-        """Recursively analyze AST nodes and generate occurrences."""
-        node_type = node.type
-
-        # Process different node types
-        if node_type == 'function_declaration':
-            self._process_function(node)
-        elif node_type == 'struct_declaration':
-            self._process_struct(node)
-        elif node_type == 'enum_declaration':
-            self._process_enum(node)
-        elif node_type in ['const_declaration', 'var_declaration']:
-            self._process_variable(node)
-        elif node_type == 'test_declaration':
-            self._process_test(node)
-        elif node_type == 'identifier':
-            self._process_identifier(node)
-
-        # Recursively analyze child nodes
-        for child in node.children:
-            self._analyze_node(child)
-
-    def _process_function(self, node: tree_sitter.Node):
-        """Process a function declaration."""
-        for child in node.children:
-            if child.type == 'identifier':
-                name = self.content[child.start_byte:child.end_byte]
-                symbol_id = self.symbol_manager.create_local_symbol(
-                    language="zig",
-                    file_path=self.file_path,
-                    symbol_path=self.scope_stack + [name],
-                    descriptor="()."
-                )
-                
-                # Create occurrence
-                occurrence = self._create_occurrence(child, symbol_id, is_definition=True)
-                if occurrence:
-                    self.occurrences.append(occurrence)
-                
-                # Create symbol information
-                symbol_info = self._create_symbol_info(symbol_id, name, "function")
-                if symbol_info:
-                    self.symbols.append(symbol_info)
-                break
-
-    def _process_struct(self, node: tree_sitter.Node):
-        """Process a struct declaration."""
-        parent = node.parent
-        if parent and parent.type == 'const_declaration':
-            for child in parent.children:
-                if child.type == 'identifier':
-                    name = self.content[child.start_byte:child.end_byte]
-                    symbol_id = self.symbol_manager.create_local_symbol(
-                        language="zig",
-                        file_path=self.file_path,
-                        symbol_path=self.scope_stack + [name],
-                        descriptor="#"
-                    )
-                    
-                    occurrence = self._create_occurrence(child, symbol_id, is_definition=True)
-                    if occurrence:
-                        self.occurrences.append(occurrence)
-                    
-                    symbol_info = self._create_symbol_info(symbol_id, name, "struct")
-                    if symbol_info:
-                        self.symbols.append(symbol_info)
-                    break
-
-    def _process_enum(self, node: tree_sitter.Node):
-        """Process an enum declaration."""
-        parent = node.parent
-        if parent and parent.type == 'const_declaration':
-            for child in parent.children:
-                if child.type == 'identifier':
-                    name = self.content[child.start_byte:child.end_byte]
-                    symbol_id = self.symbol_manager.create_local_symbol(
-                        language="zig",
-                        file_path=self.file_path,
-                        symbol_path=self.scope_stack + [name],
-                        descriptor="#"
-                    )
-                    
-                    occurrence = self._create_occurrence(child, symbol_id, is_definition=True)
-                    if occurrence:
-                        self.occurrences.append(occurrence)
-                    
-                    symbol_info = self._create_symbol_info(symbol_id, name, "enum")
-                    if symbol_info:
-                        self.symbols.append(symbol_info)
-                    break
-
-    def _process_variable(self, node: tree_sitter.Node):
-        """Process a variable or constant declaration."""
-        for child in node.children:
-            if child.type == 'identifier':
-                name = self.content[child.start_byte:child.end_byte]
-                symbol_id = self.symbol_manager.create_local_symbol(
-                    language="zig",
-                    file_path=self.file_path,
-                    symbol_path=self.scope_stack + [name],
-                    descriptor=""
-                )
-                
-                occurrence = self._create_occurrence(child, symbol_id, is_definition=True)
-                if occurrence:
-                    self.occurrences.append(occurrence)
-                
-                var_type = "constant" if node.type == 'const_declaration' else "variable"
-                symbol_info = self._create_symbol_info(symbol_id, name, var_type)
-                if symbol_info:
-                    self.symbols.append(symbol_info)
-                break
-
-    def _process_test(self, node: tree_sitter.Node):
-        """Process a test declaration."""
-        for child in node.children:
-            if child.type == 'string_literal':
-                name = self.content[child.start_byte:child.end_byte].strip('"')
-                symbol_id = self.symbol_manager.create_local_symbol(
-                    language="zig",
-                    file_path=self.file_path,
-                    symbol_path=["test", name],
-                    descriptor="()."
-                )
-                
-                occurrence = self._create_occurrence(child, symbol_id, is_definition=True)
-                if occurrence:
-                    self.occurrences.append(occurrence)
-                
-                symbol_info = self._create_symbol_info(symbol_id, f"test_{name}", "test")
-                if symbol_info:
-                    self.symbols.append(symbol_info)
-                break
-
-    def _process_identifier(self, node: tree_sitter.Node):
-        """Process an identifier that might be a reference."""
-        # Skip if this is part of a definition
-        parent = node.parent
-        if parent and parent.type in ['function_declaration', 'const_declaration', 
-                                       'var_declaration', 'struct_declaration', 
-                                       'enum_declaration']:
-            return
+    def _build_symbol_relationships(self, files: List[str], project_path: str) -> Dict[str, List[tuple]]:
+        """
+        Build relationships between Zig symbols.
         
-        name = self.content[node.start_byte:node.end_byte]
-        # Try to resolve the reference
-        symbol_id = self.reference_resolver.resolve_reference(name, self.file_path)
-        if symbol_id:
-            occurrence = self._create_occurrence(node, symbol_id, is_definition=False)
-            if occurrence:
-                self.occurrences.append(occurrence)
-
-    def _create_occurrence(self, node: tree_sitter.Node, symbol_id: str, is_definition: bool) -> Optional[scip_pb2.Occurrence]:
-        """Create a SCIP occurrence from a tree-sitter node."""
-        try:
-            occurrence = scip_pb2.Occurrence()
-            occurrence.symbol = symbol_id
-            occurrence.symbol_roles = scip_pb2.SymbolRole.Definition if is_definition else 0
+        Args:
+            files: List of file paths to process
+            project_path: Project root path
             
-            # Calculate range
-            start_line = node.start_point[0]
-            start_col = node.start_point[1]
-            end_line = node.end_point[0]
-            end_col = node.end_point[1]
-            
-            occurrence.range.extend([start_line, start_col, end_col])
-            if end_line > start_line:
-                occurrence.range.extend([end_line, end_col])
-            
-            return occurrence
-        except Exception as e:
-            logger.error(f"Failed to create occurrence: {e}")
-            return None
-
-    def _create_symbol_info(self, symbol_id: str, name: str, kind: str) -> Optional[scip_pb2.SymbolInformation]:
-        """Create SCIP symbol information."""
-        try:
-            symbol_info = scip_pb2.SymbolInformation()
-            symbol_info.symbol = symbol_id
-            symbol_info.display_name = name
-            
-            # Map kind to SCIP kind
-            kind_mapping = {
-                'function': scip_pb2.SymbolInformation.Kind.Function,
-                'struct': scip_pb2.SymbolInformation.Kind.Struct,
-                'enum': scip_pb2.SymbolInformation.Kind.Enum,
-                'constant': scip_pb2.SymbolInformation.Kind.Constant,
-                'variable': scip_pb2.SymbolInformation.Kind.Variable,
-                'test': scip_pb2.SymbolInformation.Kind.Function,
-            }
-            
-            symbol_info.kind = kind_mapping.get(kind, scip_pb2.SymbolInformation.Kind.UnspecifiedKind)
-            
-            return symbol_info
-        except Exception as e:
-            logger.error(f"Failed to create symbol info: {e}")
-            return None
-
-
-class ZigRegexSymbolCollector:
-    """Regex-based symbol collector for Zig (Phase 1 fallback)."""
-
-    def __init__(self, file_path: str, content: str, symbol_manager, reference_resolver):
-        self.file_path = file_path
-        self.content = content
-        self.symbol_manager = symbol_manager
-        self.reference_resolver = reference_resolver
-        self.scope_stack: List[str] = []
-
-    def analyze(self):
-        """Analyze content using regex patterns to collect symbols."""
-        lines = self.content.splitlines()
+        Returns:
+            Dictionary mapping symbol_id -> [(target_symbol_id, relationship_type), ...]
+        """
+        logger.debug(f"ZigStrategy: Building symbol relationships for {len(files)} files")
         
-        for line_num, line in enumerate(lines):
-            line_stripped = line.strip()
-            
-            # Skip comments and empty lines
-            if not line_stripped or line_stripped.startswith('//'):
-                continue
-            
-            # Function definitions
-            if match := re.search(r'(?:pub\s+)?fn\s+(\w+)\s*\(', line):
-                name = match.group(1)
-                symbol_id = self.symbol_manager.create_local_symbol(
-                    language="zig",
-                    file_path=self.file_path,
-                    symbol_path=self.scope_stack + [name],
-                    descriptor="()."
-                )
-                self.reference_resolver.register_definition(name, symbol_id, self.file_path)
-            
-            # Struct definitions
-            if 'struct' in line and 'const' in line:
-                if match := re.search(r'const\s+(\w+)\s*=\s*struct', line):
-                    name = match.group(1)
-                    symbol_id = self.symbol_manager.create_local_symbol(
-                        language="zig",
-                        file_path=self.file_path,
-                        symbol_path=self.scope_stack + [name],
-                        descriptor="#"
-                    )
-                    self.reference_resolver.register_definition(name, symbol_id, self.file_path)
-            
-            # Enum definitions
-            if 'enum' in line and 'const' in line:
-                if match := re.search(r'const\s+(\w+)\s*=\s*enum', line):
-                    name = match.group(1)
-                    symbol_id = self.symbol_manager.create_local_symbol(
-                        language="zig",
-                        file_path=self.file_path,
-                        symbol_path=self.scope_stack + [name],
-                        descriptor="#"
-                    )
-                    self.reference_resolver.register_definition(name, symbol_id, self.file_path)
-            
-            # Error sets
-            if 'error{' in line and 'const' in line:
-                if match := re.search(r'const\s+(\w+)\s*=\s*error\{', line):
-                    name = match.group(1)
-                    symbol_id = self.symbol_manager.create_local_symbol(
-                        language="zig",
-                        file_path=self.file_path,
-                        symbol_path=self.scope_stack + [name],
-                        descriptor="#"
-                    )
-                    self.reference_resolver.register_definition(name, symbol_id, self.file_path)
-            
-            # Test blocks
-            if match := re.search(r'test\s+"([^"]+)"', line):
-                name = match.group(1)
-                symbol_id = self.symbol_manager.create_local_symbol(
-                    language="zig",
-                    file_path=self.file_path,
-                    symbol_path=["test", name],
-                    descriptor="()."
-                )
-                self.reference_resolver.register_definition(f"test_{name}", symbol_id, self.file_path)
-
-
-class ZigRegexAnalyzer:
-    """Regex-based analyzer for Zig (Phase 2 fallback)."""
-
-    def __init__(self, file_path: str, content: str, language: str,
-                 symbol_manager, position_calculator, reference_resolver):
-        self.file_path = file_path
-        self.content = content
-        self.language = language
-        self.symbol_manager = symbol_manager
-        self.position_calculator = position_calculator
-        self.reference_resolver = reference_resolver
-        self.scope_stack: List[str] = []
-        self.occurrences: List[scip_pb2.Occurrence] = []
-        self.symbols: List[scip_pb2.SymbolInformation] = []
-
-    def analyze(self):
-        """Analyze content using regex patterns to generate SCIP occurrences."""
-        lines = self.content.splitlines()
+        all_relationships = {}
         
-        for line_num, line in enumerate(lines):
-            line_stripped = line.strip()
-            
-            # Skip comments and empty lines
-            if not line_stripped or line_stripped.startswith('//'):
-                continue
-            
-            # Function definitions
-            if match := re.search(r'(?:pub\s+)?fn\s+(\w+)\s*\(', line):
-                name = match.group(1)
-                symbol_id = self.symbol_manager.create_local_symbol(
-                    language="zig",
-                    file_path=self.file_path,
-                    symbol_path=self.scope_stack + [name],
-                    descriptor="()."
-                )
-                
-                # Create occurrence
-                start_col = match.start(1)
-                end_col = match.end(1)
-                occurrence = self._create_occurrence_from_position(
-                    line_num, start_col, end_col, symbol_id, is_definition=True
-                )
-                if occurrence:
-                    self.occurrences.append(occurrence)
-                
-                # Create symbol info
-                symbol_info = self._create_symbol_info(symbol_id, name, "function")
-                if symbol_info:
-                    self.symbols.append(symbol_info)
-            
-            # Struct definitions
-            if 'struct' in line and 'const' in line:
-                if match := re.search(r'const\s+(\w+)\s*=\s*struct', line):
-                    name = match.group(1)
-                    symbol_id = self.symbol_manager.create_local_symbol(
-                        language="zig",
-                        file_path=self.file_path,
-                        symbol_path=self.scope_stack + [name],
-                        descriptor="#"
-                    )
-                    
-                    start_col = match.start(1)
-                    end_col = match.end(1)
-                    occurrence = self._create_occurrence_from_position(
-                        line_num, start_col, end_col, symbol_id, is_definition=True
-                    )
-                    if occurrence:
-                        self.occurrences.append(occurrence)
-                    
-                    symbol_info = self._create_symbol_info(symbol_id, name, "struct")
-                    if symbol_info:
-                        self.symbols.append(symbol_info)
-            
-            # Enum definitions
-            if 'enum' in line and 'const' in line:
-                if match := re.search(r'const\s+(\w+)\s*=\s*enum', line):
-                    name = match.group(1)
-                    symbol_id = self.symbol_manager.create_local_symbol(
-                        language="zig",
-                        file_path=self.file_path,
-                        symbol_path=self.scope_stack + [name],
-                        descriptor="#"
-                    )
-                    
-                    start_col = match.start(1)
-                    end_col = match.end(1)
-                    occurrence = self._create_occurrence_from_position(
-                        line_num, start_col, end_col, symbol_id, is_definition=True
-                    )
-                    if occurrence:
-                        self.occurrences.append(occurrence)
-                    
-                    symbol_info = self._create_symbol_info(symbol_id, name, "enum")
-                    if symbol_info:
-                        self.symbols.append(symbol_info)
+        for file_path in files:
+            try:
+                file_relationships = self._extract_relationships_from_file(file_path, project_path)
+                all_relationships.update(file_relationships)
+            except Exception as e:
+                logger.warning(f"Failed to extract relationships from {file_path}: {e}")
+        
+        total_symbols_with_relationships = len(all_relationships)
+        total_relationships = sum(len(rels) for rels in all_relationships.values())
+        
+        logger.debug(f"ZigStrategy: Built {total_relationships} relationships for {total_symbols_with_relationships} symbols")
+        return all_relationships
 
-    def _create_occurrence_from_position(self, line: int, start_col: int, end_col: int,
-                                          symbol_id: str, is_definition: bool) -> Optional[scip_pb2.Occurrence]:
-        """Create a SCIP occurrence from line and column positions."""
-        try:
-            occurrence = scip_pb2.Occurrence()
-            occurrence.symbol = symbol_id
-            occurrence.symbol_roles = scip_pb2.SymbolRole.Definition if is_definition else 0
-            
-            # SCIP uses 0-indexed lines and columns
-            occurrence.range.extend([line, start_col, end_col])
-            
-            return occurrence
-        except Exception as e:
-            logger.error(f"Failed to create occurrence: {e}")
-            return None
+    def _extract_relationships_from_file(self, file_path: str, project_path: str) -> Dict[str, List[tuple]]:
+        """Extract relationships from a single Zig file."""
+        content = self._read_file_content(file_path)
+        if not content:
+            return {}
+        
+        relative_path = self._get_relative_path(file_path, project_path)
+        
+        if self.use_tree_sitter and self.parser:
+            tree = self._parse_content(content)
+            if tree:
+                return self._extract_relationships_from_tree_sitter(tree, relative_path, content)
+        
+        raise StrategyError(f"Failed to parse {relative_path} with tree-sitter for relationship extraction")
 
-    def _create_symbol_info(self, symbol_id: str, name: str, kind: str) -> Optional[scip_pb2.SymbolInformation]:
-        """Create SCIP symbol information."""
-        try:
-            symbol_info = scip_pb2.SymbolInformation()
-            symbol_info.symbol = symbol_id
-            symbol_info.display_name = name
+    # Tree-sitter based methods
+    def _collect_symbols_from_tree_sitter(self, tree, file_path: str, content: str) -> None:
+        """Collect symbols using Tree-sitter AST."""
+        scope_stack = []
+        
+        def visit_node(node):
+            node_type = node.type
             
-            # Map kind to SCIP kind
-            kind_mapping = {
-                'function': scip_pb2.SymbolInformation.Kind.Function,
-                'struct': scip_pb2.SymbolInformation.Kind.Struct,
-                'enum': scip_pb2.SymbolInformation.Kind.Enum,
-                'constant': scip_pb2.SymbolInformation.Kind.Constant,
-                'variable': scip_pb2.SymbolInformation.Kind.Variable,
-                'test': scip_pb2.SymbolInformation.Kind.Function,
-            }
+            # Function declarations
+            if node_type == 'function_declaration':
+                self._register_function_symbol_ts(node, file_path, scope_stack, content)
+            # Struct declarations
+            elif node_type == 'struct_declaration':
+                self._register_struct_symbol_ts(node, file_path, scope_stack, content)
+            # Enum declarations
+            elif node_type == 'enum_declaration':
+                self._register_enum_symbol_ts(node, file_path, scope_stack, content)
+            # Const/var declarations
+            elif node_type in ['const_declaration', 'var_declaration']:
+                self._register_variable_symbol_ts(node, file_path, scope_stack, content)
+            # Test declarations
+            elif node_type == 'test_declaration':
+                self._register_test_symbol_ts(node, file_path, scope_stack, content)
             
-            symbol_info.kind = kind_mapping.get(kind, scip_pb2.SymbolInformation.Kind.UnspecifiedKind)
+            # Recursively analyze child nodes
+            for child in node.children:
+                visit_node(child)
+        
+        visit_node(tree.root_node)
+
+    def _analyze_tree_sitter_for_document(self, tree, file_path: str, content: str) -> tuple:
+        """Analyze Tree-sitter AST to generate SCIP occurrences and symbols."""
+        occurrences = []
+        symbols = []
+        scope_stack = []
+        
+        def visit_node(node):
+            node_type = node.type
             
-            return symbol_info
-        except Exception as e:
-            logger.error(f"Failed to create symbol info: {e}")
-            return None
+            # Process different node types
+            if node_type == 'function_declaration':
+                occ, sym = self._process_function_ts(node, file_path, scope_stack, content)
+                if occ: occurrences.append(occ)
+                if sym: symbols.append(sym)
+            elif node_type == 'struct_declaration':
+                occ, sym = self._process_struct_ts(node, file_path, scope_stack, content)
+                if occ: occurrences.append(occ)
+                if sym: symbols.append(sym)
+            elif node_type == 'enum_declaration':
+                occ, sym = self._process_enum_ts(node, file_path, scope_stack, content)
+                if occ: occurrences.append(occ)
+                if sym: symbols.append(sym)
+            elif node_type in ['const_declaration', 'var_declaration']:
+                occ, sym = self._process_variable_ts(node, file_path, scope_stack, content)
+                if occ: occurrences.append(occ)
+                if sym: symbols.append(sym)
+            elif node_type == 'test_declaration':
+                occ, sym = self._process_test_ts(node, file_path, scope_stack, content)
+                if occ: occurrences.append(occ)
+                if sym: symbols.append(sym)
+            elif node_type == 'identifier':
+                occ = self._process_identifier_ts(node, file_path, scope_stack, content)
+                if occ: occurrences.append(occ)
+            
+            # Recursively analyze child nodes
+            for child in node.children:
+                visit_node(child)
+        
+        visit_node(tree.root_node)
+        return occurrences, symbols
+
+    def _extract_relationships_from_tree_sitter(self, tree, file_path: str, content: str) -> Dict[str, List[tuple]]:
+        """Extract relationships from Tree-sitter AST."""
+        relationships = {}
+        scope_stack = []
+        
+        def visit_node(node):
+            node_type = node.type
+            
+            if node_type in ['function_declaration', 'test_declaration']:
+                # Extract function call relationships within this function
+                function_name = self._get_function_name_ts(node, content)
+                if function_name:
+                    function_symbol_id = self.symbol_manager.create_local_symbol(
+                        language="zig",
+                        file_path=file_path,
+                        symbol_path=scope_stack + [function_name],
+                        descriptor="()."
+                    )
+                    
+                    # Find call expressions within this function
+                    self._extract_calls_from_node_ts(node, function_symbol_id, relationships, file_path, scope_stack, content)
+            
+            # Recursively visit children
+            for child in node.children:
+                visit_node(child)
+        
+        visit_node(tree.root_node)
+        return relationships
