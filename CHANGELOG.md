@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.1.1] - 2025-01-15
+
+### Fixed
+- **SCIP Java Strategy**: Simplified Java symbol analysis implementation
+  - Refactored JavaStrategy to use streamlined symbol registration methods
+  - Removed complex JavaAnalyzer and JavaRelationshipExtractor classes
+  - Fixed symbol creation with basic identifier extraction
+  - Removed relationships summary calculation that was causing issues
+  - Added back to_scip_relationships method for compatibility
+  - Streamlined Java AST processing to focus on core symbol definitions
+
+### Improved
+- **Code Maintainability**: Significantly reduced complexity in Java SCIP processing
+- **Performance**: Faster Java file analysis with simplified approach
+- **Reliability**: More stable symbol extraction without complex relationship tracking
+
 ## [2.1.0] - 2025-01-13
 
 ### Major SCIP Architecture Enhancement
