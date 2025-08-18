@@ -121,7 +121,7 @@ class SCIPSymbolAnalyzer:
             logger.debug("Completed call relationship extraction")
             
             # Step 4: Organize results into final structure
-            result = self._organize_results(document, symbols)
+            result = self._organize_results(document, symbols, scip_index)
             logger.debug(f"Analysis complete: {len(result.functions)} functions, {len(result.classes)} classes")
             
             return result
@@ -558,13 +558,14 @@ class SCIPSymbolAnalyzer:
         
         logger.debug(f"Relationship extraction completed for {len(symbols)} symbols")
     
-    def _organize_results(self, document, symbols: Dict[str, SymbolDefinition]) -> FileAnalysis:
+    def _organize_results(self, document, symbols: Dict[str, SymbolDefinition], scip_index=None) -> FileAnalysis:
         """
         Organize extracted symbols into final FileAnalysis structure.
         
         Args:
             document: SCIP document
             symbols: Extracted symbol definitions
+            scip_index: Full SCIP index for external symbol extraction
             
         Returns:
             FileAnalysis with organized results
@@ -581,9 +582,12 @@ class SCIPSymbolAnalyzer:
         for symbol in symbols.values():
             result.add_symbol(symbol)
         
-        # Extract import information
+        # Extract import information from occurrences
         self._extract_imports(document, result.imports)
         
+        # Also extract imports from external symbols (for strategies like Objective-C)
+        if scip_index:
+            self._extract_imports_from_external_symbols(scip_index, result.imports)
         
         return result
 
@@ -842,6 +846,7 @@ class SCIPSymbolAnalyzer:
         try:
             seen_modules = set()
             
+            # Method 1: Extract from occurrences with Import role (traditional approach)
             for occurrence in document.occurrences:
                 # Only process Import role symbols
                 if not self._is_import_occurrence(occurrence):
@@ -872,10 +877,94 @@ class SCIPSymbolAnalyzer:
                         imports.add_import(module_path, 'local')
                         seen_modules.add(module_path)
             
-            logger.debug(f"Extracted {len(seen_modules)} unique imports from SCIP data")
+            logger.debug(f"Extracted {len(seen_modules)} unique imports from SCIP occurrences")
             
         except Exception as e:
-            logger.debug(f"Error extracting imports: {e}")
+            logger.debug(f"Error extracting imports from occurrences: {e}")
+
+    def _extract_imports_from_external_symbols(self, scip_index, imports: ImportGroup):
+        """Extract imports from SCIP index external symbols (for strategies like Objective-C)."""
+        try:
+            if not hasattr(scip_index, 'external_symbols'):
+                logger.debug("No external_symbols in SCIP index")
+                return
+                
+            seen_modules = set()
+            
+            for symbol_info in scip_index.external_symbols:
+                if not symbol_info.symbol:
+                    continue
+                    
+                # Parse the external symbol
+                parsed_symbol = self._symbol_parser.parse_symbol(symbol_info.symbol) if self._symbol_parser else None
+                if not parsed_symbol:
+                    # Fallback: try to extract framework name from symbol string
+                    framework_name = self._extract_framework_from_symbol_string(symbol_info.symbol)
+                    if framework_name and framework_name not in seen_modules:
+                        # Classify based on symbol pattern
+                        import_type = self._classify_external_symbol(symbol_info.symbol)
+                        imports.add_import(framework_name, import_type)
+                        seen_modules.add(framework_name)
+                        logger.debug(f"Extracted external dependency: {framework_name} ({import_type})")
+                    continue
+                
+                # Handle based on manager type
+                if parsed_symbol.manager in ['system', 'unknown']:
+                    # For Objective-C system frameworks
+                    package_name = parsed_symbol.package
+                    if package_name and package_name not in seen_modules:
+                        imports.add_import(package_name, 'standard_library')
+                        seen_modules.add(package_name)
+                        
+                elif parsed_symbol.manager in ['cocoapods', 'carthage']:
+                    # Third-party Objective-C dependencies
+                    package_name = parsed_symbol.package
+                    if package_name and package_name not in seen_modules:
+                        imports.add_import(package_name, 'third_party')
+                        seen_modules.add(package_name)
+            
+            logger.debug(f"Extracted {len(seen_modules)} unique imports from external symbols")
+            
+        except Exception as e:
+            logger.debug(f"Error extracting imports from external symbols: {e}")
+
+    def _extract_framework_from_symbol_string(self, symbol_string: str) -> Optional[str]:
+        """Extract framework name from SCIP symbol string."""
+        try:
+            # Handle symbols like "scip-unknown unknown Foundation Foundation *."
+            parts = symbol_string.split()
+            if len(parts) >= 4:
+                # The package name is typically the 3rd or 4th part
+                for part in parts[2:5]:  # Check parts 2, 3, 4
+                    if part and part != 'unknown' and not part.endswith('.'):
+                        return part
+            return None
+        except Exception:
+            return None
+
+    def _classify_external_symbol(self, symbol_string: str) -> str:
+        """Classify external symbol as standard_library, third_party, or local."""
+        try:
+            # Check for known system frameworks
+            system_frameworks = {
+                'Foundation', 'UIKit', 'CoreData', 'CoreGraphics', 'QuartzCore',
+                'AVFoundation', 'CoreLocation', 'MapKit', 'CoreAnimation',
+                'Security', 'SystemConfiguration', 'CFNetwork', 'CoreFoundation',
+                'AppKit', 'Cocoa', 'WebKit', 'JavaScriptCore'
+            }
+            
+            for framework in system_frameworks:
+                if framework in symbol_string:
+                    return 'standard_library'
+            
+            # Check for third-party indicators
+            if any(indicator in symbol_string.lower() for indicator in ['cocoapods', 'carthage', 'pods']):
+                return 'third_party'
+            
+            return 'standard_library'  # Default for external symbols
+            
+        except Exception:
+            return 'standard_library'
     
     def _parse_external_module(self, external_symbol: str) -> Optional[Dict[str, str]]:
         """Parse external SCIP symbol to extract module information."""
