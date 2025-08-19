@@ -45,7 +45,7 @@ class SCIPIndexTool:
     def build_index(self, project_path: str) -> int:
         """
         Build SCIP index for the specified project path.
-        
+
         This is a pure technical operation that unconditionally rebuilds the index.
         Business logic for deciding when to rebuild should be handled by the caller.
 
@@ -67,11 +67,11 @@ class SCIPIndexTool:
         try:
             logger.info(f"Building index for {project_path}")
             self._project_path = project_path
-            
+
             # Initialize settings for this project
             from ...project_settings import ProjectSettings
             self._settings = ProjectSettings(project_path, skip_load=False)
-            
+
             self._scip_index = self._builder.build_scip_index(project_path)
             logger.info(f"Built index with {len(self._scip_index.documents)} files")
 
@@ -83,7 +83,7 @@ class SCIPIndexTool:
     def save_index(self) -> bool:
         """
         Save the current SCIP index to disk.
-        
+
         This is a pure technical operation that saves the current in-memory index.
 
         Returns:
@@ -93,11 +93,11 @@ class SCIPIndexTool:
             if self._settings is None:
                 logger.error("No settings available, cannot save index")
                 return False
-                
+
             if self._scip_index is None:
                 logger.error("No index available to save")
                 return False
-                
+
             self.save_current_index()
             logger.info("Index saved successfully")
             return True
