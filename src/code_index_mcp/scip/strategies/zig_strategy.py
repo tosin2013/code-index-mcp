@@ -31,6 +31,15 @@ class ZigStrategy(SCIPIndexerStrategy):
         lang = tree_sitter.Language(zig_language())
         self.parser = tree_sitter.Parser(lang)
         self.use_tree_sitter = True
+        
+        # Initialize dependency tracking
+        self.dependencies = {
+            'imports': {
+                'standard_library': [],
+                'third_party': [],
+                'local': []
+            }
+        }
 
     def can_handle(self, extension: str, file_path: str) -> bool:
         """Check if this strategy can handle the file type."""
@@ -104,6 +113,9 @@ class ZigStrategy(SCIPIndexerStrategy):
 
     def _collect_symbols_from_file(self, file_path: str, project_path: str) -> None:
         """Collect symbol definitions from a single Zig file."""
+        # Reset dependencies for this file
+        self._reset_dependencies()
+        
         # Read file content
         content = self._read_file_content(file_path)
         if not content:
@@ -151,9 +163,7 @@ class ZigStrategy(SCIPIndexerStrategy):
 
         raise StrategyError(f"Failed to parse {document.relative_path} with tree-sitter for document analysis")
 
-        return document
-
-    def _parse_content(self, content: str) -> Optional:
+    def _parse_content(self, content: str) -> Optional[tree_sitter.Tree]:
         """Parse content with tree-sitter parser."""
         if not self.parser:
             return None
@@ -225,9 +235,11 @@ class ZigStrategy(SCIPIndexerStrategy):
             # Enum declarations
             elif node_type == 'enum_declaration':
                 self._register_enum_symbol_ts(node, file_path, scope_stack, content)
-            # Const/var declarations
-            elif node_type in ['const_declaration', 'var_declaration']:
+            # Variable declarations (const/var)
+            elif node_type == 'variable_declaration':
                 self._register_variable_symbol_ts(node, file_path, scope_stack, content)
+                # Check if it contains an @import call
+                self._check_for_import_in_variable(node, file_path, scope_stack, content)
             # Test declarations
             elif node_type == 'test_declaration':
                 self._register_test_symbol_ts(node, file_path, scope_stack, content)
@@ -238,7 +250,7 @@ class ZigStrategy(SCIPIndexerStrategy):
         
         visit_node(tree.root_node)
 
-    def _analyze_tree_sitter_for_document(self, tree, file_path: str, content: str) -> tuple:
+    def _analyze_tree_sitter_for_document(self, tree, file_path: str, content: str, relationships: Optional[Dict[str, List[tuple]]] = None) -> tuple[List[scip_pb2.Occurrence], List[scip_pb2.SymbolInformation]]:
         """Analyze Tree-sitter AST to generate SCIP occurrences and symbols."""
         occurrences = []
         symbols = []
@@ -249,25 +261,28 @@ class ZigStrategy(SCIPIndexerStrategy):
             
             # Process different node types
             if node_type == 'function_declaration':
-                occ, sym = self._process_function_ts(node, file_path, scope_stack, content)
+                occ, sym = self._process_function_ts(node, file_path, scope_stack, content, relationships)
                 if occ: occurrences.append(occ)
                 if sym: symbols.append(sym)
             elif node_type == 'struct_declaration':
-                occ, sym = self._process_struct_ts(node, file_path, scope_stack, content)
+                occ, sym = self._process_struct_ts(node, file_path, scope_stack, content, relationships)
                 if occ: occurrences.append(occ)
                 if sym: symbols.append(sym)
             elif node_type == 'enum_declaration':
-                occ, sym = self._process_enum_ts(node, file_path, scope_stack, content)
+                occ, sym = self._process_enum_ts(node, file_path, scope_stack, content, relationships)
                 if occ: occurrences.append(occ)
                 if sym: symbols.append(sym)
-            elif node_type in ['const_declaration', 'var_declaration']:
-                occ, sym = self._process_variable_ts(node, file_path, scope_stack, content)
+            elif node_type == 'variable_declaration':
+                occ, sym = self._process_variable_ts(node, file_path, scope_stack, content, relationships)
                 if occ: occurrences.append(occ)
                 if sym: symbols.append(sym)
             elif node_type == 'test_declaration':
-                occ, sym = self._process_test_ts(node, file_path, scope_stack, content)
+                occ, sym = self._process_test_ts(node, file_path, scope_stack, content, relationships)
                 if occ: occurrences.append(occ)
                 if sym: symbols.append(sym)
+            elif node_type == 'builtin_function_call' and self._is_import_call(node):
+                # Handle @import() calls
+                self._handle_import_declaration(node, file_path, scope_stack, content)
             elif node_type == 'identifier':
                 occ = self._process_identifier_ts(node, file_path, scope_stack, content)
                 if occ: occurrences.append(occ)
@@ -307,3 +322,652 @@ class ZigStrategy(SCIPIndexerStrategy):
         
         visit_node(tree.root_node)
         return relationships
+
+    # Tree-sitter node processing methods (missing implementations)
+    def _register_function_symbol_ts(self, node, file_path: str, scope_stack: List[str], content: str) -> None:
+        """Register a function symbol definition."""
+        name = self._get_function_name_ts(node, content)
+        if not name:
+            return
+            
+        symbol_id = self.symbol_manager.create_local_symbol(
+            language="zig",
+            file_path=file_path,
+            symbol_path=scope_stack + [name],
+            descriptor="()."
+        )
+        
+        # Create a dummy range for registration
+        dummy_range = scip_pb2.Range()
+        dummy_range.start.extend([0, 0])
+        dummy_range.end.extend([0, 1])
+        
+        self.reference_resolver.register_symbol_definition(
+            symbol_id=symbol_id,
+            file_path=file_path,
+            definition_range=dummy_range,
+            symbol_kind=scip_pb2.Function,
+            display_name=name,
+            documentation=["Zig function"]
+        )
+
+    def _register_struct_symbol_ts(self, node, file_path: str, scope_stack: List[str], content: str) -> None:
+        """Register a struct symbol definition."""
+        name = self._get_struct_name_ts(node, content)
+        if not name:
+            return
+            
+        symbol_id = self.symbol_manager.create_local_symbol(
+            language="zig",
+            file_path=file_path,
+            symbol_path=scope_stack + [name],
+            descriptor="#"
+        )
+        
+        dummy_range = scip_pb2.Range()
+        dummy_range.start.extend([0, 0])
+        dummy_range.end.extend([0, 1])
+        
+        self.reference_resolver.register_symbol_definition(
+            symbol_id=symbol_id,
+            file_path=file_path,
+            definition_range=dummy_range,
+            symbol_kind=scip_pb2.Struct,
+            display_name=name,
+            documentation=["Zig struct"]
+        )
+
+    def _register_enum_symbol_ts(self, node, file_path: str, scope_stack: List[str], content: str) -> None:
+        """Register an enum symbol definition."""
+        name = self._get_enum_name_ts(node, content)
+        if not name:
+            return
+            
+        symbol_id = self.symbol_manager.create_local_symbol(
+            language="zig",
+            file_path=file_path,
+            symbol_path=scope_stack + [name],
+            descriptor="#"
+        )
+        
+        dummy_range = scip_pb2.Range()
+        dummy_range.start.extend([0, 0])
+        dummy_range.end.extend([0, 1])
+        
+        self.reference_resolver.register_symbol_definition(
+            symbol_id=symbol_id,
+            file_path=file_path,
+            definition_range=dummy_range,
+            symbol_kind=scip_pb2.Enum,
+            display_name=name,
+            documentation=["Zig enum"]
+        )
+
+    def _register_variable_symbol_ts(self, node, file_path: str, scope_stack: List[str], content: str) -> None:
+        """Register a variable/constant symbol definition."""
+        name = self._get_variable_name_ts(node, content)
+        if not name:
+            return
+            
+        # Determine if it's const or var
+        is_const = self._is_const_declaration(node)
+        symbol_kind = scip_pb2.Constant if is_const else scip_pb2.Variable
+        descriptor = "." 
+        
+        symbol_id = self.symbol_manager.create_local_symbol(
+            language="zig",
+            file_path=file_path,
+            symbol_path=scope_stack + [name],
+            descriptor=descriptor
+        )
+        
+        dummy_range = scip_pb2.Range()
+        dummy_range.start.extend([0, 0])
+        dummy_range.end.extend([0, 1])
+        
+        self.reference_resolver.register_symbol_definition(
+            symbol_id=symbol_id,
+            file_path=file_path,
+            definition_range=dummy_range,
+            symbol_kind=symbol_kind,
+            display_name=name,
+            documentation=["Zig constant" if is_const else "Zig variable"]
+        )
+
+    def _register_test_symbol_ts(self, node, file_path: str, scope_stack: List[str], content: str) -> None:
+        """Register a test symbol definition."""
+        name = self._get_test_name_ts(node, content)
+        if not name:
+            name = "test"  # Default name for unnamed tests
+            
+        symbol_id = self.symbol_manager.create_local_symbol(
+            language="zig",
+            file_path=file_path,
+            symbol_path=scope_stack + [name],
+            descriptor="()."
+        )
+        
+        dummy_range = scip_pb2.Range()
+        dummy_range.start.extend([0, 0])
+        dummy_range.end.extend([0, 1])
+        
+        self.reference_resolver.register_symbol_definition(
+            symbol_id=symbol_id,
+            file_path=file_path,
+            definition_range=dummy_range,
+            symbol_kind=scip_pb2.Function,
+            display_name=name,
+            documentation=["Zig test"]
+        )
+
+    # Process methods for document generation
+    def _process_function_ts(self, node, file_path: str, scope_stack: List[str], content: str, relationships: Optional[Dict[str, List[tuple]]] = None) -> tuple[Optional[scip_pb2.Occurrence], Optional[scip_pb2.SymbolInformation]]:
+        """Process function for document generation."""
+        name = self._get_function_name_ts(node, content)
+        if not name:
+            return None, None
+            
+        symbol_id = self._create_function_symbol_id_ts(name, file_path, scope_stack)
+        occurrence = self._create_function_occurrence_ts(node, symbol_id)
+        
+        symbol_relationships = relationships.get(symbol_id, []) if relationships else []
+        scip_relationships = self._create_scip_relationships(symbol_relationships) if symbol_relationships else []
+        
+        symbol_info = self._create_function_symbol_info_ts(node, symbol_id, name, scip_relationships)
+        
+        return occurrence, symbol_info
+
+    def _process_struct_ts(self, node, file_path: str, scope_stack: List[str], content: str, relationships: Optional[Dict[str, List[tuple]]] = None) -> tuple[Optional[scip_pb2.Occurrence], Optional[scip_pb2.SymbolInformation]]:
+        """Process struct for document generation."""
+        name = self._get_struct_name_ts(node, content)
+        if not name:
+            return None, None
+            
+        symbol_id = self._create_struct_symbol_id_ts(name, file_path, scope_stack)
+        occurrence = self._create_struct_occurrence_ts(node, symbol_id)
+        
+        symbol_relationships = relationships.get(symbol_id, []) if relationships else []
+        scip_relationships = self._create_scip_relationships(symbol_relationships) if symbol_relationships else []
+        
+        symbol_info = self._create_struct_symbol_info_ts(node, symbol_id, name, scip_relationships)
+        
+        return occurrence, symbol_info
+
+    def _process_enum_ts(self, node, file_path: str, scope_stack: List[str], content: str, relationships: Optional[Dict[str, List[tuple]]] = None) -> tuple[Optional[scip_pb2.Occurrence], Optional[scip_pb2.SymbolInformation]]:
+        """Process enum for document generation."""
+        name = self._get_enum_name_ts(node, content)
+        if not name:
+            return None, None
+            
+        symbol_id = self._create_enum_symbol_id_ts(name, file_path, scope_stack)
+        occurrence = self._create_enum_occurrence_ts(node, symbol_id)
+        
+        symbol_relationships = relationships.get(symbol_id, []) if relationships else []
+        scip_relationships = self._create_scip_relationships(symbol_relationships) if symbol_relationships else []
+        
+        symbol_info = self._create_enum_symbol_info_ts(node, symbol_id, name, scip_relationships)
+        
+        return occurrence, symbol_info
+
+    def _process_variable_ts(self, node, file_path: str, scope_stack: List[str], content: str, relationships: Optional[Dict[str, List[tuple]]] = None) -> tuple[Optional[scip_pb2.Occurrence], Optional[scip_pb2.SymbolInformation]]:
+        """Process variable/constant for document generation."""
+        name = self._get_variable_name_ts(node, content)
+        if not name:
+            return None, None
+            
+        symbol_id = self._create_variable_symbol_id_ts(name, file_path, scope_stack, node)
+        occurrence = self._create_variable_occurrence_ts(node, symbol_id)
+        
+        symbol_relationships = relationships.get(symbol_id, []) if relationships else []
+        scip_relationships = self._create_scip_relationships(symbol_relationships) if symbol_relationships else []
+        
+        symbol_info = self._create_variable_symbol_info_ts(node, symbol_id, name, scip_relationships)
+        
+        return occurrence, symbol_info
+
+    def _process_test_ts(self, node, file_path: str, scope_stack: List[str], content: str, relationships: Optional[Dict[str, List[tuple]]] = None) -> tuple[Optional[scip_pb2.Occurrence], Optional[scip_pb2.SymbolInformation]]:
+        """Process test for document generation."""
+        name = self._get_test_name_ts(node, content) or "test"
+            
+        symbol_id = self._create_test_symbol_id_ts(name, file_path, scope_stack)
+        occurrence = self._create_test_occurrence_ts(node, symbol_id)
+        
+        symbol_relationships = relationships.get(symbol_id, []) if relationships else []
+        scip_relationships = self._create_scip_relationships(symbol_relationships) if symbol_relationships else []
+        
+        symbol_info = self._create_test_symbol_info_ts(node, symbol_id, name, scip_relationships)
+        
+        return occurrence, symbol_info
+
+    def _process_identifier_ts(self, node, file_path: str, scope_stack: List[str], content: str) -> Optional[scip_pb2.Occurrence]:
+        """Process identifier for references."""
+        name = self._get_node_text_ts(node)
+        if not name:
+            return None
+            
+        # Create a reference occurrence
+        if not self.position_calculator:
+            return None
+            
+        try:
+            range_obj = self.position_calculator.tree_sitter_node_to_range(node)
+            occurrence = scip_pb2.Occurrence()
+            occurrence.symbol = f"local {name}"  # Simple reference
+            occurrence.symbol_roles = scip_pb2.ReadAccess
+            occurrence.syntax_kind = scip_pb2.IdentifierLocal
+            occurrence.range.CopyFrom(range_obj)
+            return occurrence
+        except:
+            return None
+
+    # Helper methods for extracting names from Tree-sitter nodes
+    def _get_function_name_ts(self, node, content: str) -> Optional[str]:
+        """Extract function name from function node."""
+        for child in node.children:
+            if child.type == "identifier":
+                return self._get_node_text_ts(child)
+        return None
+
+    def _get_struct_name_ts(self, node, content: str) -> Optional[str]:
+        """Extract struct name from struct node."""
+        for child in node.children:
+            if child.type == "identifier":
+                return self._get_node_text_ts(child)
+        return None
+
+    def _get_enum_name_ts(self, node, content: str) -> Optional[str]:
+        """Extract enum name from enum node."""
+        for child in node.children:
+            if child.type == "identifier":
+                return self._get_node_text_ts(child)
+        return None
+
+    def _get_variable_name_ts(self, node, content: str) -> Optional[str]:
+        """Extract variable name from variable declaration node."""
+        for child in node.children:
+            if child.type == "identifier":
+                return self._get_node_text_ts(child)
+        return None
+
+    def _get_test_name_ts(self, node, content: str) -> Optional[str]:
+        """Extract test name from test node."""
+        for child in node.children:
+            if child.type == "string_literal":
+                # Test with string name: test "my test" {}
+                text = self._get_node_text_ts(child)
+                if text:
+                    return text.strip('"')
+            elif child.type == "identifier":
+                # Test with identifier: test my_test {}
+                return self._get_node_text_ts(child)
+        return None
+
+    def _get_node_text_ts(self, node) -> Optional[str]:
+        """Get text content of a Tree-sitter node."""
+        if hasattr(node, 'text'):
+            try:
+                return node.text.decode('utf-8')
+            except:
+                pass
+        return None
+
+    def _is_const_declaration(self, node) -> bool:
+        """Check if a declaration is const."""
+        return node.type == "const_declaration"
+
+    # Symbol ID creation methods
+    def _create_function_symbol_id_ts(self, name: str, file_path: str, scope_stack: List[str]) -> str:
+        """Create symbol ID for function."""
+        return self.symbol_manager.create_local_symbol(
+            language="zig",
+            file_path=file_path,
+            symbol_path=scope_stack + [name],
+            descriptor="()."
+        )
+
+    def _create_struct_symbol_id_ts(self, name: str, file_path: str, scope_stack: List[str]) -> str:
+        """Create symbol ID for struct."""
+        return self.symbol_manager.create_local_symbol(
+            language="zig",
+            file_path=file_path,
+            symbol_path=scope_stack + [name],
+            descriptor="#"
+        )
+
+    def _create_enum_symbol_id_ts(self, name: str, file_path: str, scope_stack: List[str]) -> str:
+        """Create symbol ID for enum."""
+        return self.symbol_manager.create_local_symbol(
+            language="zig",
+            file_path=file_path,
+            symbol_path=scope_stack + [name],
+            descriptor="#"
+        )
+
+    def _create_variable_symbol_id_ts(self, name: str, file_path: str, scope_stack: List[str], node) -> str:
+        """Create symbol ID for variable/constant."""
+        descriptor = "."
+        return self.symbol_manager.create_local_symbol(
+            language="zig",
+            file_path=file_path,
+            symbol_path=scope_stack + [name],
+            descriptor=descriptor
+        )
+
+    def _create_test_symbol_id_ts(self, name: str, file_path: str, scope_stack: List[str]) -> str:
+        """Create symbol ID for test."""
+        return self.symbol_manager.create_local_symbol(
+            language="zig",
+            file_path=file_path,
+            symbol_path=scope_stack + [name],
+            descriptor="()."
+        )
+
+    # Occurrence creation methods
+    def _create_function_occurrence_ts(self, node, symbol_id: str) -> Optional[scip_pb2.Occurrence]:
+        """Create SCIP occurrence for function."""
+        if not self.position_calculator:
+            return None
+            
+        try:
+            range_obj = self.position_calculator.tree_sitter_node_to_range(node)
+            occurrence = scip_pb2.Occurrence()
+            occurrence.symbol = symbol_id
+            occurrence.symbol_roles = scip_pb2.Definition
+            occurrence.syntax_kind = scip_pb2.IdentifierFunctionDefinition
+            occurrence.range.CopyFrom(range_obj)
+            return occurrence
+        except:
+            return None
+
+    def _create_struct_occurrence_ts(self, node, symbol_id: str) -> Optional[scip_pb2.Occurrence]:
+        """Create SCIP occurrence for struct."""
+        if not self.position_calculator:
+            return None
+            
+        try:
+            range_obj = self.position_calculator.tree_sitter_node_to_range(node)
+            occurrence = scip_pb2.Occurrence()
+            occurrence.symbol = symbol_id
+            occurrence.symbol_roles = scip_pb2.Definition
+            occurrence.syntax_kind = scip_pb2.IdentifierType
+            occurrence.range.CopyFrom(range_obj)
+            return occurrence
+        except:
+            return None
+
+    def _create_enum_occurrence_ts(self, node, symbol_id: str) -> Optional[scip_pb2.Occurrence]:
+        """Create SCIP occurrence for enum."""
+        if not self.position_calculator:
+            return None
+            
+        try:
+            range_obj = self.position_calculator.tree_sitter_node_to_range(node)
+            occurrence = scip_pb2.Occurrence()
+            occurrence.symbol = symbol_id
+            occurrence.symbol_roles = scip_pb2.Definition
+            occurrence.syntax_kind = scip_pb2.IdentifierType
+            occurrence.range.CopyFrom(range_obj)
+            return occurrence
+        except:
+            return None
+
+    def _create_variable_occurrence_ts(self, node, symbol_id: str) -> Optional[scip_pb2.Occurrence]:
+        """Create SCIP occurrence for variable/constant."""
+        if not self.position_calculator:
+            return None
+            
+        try:
+            range_obj = self.position_calculator.tree_sitter_node_to_range(node)
+            occurrence = scip_pb2.Occurrence()
+            occurrence.symbol = symbol_id
+            occurrence.symbol_roles = scip_pb2.Definition
+            occurrence.syntax_kind = scip_pb2.IdentifierConstant
+            occurrence.range.CopyFrom(range_obj)
+            return occurrence
+        except:
+            return None
+
+    def _create_test_occurrence_ts(self, node, symbol_id: str) -> Optional[scip_pb2.Occurrence]:
+        """Create SCIP occurrence for test."""
+        if not self.position_calculator:
+            return None
+            
+        try:
+            range_obj = self.position_calculator.tree_sitter_node_to_range(node)
+            occurrence = scip_pb2.Occurrence()
+            occurrence.symbol = symbol_id
+            occurrence.symbol_roles = scip_pb2.Definition
+            occurrence.syntax_kind = scip_pb2.IdentifierFunctionDefinition
+            occurrence.range.CopyFrom(range_obj)
+            return occurrence
+        except:
+            return None
+
+    # Symbol information creation methods
+    def _create_function_symbol_info_ts(self, node, symbol_id: str, name: str, relationships: Optional[List[scip_pb2.Relationship]] = None) -> scip_pb2.SymbolInformation:
+        """Create SCIP symbol information for function."""
+        symbol_info = scip_pb2.SymbolInformation()
+        symbol_info.symbol = symbol_id
+        symbol_info.display_name = name
+        symbol_info.kind = scip_pb2.Function
+        
+        symbol_info.documentation.append("Zig function")
+        
+        if relationships and self.relationship_manager:
+            self.relationship_manager.add_relationships_to_symbol(symbol_info, relationships)
+        
+        return symbol_info
+
+    def _create_struct_symbol_info_ts(self, node, symbol_id: str, name: str, relationships: Optional[List[scip_pb2.Relationship]] = None) -> scip_pb2.SymbolInformation:
+        """Create SCIP symbol information for struct."""
+        symbol_info = scip_pb2.SymbolInformation()
+        symbol_info.symbol = symbol_id
+        symbol_info.display_name = name
+        symbol_info.kind = scip_pb2.Struct
+        
+        symbol_info.documentation.append("Zig struct")
+        
+        if relationships and self.relationship_manager:
+            self.relationship_manager.add_relationships_to_symbol(symbol_info, relationships)
+        
+        return symbol_info
+
+    def _create_enum_symbol_info_ts(self, node, symbol_id: str, name: str, relationships: Optional[List[scip_pb2.Relationship]] = None) -> scip_pb2.SymbolInformation:
+        """Create SCIP symbol information for enum."""
+        symbol_info = scip_pb2.SymbolInformation()
+        symbol_info.symbol = symbol_id
+        symbol_info.display_name = name
+        symbol_info.kind = scip_pb2.Enum
+        
+        symbol_info.documentation.append("Zig enum")
+        
+        if relationships and self.relationship_manager:
+            self.relationship_manager.add_relationships_to_symbol(symbol_info, relationships)
+        
+        return symbol_info
+
+    def _create_variable_symbol_info_ts(self, node, symbol_id: str, name: str, relationships: Optional[List[scip_pb2.Relationship]] = None) -> scip_pb2.SymbolInformation:
+        """Create SCIP symbol information for variable/constant."""
+        symbol_info = scip_pb2.SymbolInformation()
+        symbol_info.symbol = symbol_id
+        symbol_info.display_name = name
+        
+        # Determine if it's const or var
+        is_const = self._is_const_declaration(node)
+        symbol_info.kind = scip_pb2.Constant if is_const else scip_pb2.Variable
+        symbol_info.documentation.append("Zig constant" if is_const else "Zig variable")
+        
+        if relationships and self.relationship_manager:
+            self.relationship_manager.add_relationships_to_symbol(symbol_info, relationships)
+        
+        return symbol_info
+
+    def _create_test_symbol_info_ts(self, node, symbol_id: str, name: str, relationships: Optional[List[scip_pb2.Relationship]] = None) -> scip_pb2.SymbolInformation:
+        """Create SCIP symbol information for test."""
+        symbol_info = scip_pb2.SymbolInformation()
+        symbol_info.symbol = symbol_id
+        symbol_info.display_name = name
+        symbol_info.kind = scip_pb2.Function
+        
+        symbol_info.documentation.append("Zig test")
+        
+        if relationships and self.relationship_manager:
+            self.relationship_manager.add_relationships_to_symbol(symbol_info, relationships)
+        
+        return symbol_info
+
+    def _create_scip_relationships(self, symbol_relationships: List[tuple]) -> List[scip_pb2.Relationship]:
+        """Convert internal relationships to SCIP relationships."""
+        scip_relationships = []
+        for target_symbol_id, relationship_type in symbol_relationships:
+            relationship = scip_pb2.Relationship()
+            relationship.symbol = target_symbol_id
+            relationship.is_reference = True
+            scip_relationships.append(relationship)
+        return scip_relationships
+
+    # Dependency handling methods (Zig-specific)
+    def _is_import_call(self, node) -> bool:
+        """Check if a builtin function call is an @import call."""
+        if node.type != "builtin_function_call":
+            return False
+        
+        for child in node.children:
+            if child.type == "builtin_identifier":
+                name = self._get_node_text_ts(child)
+                return name == "@import"
+        return False
+
+    def _handle_import_declaration(self, node, file_path: str, scope_stack: List[str], content: str) -> None:
+        """Handle @import() declarations."""
+        import_path = self._extract_import_path_from_node(node)
+        if not import_path:
+            return
+        
+        # Classify dependency type
+        dependency_type = self._classify_zig_dependency(import_path)
+        
+        # Store dependency
+        if import_path not in self.dependencies['imports'][dependency_type]:
+            self.dependencies['imports'][dependency_type].append(import_path)
+        
+        # Create SCIP symbol for import
+        var_name = f"import_{import_path.replace('.', '_').replace('/', '_')}"
+        local_id = ".".join(scope_stack + [var_name]) if scope_stack else var_name
+        symbol_id = f"local {local_id}(import)"
+        
+        dummy_range = scip_pb2.Range()
+        dummy_range.start.extend([0, 0])
+        dummy_range.end.extend([0, 1])
+        
+        self.reference_resolver.register_symbol_definition(
+            symbol_id=symbol_id,
+            file_path=file_path,
+            definition_range=dummy_range,
+            symbol_kind=scip_pb2.Namespace,
+            display_name=var_name,
+            documentation=[f"Zig import from {import_path}"]
+        )
+
+    def _extract_import_path_from_node(self, node) -> Optional[str]:
+        """Extract import path from @import() call."""
+        # Look for string in arguments based on actual AST structure
+        for child in node.children:
+            if child.type == "arguments":
+                for arg in child.children:
+                    if arg.type == "string":
+                        # Extract from string_content child
+                        for string_child in arg.children:
+                            if string_child.type == "string_content":
+                                path = self._get_node_text_ts(string_child)
+                                if path:
+                                    return path
+        return None
+
+    def _classify_zig_dependency(self, import_path: str) -> str:
+        """Classify Zig dependency based on import path."""
+        # Zig standard library modules
+        zig_std_modules = {
+            'std', 'builtin', 'root', 'testing', 'math', 'mem', 'fs', 'net', 
+            'json', 'fmt', 'log', 'crypto', 'hash', 'sort', 'thread', 'atomic',
+            'os', 'process', 'time', 'random', 'debug', 'meta', 'ascii', 'unicode'
+        }
+        
+        if import_path in zig_std_modules:
+            return 'standard_library'
+        elif import_path.startswith('./') or import_path.startswith('../') or import_path.endswith('.zig'):
+            return 'local'
+        else:
+            return 'third_party'
+
+    def _extract_calls_from_node_ts(self, node, source_symbol_id: str, relationships: Dict, file_path: str, scope_stack: List[str], content: str) -> None:
+        """Extract function calls from a Tree-sitter node."""
+        def visit_for_calls(n):
+            if n.type == 'call_expression':
+                # Get the function being called
+                function_node = n.children[0] if n.children else None
+                if function_node and function_node.type == 'identifier':
+                    target_name = self._get_node_text_ts(function_node)
+                    if target_name:
+                        target_symbol_id = self._create_function_symbol_id_ts(target_name, file_path, scope_stack)
+                        if source_symbol_id not in relationships:
+                            relationships[source_symbol_id] = []
+                        relationships[source_symbol_id].append((target_symbol_id, InternalRelationshipType.CALLS))
+                        
+            for child in n.children:
+                visit_for_calls(child)
+        
+        visit_for_calls(node)
+
+    def _check_for_import_in_variable(self, node, file_path: str, scope_stack: List[str], content: str) -> None:
+        """Check if a variable declaration contains an @import call."""
+        for child in node.children:
+            if child.type == 'builtin_function':
+                # Check if it's @import
+                builtin_id = None
+                for grandchild in child.children:
+                    if grandchild.type == 'builtin_identifier':
+                        builtin_id = self._get_node_text_ts(grandchild)
+                        break
+                
+                if builtin_id == '@import':
+                    # Extract import path
+                    import_path = self._extract_import_path_from_node(child)
+                    if import_path:
+                        # Classify and store dependency
+                        dependency_type = self._classify_zig_dependency(import_path)
+                        if import_path not in self.dependencies['imports'][dependency_type]:
+                            self.dependencies['imports'][dependency_type].append(import_path)
+                        
+                        # Create SCIP symbol for import
+                        var_name = self._get_variable_name_ts(node, content)
+                        if var_name:
+                            local_id = ".".join(scope_stack + [var_name]) if scope_stack else var_name
+                            symbol_id = f"local {local_id}(import)"
+                            
+                            dummy_range = scip_pb2.Range()
+                            dummy_range.start.extend([0, 0])
+                            dummy_range.end.extend([0, 1])
+                            
+                            self.reference_resolver.register_symbol_definition(
+                                symbol_id=symbol_id,
+                                file_path=file_path,
+                                definition_range=dummy_range,
+                                symbol_kind=scip_pb2.Namespace,
+                                display_name=var_name,
+                                documentation=[f"Zig import from {import_path}"]
+                            )
+
+    def get_dependencies(self) -> Dict[str, Any]:
+        """Get collected dependencies for MCP response."""
+        return self.dependencies
+
+    def _reset_dependencies(self) -> None:
+        """Reset dependency tracking for new file analysis."""
+        self.dependencies = {
+            'imports': {
+                'standard_library': [],
+                'third_party': [],
+                'local': []
+            }
+        }
