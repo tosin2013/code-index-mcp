@@ -129,7 +129,9 @@ class ZigStrategy(SCIPIndexerStrategy):
             tree = self._parse_content(content)
             if tree:
                 self._collect_symbols_from_tree_sitter(tree, relative_path, content)
-                logger.debug(f"Tree-sitter symbol collection - {relative_path}")
+                # Register dependencies with symbol manager
+                self._register_dependencies_with_symbol_manager()
+                logger.debug(f"Tree-sitter symbol collection - {relative_path}, deps: {self._count_dependencies()}")
                 return
 
         raise StrategyError(f"Failed to parse {relative_path} with tree-sitter for symbol collection")
@@ -149,6 +151,9 @@ class ZigStrategy(SCIPIndexerStrategy):
         # Initialize position calculator
         self.position_calculator = PositionCalculator(content)
 
+        # Reset dependencies for this file
+        self._reset_dependencies()
+        
         if self.use_tree_sitter and self.parser:
             # Parse with Tree-sitter
             tree = self._parse_content(content)
@@ -157,8 +162,12 @@ class ZigStrategy(SCIPIndexerStrategy):
                 document.occurrences.extend(occurrences)
                 document.symbols.extend(symbols)
                 
+                # Add dependency information to symbols
+                self._add_dependency_info_to_symbols(document, content)
+                
                 logger.debug(f"Analyzed Zig file {document.relative_path}: "
-                            f"{len(document.occurrences)} occurrences, {len(document.symbols)} symbols")
+                            f"{len(document.occurrences)} occurrences, {len(document.symbols)} symbols, "
+                            f"dependencies: {self._count_dependencies()}")
                 return document
 
         raise StrategyError(f"Failed to parse {document.relative_path} with tree-sitter for document analysis")
@@ -720,8 +729,17 @@ class ZigStrategy(SCIPIndexerStrategy):
             range_obj = self.position_calculator.tree_sitter_node_to_range(node)
             occurrence = scip_pb2.Occurrence()
             occurrence.symbol = symbol_id
-            occurrence.symbol_roles = scip_pb2.Definition
-            occurrence.syntax_kind = scip_pb2.IdentifierConstant
+            
+            # Check if this variable is an import by examining the node for @import
+            is_import = self._is_variable_import(node)
+            
+            if is_import:
+                occurrence.symbol_roles = scip_pb2.Import  # Mark as Import role
+                occurrence.syntax_kind = scip_pb2.IdentifierNamespace
+            else:
+                occurrence.symbol_roles = scip_pb2.Definition
+                occurrence.syntax_kind = scip_pb2.IdentifierConstant
+                
             occurrence.range.CopyFrom(range_obj)
             return occurrence
         except:
@@ -971,3 +989,98 @@ class ZigStrategy(SCIPIndexerStrategy):
                 'local': []
             }
         }
+
+    def _add_dependency_info_to_symbols(self, document: scip_pb2.Document, content: str) -> None:
+        """Add dependency classification information to SCIP symbols."""
+        if not self.dependencies['imports']:
+            return
+            
+        # Update existing import symbols with dependency classification
+        for symbol_info in document.symbols:
+            symbol_name = self._extract_symbol_name_from_id(symbol_info.symbol)
+            
+            # Check if this symbol is an import
+            if self._is_import_symbol(symbol_name, symbol_info):
+                # Find which dependency category this import belongs to
+                dependency_type = self._find_dependency_type(symbol_name)
+                if dependency_type:
+                    # Update symbol documentation with dependency type
+                    symbol_info.documentation.append(f"Dependency type: {dependency_type}")
+                    # Mark as import role
+                    if hasattr(symbol_info, 'symbol_roles'):
+                        symbol_info.symbol_roles |= 2  # SymbolRole.Import = 2
+                        
+    def _count_dependencies(self) -> str:
+        """Get dependency count summary for logging."""
+        total = (len(self.dependencies['imports']['standard_library']) + 
+                len(self.dependencies['imports']['third_party']) + 
+                len(self.dependencies['imports']['local']))
+        return f"{total} total ({len(self.dependencies['imports']['standard_library'])} std, " \
+               f"{len(self.dependencies['imports']['third_party'])} 3rd, " \
+               f"{len(self.dependencies['imports']['local'])} local)"
+               
+    def _extract_symbol_name_from_id(self, symbol_id: str) -> str:
+        """Extract symbol name from SCIP symbol ID."""
+        # Symbol ID format: "scip-zig local code-index-mcp .../filename/symbol_name."
+        parts = symbol_id.split('/')
+        if parts:
+            last_part = parts[-1]
+            # Remove trailing descriptor (., (), #)
+            if last_part.endswith('.'):
+                return last_part[:-1]
+            elif last_part.endswith('().'):
+                return last_part[:-3]
+            elif last_part.endswith('#'):
+                return last_part[:-1]
+        return ""
+        
+    def _is_import_symbol(self, symbol_name: str, symbol_info: scip_pb2.SymbolInformation) -> bool:
+        """Check if a symbol represents an import."""
+        # Check if symbol documentation mentions import
+        for doc in symbol_info.documentation:
+            if "import" in doc.lower():
+                return True
+        return False
+        
+    def _find_dependency_type(self, symbol_name: str) -> str:
+        """Find which dependency type category a symbol belongs to."""
+        for dep_type, imports in self.dependencies['imports'].items():
+            if symbol_name in imports:
+                return dep_type
+        return ""
+        
+    def _register_dependencies_with_symbol_manager(self) -> None:
+        """Register collected dependencies with the symbol manager."""
+        if not self.symbol_manager or not self.dependencies['imports']:
+            return
+            
+        for dep_type, imports in self.dependencies['imports'].items():
+            for import_path in imports:
+                try:
+                    # Register with symbol manager for global dependency tracking
+                    symbol_id = self.symbol_manager.moniker_manager.register_import(
+                        package_name=import_path,
+                        symbol_name=import_path,  # Use import path as symbol name
+                        module_path="",
+                        alias=None,
+                        import_kind="namespace",  # Zig imports are namespace-like
+                        version=""  # Zig doesn't use version in @import()
+                    )
+                    logger.debug(f"Registered dependency: {import_path} ({dep_type}) -> {symbol_id}")
+                except Exception as e:
+                    logger.warning(f"Failed to register dependency {import_path}: {e}")
+                    
+    def _is_variable_import(self, node) -> bool:
+        """Check if a variable declaration contains an @import call."""
+        for child in node.children:
+            if child.type == 'builtin_function':
+                # Check if it's @import
+                builtin_id = None
+                for grandchild in child.children:
+                    if grandchild.type == 'builtin_identifier':
+                        builtin_id = self._get_node_text_ts(grandchild)
+                        break
+                
+                if builtin_id == '@import':
+                    return True
+        return False

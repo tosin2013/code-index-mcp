@@ -874,7 +874,12 @@ class SCIPSymbolAnalyzer:
                     # Local imports: extract module path from descriptors
                     module_path = self._extract_local_module_path(symbol_info.descriptors)
                     if module_path and module_path not in seen_modules:
-                        imports.add_import(module_path, 'local')
+                        # For Zig imports, classify by module name
+                        if any('.zig' in part for part in symbol_info.descriptors.split('/')):
+                            import_type = self._classify_zig_import(module_path)
+                        else:
+                            import_type = 'local'
+                        imports.add_import(module_path, import_type)
                         seen_modules.add(module_path)
 
             logger.debug(f"Extracted {len(seen_modules)} unique imports from SCIP occurrences")
@@ -1041,12 +1046,42 @@ class SCIPSymbolAnalyzer:
         """Extract module path from local descriptors."""
         # utils.py/helper_function() -> utils
         # services/user_service.py/UserService -> services.user_service
+        # test/sample-projects/zig/code-index-example/src/main.zig/std. -> std
         if '/' in descriptors:
-            file_part = descriptors.split('/')[0]
-            if file_part.endswith('.py'):
-                return file_part[:-3].replace('/', '.')
-            return file_part.replace('/', '.')
+            parts = descriptors.split('/')
+            if len(parts) >= 2:
+                # For Zig: extract the symbol name (last part after the file path)
+                if any('.zig' in part for part in parts):
+                    # Zig import: symbol name is the last part
+                    symbol_name = parts[-1].rstrip('.')
+                    return symbol_name
+                # For Python: traditional handling
+                file_part = parts[0]
+                if file_part.endswith('.py'):
+                    return file_part[:-3].replace('/', '.')
+                return file_part.replace('/', '.')
         return None
+
+    def _classify_zig_import(self, module_name: str) -> str:
+        """Classify Zig import as standard_library, third_party, or local."""
+        # Zig standard library modules
+        zig_stdlib = {
+            'std', 'builtin', 'testing', 'math', 'fmt', 'mem', 'ascii', 
+            'unicode', 'json', 'crypto', 'compress', 'hash', 'http',
+            'net', 'fs', 'os', 'process', 'thread', 'atomic', 'debug',
+            'log', 'rand', 'sort', 'time', 'zig'
+        }
+        
+        # Local imports (relative paths)
+        if module_name.startswith('./') or module_name.startswith('../') or module_name.endswith('.zig'):
+            return 'local'
+            
+        # Standard library
+        if module_name in zig_stdlib:
+            return 'standard_library'
+            
+        # Everything else is third_party
+        return 'third_party'
 
     def _extract_class_name_from_descriptors(self, descriptors: str) -> Optional[str]:
         """Extract class name from descriptors."""
