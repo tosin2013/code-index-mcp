@@ -227,7 +227,7 @@ class FileAnalysis:
     
     
     def to_dict(self) -> Dict[str, Any]:
-        """Convert to final JSON output format - EXACT specification."""
+        """Convert to final JSON output format - simplified for token efficiency."""
         return {
             "file_path": self.file_path,
             "language": self.language,
@@ -239,9 +239,6 @@ class FileAnalysis:
                 "classes": [cls.to_class_dict() for cls in self.classes],
                 "variables": [var.to_variable_dict() for var in self.variables],
                 "constants": [const.to_constant_dict() for const in self.constants]
-            },
-            "dependencies": {
-                "imports": self.imports.to_dict()
             },
             "status": "success"
         }

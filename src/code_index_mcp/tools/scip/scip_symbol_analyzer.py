@@ -15,8 +15,9 @@ from .symbol_definitions import (
     SymbolDefinition, FileAnalysis, ImportGroup, LocationInfo,
     SymbolLocationError, SymbolResolutionError
 )
-from .relationship_info import SCIPRelationshipReader
+# Removed SCIPRelationshipReader - relationships now read directly from SCIP index
 from ...scip.core.symbol_manager import SCIPSymbolManager
+from .relationship_info import SymbolRelationships, RelationshipInfo, RelationshipType
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +48,7 @@ class SCIPSymbolAnalyzer:
         self._symbol_kind_cache: Dict[int, str] = {}
         self._scip_symbol_cache: Dict[str, Dict[str, Any]] = {}
         self._symbol_parser: Optional[SCIPSymbolManager] = None
-        self._relationship_reader = SCIPRelationshipReader()
+        # Removed relationship reader - relationships now read directly from SCIP index
 
         # Initialize SCIP symbol kind mapping
         self._init_symbol_kind_mapping()
@@ -538,25 +539,143 @@ class SCIPSymbolAnalyzer:
 
     def _extract_call_relationships(self, document, symbols: Dict[str, SymbolDefinition], scip_index):
         """
-        Extract all relationships from SCIP document using the new relationship reader.
+        Extract relationships from SCIP index and build correct called_by relationships.
 
         Args:
             document: SCIP document containing symbols and relationships
             symbols: Dictionary of extracted symbols
-            scip_index: Full SCIP index for cross-file resolution
+            scip_index: Full SCIP index
         """
-        logger.debug("Starting relationship extraction using SCIP relationship reader")
+        logger.debug("Building called_by relationships from SCIP index")
 
-        # Use the new relationship reader to extract all relationships
-        all_relationships = self._relationship_reader.extract_relationships_from_document(document)
-
-        # Assign relationships to symbols
-        for symbol_id, symbol_def in symbols.items():
-            if symbol_id in all_relationships:
-                symbol_def.relationships = all_relationships[symbol_id]
-                logger.debug(f"Assigned {symbol_def.relationships.get_total_count()} relationships to {symbol_def.name}")
+        # Step 1: Collect all call relationships from the document
+        call_relationships = []  # List of (caller_id, target_id) tuples
+        
+        for symbol_info in document.symbols:
+            caller_id = symbol_info.symbol
+            
+            # Process each relationship of this symbol
+            for scip_rel in symbol_info.relationships:
+                if scip_rel.is_reference:  # This indicates a call/reference relationship
+                    target_id = scip_rel.symbol
+                    call_relationships.append((caller_id, target_id))
+        
+        # Step 2: Build called_by relationships by reversing the direction
+        for caller_id, target_id in call_relationships:
+            # Find the target symbol and add the caller to its called_by list
+            if target_id in symbols:
+                target_symbol = symbols[target_id]
+                caller_name = self._extract_symbol_name(caller_id)
+                
+                # Create RelationshipInfo for called_by
+                rel_info = RelationshipInfo(
+                    target=caller_name,
+                    target_symbol_id=caller_id,
+                    relationship_type=RelationshipType.FUNCTION_CALL
+                )
+                
+                # Add to target symbol's called_by relationships with deduplication
+                target_symbol.relationships.add_relationship(rel_info, is_reverse=True)
 
         logger.debug(f"Relationship extraction completed for {len(symbols)} symbols")
+    
+    def _convert_scip_relationships(self, scip_relationships, document):
+        """
+        Convert SCIP Relationship objects to our SymbolRelationships format.
+        
+        Args:
+            scip_relationships: List of SCIP Relationship objects
+            document: SCIP document for context
+            
+        Returns:
+            SymbolRelationships object or None
+        """
+        if not scip_relationships:
+            return None
+        
+        symbol_rels = SymbolRelationships()
+        
+        for scip_rel in scip_relationships:
+            # Extract symbol name from the relationship
+            target_name = self._extract_symbol_name(scip_rel.symbol)
+            
+            
+            # Create RelationshipInfo
+            rel_info = RelationshipInfo(
+                target=target_name,
+                target_symbol_id=scip_rel.symbol,
+                relationship_type=RelationshipType.FUNCTION_CALL if scip_rel.is_reference else RelationshipType.REFERENCE
+            )
+            
+            # Add to appropriate category based on relationship type with deduplication
+            if scip_rel.is_reference:
+                # This is a "called_by" relationship (the symbol calls us)
+                symbol_rels.add_relationship(rel_info, is_reverse=True)
+            elif scip_rel.is_implementation:
+                symbol_rels.add_relationship(rel_info, is_reverse=True)  # implements
+            elif scip_rel.is_type_definition:
+                symbol_rels.add_relationship(rel_info, is_reverse=False)  # references
+            else:
+                symbol_rels.add_relationship(rel_info, is_reverse=False)  # references
+        
+        return symbol_rels
+    
+    def _find_call_occurrence_position(self, caller_id: str, target_id: str, document) -> tuple[int, int]:
+        """
+        Find the position where caller calls the target by looking up call occurrences.
+        
+        Args:
+            caller_id: The symbol ID of the calling function
+            target_id: The symbol ID of the called function  
+            document: SCIP document containing occurrences
+            
+        Returns:
+            Tuple of (line, column) of the call or (0, 0) if not found
+        """
+        try:
+            # Look through document occurrences to find where target_id is referenced
+            call_positions = []
+            
+            for occurrence in document.occurrences:
+                if occurrence.symbol == target_id:
+                    # Debug log the occurrence details
+                    logger.debug(f"Found occurrence for {target_id}: roles={occurrence.symbol_roles}, range={occurrence.range}")
+                    
+                    # Only include reference/call occurrences, not definitions
+                    # SCIP SymbolRole: 1=Definition, 8=Read/Reference
+                    if occurrence.symbol_roles != 1:  # Not a definition
+                        # Extract line and column from the occurrence range
+                        if occurrence.range and occurrence.range.start:
+                            # SCIP uses 0-based indexing, convert to 1-based for display
+                            line = occurrence.range.start[0] + 1 if len(occurrence.range.start) > 0 else 1
+                            column = occurrence.range.start[1] + 1 if len(occurrence.range.start) > 1 else 1
+                            call_positions.append((line, column))
+                            logger.debug(f"Added call position: line={line}, column={column}")
+            
+            # Return the first call position found (we can improve this later to be more specific)
+            if call_positions:
+                return call_positions[0]
+            
+            # Fallback: if not found in occurrences, return default
+            return 0, 0
+            
+        except (AttributeError, IndexError, TypeError) as e:
+            # Handle any issues with accessing the occurrence data
+            logger.debug(f"Error in _find_call_occurrence_position: {e}")
+            return 0, 0
+    
+    def _extract_symbol_name(self, symbol_id: str) -> str:
+        """Extract readable name from symbol ID."""
+        if symbol_id.startswith('local '):
+            # Remove 'local ' prefix and any suffix
+            name = symbol_id[6:]
+            # Remove common suffixes
+            for suffix in ['().', '#', '.', '()']:
+                if name.endswith(suffix):
+                    name = name[:-len(suffix)]
+                    break
+            return name
+        return symbol_id
 
     def _organize_results(self, document, symbols: Dict[str, SymbolDefinition], scip_index=None) -> FileAnalysis:
         """

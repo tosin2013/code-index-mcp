@@ -190,31 +190,10 @@ class ProjectSettings:
 
     def get_scip_index_path(self):
         """Get the path to the SCIP index file"""
-        try:
-            path = os.path.join(self.settings_path, SCIP_INDEX_FILE)
-            # Ensure directory exists
-            os.makedirs(os.path.dirname(path), exist_ok=True)
-            return path
-        except Exception:
-            # If error occurs, use file in project or home directory as fallback
-            if self.base_path and os.path.exists(self.base_path):
-                return os.path.join(self.base_path, SCIP_INDEX_FILE)
-            else:
-                return os.path.join(os.path.expanduser("~"), SCIP_INDEX_FILE)
-
-    def get_index_path(self):
-        """Get the path to the legacy index file (for backward compatibility)"""
-        try:
-            path = os.path.join(self.settings_path, INDEX_FILE)
-            # Ensure directory exists
-            os.makedirs(os.path.dirname(path), exist_ok=True)
-            return path
-        except Exception:
-            # If error occurs, use file in project or home directory as fallback
-            if self.base_path and os.path.exists(self.base_path):
-                return os.path.join(self.base_path, INDEX_FILE)
-            else:
-                return os.path.join(os.path.expanduser("~"), INDEX_FILE)
+        path = os.path.join(self.settings_path, SCIP_INDEX_FILE)
+        # Ensure directory exists
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        return path
 
     # get_cache_path method removed - no longer needed with new indexing system
 
@@ -471,110 +450,47 @@ class ProjectSettings:
 
     # save_cache and load_cache methods removed - no longer needed with new indexing system
 
-    def detect_index_version(self):
-        """Detect the version of the existing index
-
+    def is_latest_index(self) -> bool:
+        """Check if SCIP index exists and is the latest version.
+        
         Returns:
-            str: Version string ('legacy', '3.0', or None if no index exists)
+            bool: True if latest SCIP index exists, False if needs rebuild
         """
         try:
-            # Check for new JSON format first
-            index_path = self.get_index_path()
-            if os.path.exists(index_path):
-                try:
-                    with open(index_path, 'r', encoding='utf-8') as f:
-                        index_data = json.load(f)
-
-                    # Check if it has the new structure
-                    if isinstance(index_data, dict) and 'index_metadata' in index_data:
-                        version = index_data.get('index_metadata', {}).get('version', '3.0')
-                        return version
-                    else:
-                        return 'legacy'
-                except (json.JSONDecodeError, UnicodeDecodeError):
-                    return 'legacy'
-
-            # Check for old pickle format
-            old_pickle_path = os.path.join(self.settings_path, "file_index.pickle")
-            if os.path.exists(old_pickle_path):
-                return 'legacy'
-
-            # Check fallback locations
-            if self.base_path and os.path.exists(self.base_path):
-                fallback_json = os.path.join(self.base_path, INDEX_FILE)
-                fallback_pickle = os.path.join(self.base_path, "file_index.pickle")
-            else:
-                fallback_json = os.path.join(os.path.expanduser("~"), INDEX_FILE)
-                fallback_pickle = os.path.join(os.path.expanduser("~"), "file_index.pickle")
-
-            if os.path.exists(fallback_json):
-                try:
-                    with open(fallback_json, 'r', encoding='utf-8') as f:
-                        index_data = json.load(f)
-                    if isinstance(index_data, dict) and 'index_metadata' in index_data:
-                        version = index_data.get('index_metadata', {}).get('version', '3.0')
-                        return version
-                    else:
-                        return 'legacy'
-                except Exception:
-                    return 'legacy'
-
-            if os.path.exists(fallback_pickle):
-                return 'legacy'
-
-            return None
-
-        except Exception:
-            return None
-
-    def migrate_legacy_index(self):
-        """Migrate legacy index format to new format
-
-        Returns:
-            bool: True if migration was successful or not needed, False if failed
-        """
-        try:
-            version = self.detect_index_version()
-
-            if version is None:
-                return True
-
-            if version == '3.0' or (isinstance(version, str) and version >= '3.0'):
-                return True
-
-            if version == 'legacy':
-
-                # Clean up legacy files
-                legacy_files = [
-                    os.path.join(self.settings_path, "file_index.pickle"),
-                    os.path.join(self.settings_path, "content_cache.pickle")
-                ]
-
-                # Add fallback locations
-                if self.base_path and os.path.exists(self.base_path):
-                    legacy_files.extend([
-                        os.path.join(self.base_path, "file_index.pickle"),
-                        os.path.join(self.base_path, "content_cache.pickle")
-                    ])
-                else:
-                    legacy_files.extend([
-                        os.path.join(os.path.expanduser("~"), "file_index.pickle"),
-                        os.path.join(os.path.expanduser("~"), "content_cache.pickle")
-                    ])
-
-                for legacy_file in legacy_files:
-                    if os.path.exists(legacy_file):
-                        try:
-                            os.remove(legacy_file)
-                        except Exception:
-                            pass
-
-                return False  # Indicate that manual rebuild is needed
-
-            return True
-
+            # Only check for SCIP index at settings_path
+            scip_path = os.path.join(self.settings_path, SCIP_INDEX_FILE)
+            
+            if not os.path.exists(scip_path):
+                return False
+                
+            # Basic file integrity check
+            try:
+                with open(scip_path, 'rb') as f:
+                    # Check if file is readable and has content
+                    return f.read(1) != b''
+            except:
+                return False
+                
         except Exception:
             return False
+
+    def cleanup_legacy_files(self) -> None:
+        """Clean up any legacy index files found."""
+        try:
+            legacy_files = [
+                os.path.join(self.settings_path, "file_index.pickle"),
+                os.path.join(self.settings_path, "content_cache.pickle"),
+                os.path.join(self.settings_path, INDEX_FILE)  # Legacy JSON
+            ]
+            
+            for legacy_file in legacy_files:
+                if os.path.exists(legacy_file):
+                    try:
+                        os.remove(legacy_file)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
 
     def clear(self):
         """Clear config and index files"""

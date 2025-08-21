@@ -96,12 +96,12 @@ class ProjectConfigTool:
 
         self._settings.save_index(index_data)
 
-    def check_index_version(self) -> Optional[str]:
+    def check_index_version(self) -> bool:
         """
-        Check the version of existing index.
+        Check if index is the latest version.
 
         Returns:
-            Version string or None if no index exists
+            True if latest SCIP index exists, False if needs rebuild
 
         Raises:
             RuntimeError: If settings not initialized
@@ -109,14 +109,11 @@ class ProjectConfigTool:
         if not self._settings:
             raise RuntimeError("Settings not initialized")
 
-        return self._settings.detect_index_version()
+        return self._settings.is_latest_index()
 
-    def migrate_legacy_index(self) -> bool:
+    def cleanup_legacy_files(self) -> None:
         """
-        Migrate legacy index format if needed.
-
-        Returns:
-            True if migration successful or not needed, False if manual rebuild required
+        Clean up legacy index files.
 
         Raises:
             RuntimeError: If settings not initialized
@@ -124,7 +121,7 @@ class ProjectConfigTool:
         if not self._settings:
             raise RuntimeError("Settings not initialized")
 
-        return self._settings.migrate_legacy_index()
+        self._settings.cleanup_legacy_files()
 
     def get_search_tool_info(self) -> Dict[str, Any]:
         """

@@ -177,6 +177,22 @@ class ProjectManagementService(BaseService):
             Dictionary with initialization results
         """
         with self._noop_operation():
+            # Check if index needs rebuild before initialization
+            needs_rebuild = not self.helper.settings.is_latest_index()
+            
+            if needs_rebuild:
+                # Clean up legacy files
+                self.helper.settings.cleanup_legacy_files()
+                
+                # Force rebuild by ensuring fresh start
+                try:
+                    from ..services.index_management_service import IndexManagementService
+                    index_service = IndexManagementService(self._context)
+                    index_service.rebuild_index()
+                except Exception:
+                    # If rebuild fails, continue with normal initialization
+                    pass
+            
             # Create unified index manager
             index_manager = UnifiedIndexManager(project_path, self.helper.settings)
             
