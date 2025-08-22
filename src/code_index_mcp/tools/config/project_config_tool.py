@@ -98,10 +98,10 @@ class ProjectConfigTool:
 
     def check_index_version(self) -> bool:
         """
-        Check if index is the latest version.
+        Check if JSON index is the latest version.
 
         Returns:
-            True if latest SCIP index exists, False if needs rebuild
+            True if JSON index exists and is recent, False if needs rebuild
 
         Raises:
             RuntimeError: If settings not initialized
@@ -109,7 +109,17 @@ class ProjectConfigTool:
         if not self._settings:
             raise RuntimeError("Settings not initialized")
 
-        return self._settings.is_latest_index()
+        # Check if JSON index exists and is fresh
+        from ...indexing import get_index_manager
+        index_manager = get_index_manager()
+        
+        # Set project path if available
+        if self._settings.base_path:
+            index_manager.set_project_path(self._settings.base_path)
+            stats = index_manager.get_index_stats()
+            return stats.get('status') == 'loaded'
+        
+        return False
 
     def cleanup_legacy_files(self) -> None:
         """

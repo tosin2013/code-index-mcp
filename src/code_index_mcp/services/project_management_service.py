@@ -2,7 +2,7 @@
 Project Management Service - Business logic for project lifecycle management.
 
 This service handles the business logic for project initialization, configuration,
-and lifecycle management. It composes technical tools to achieve business goals.
+and lifecycle management using the new JSON-based indexing system.
 """
 import json
 import logging
@@ -11,20 +11,11 @@ from dataclasses import dataclass
 from contextlib import contextmanager
 
 from .base_service import BaseService
-from ..tools.config import ProjectConfigTool
 from ..utils.response_formatter import ResponseFormatter
 from ..constants import SUPPORTED_EXTENSIONS
-from ..indexing.unified_index_manager import UnifiedIndexManager
+from ..indexing import get_index_manager
 
 logger = logging.getLogger(__name__)
-
-# Optional SCIP tools import
-try:
-    from ..tools.scip import SCIPIndexTool
-    SCIP_AVAILABLE = True
-except ImportError:
-    SCIPIndexTool = None
-    SCIP_AVAILABLE = False
 
 
 @dataclass
@@ -49,8 +40,10 @@ class ProjectManagementService(BaseService):
 
     def __init__(self, ctx):
         super().__init__(ctx)
+        # Use the global singleton index manager
+        self._index_manager = get_index_manager()
+        from ..tools.config import ProjectConfigTool
         self._config_tool = ProjectConfigTool()
-        self._scip_tool = SCIPIndexTool() if SCIP_AVAILABLE else None
         # Import FileWatcherTool locally to avoid circular import
         from ..tools.monitoring import FileWatcherTool
         self._watcher_tool = FileWatcherTool(ctx)
@@ -111,22 +104,25 @@ class ProjectManagementService(BaseService):
         Returns:
             ProjectInitializationResult with initialization data
         """
+        # Business step 1: Initialize config tool
+        self._config_tool.initialize_settings(path)
+        
         # Normalize path for consistent processing
         normalized_path = self._config_tool.normalize_project_path(path)
 
-        # Business step 1: Cleanup existing project state
+        # Business step 2: Cleanup existing project state
         self._cleanup_existing_project()
 
-        # Business step 2: Initialize project configuration
-        self._initialize_project_configuration(normalized_path)
+        # Business step 3: Initialize JSON index manager
+        index_result = self._initialize_json_index_manager(normalized_path)
 
-        # Business step 3: Initialize unified index manager
-        index_result = self._initialize_index_manager(normalized_path)
+        # Business step 3.1: Store index manager in context for other services
+        self.helper.update_index_manager(self._index_manager)
 
         # Business step 4: Setup file monitoring
         monitoring_result = self._setup_file_monitoring(normalized_path)
 
-        # Business step 5: Update system state
+        # Business step 4: Update system state
         self._update_project_state(normalized_path, index_result['file_count'])
 
         # Business step 6: Get search capabilities info
@@ -150,25 +146,12 @@ class ProjectManagementService(BaseService):
             # Clear existing index cache
             self.helper.clear_index_cache()
 
-            # Clear SCIP tool state
-            self._scip_tool.clear_index()
+            # Clear any existing index state
+            pass
 
-    def _initialize_project_configuration(self, project_path: str) -> None:
-        """Business logic to initialize project configuration."""
-        with self._noop_operation():
-
-            # Initialize settings using config tool
-            settings = self._config_tool.initialize_settings(project_path)
-
-            # Update context with new settings
-            self.helper.update_settings(settings)
-            self.helper.update_base_path(project_path)
-
-            self._config_tool.get_settings_path()
-
-    def _initialize_index_manager(self, project_path: str) -> Dict[str, Any]:
+    def _initialize_json_index_manager(self, project_path: str) -> Dict[str, Any]:
         """
-        Business logic to initialize unified index manager.
+        Business logic to initialize JSON index manager.
 
         Args:
             project_path: Project path
@@ -176,44 +159,32 @@ class ProjectManagementService(BaseService):
         Returns:
             Dictionary with initialization results
         """
-        with self._noop_operation():
-            # Check if index needs rebuild before initialization
-            needs_rebuild = not self.helper.settings.is_latest_index()
-            
-            if needs_rebuild:
-                # Clean up legacy files
-                self.helper.settings.cleanup_legacy_files()
-                
-                # Force rebuild by ensuring fresh start
-                try:
-                    from ..services.index_management_service import IndexManagementService
-                    index_service = IndexManagementService(self._context)
-                    index_service.rebuild_index()
-                except Exception:
-                    # If rebuild fails, continue with normal initialization
-                    pass
-            
-            # Create unified index manager
-            index_manager = UnifiedIndexManager(project_path, self.helper.settings)
-            
-            # Store in context
-            self.helper.update_index_manager(index_manager)
-            
-            # Initialize the manager (this will load existing or build new)
-            if index_manager.initialize():
-                provider = index_manager.get_provider()
-                if provider:
-                    file_count = len(provider.get_file_list())
-                    return {
-                        'file_count': file_count,
-                        'source': 'unified_manager'
-                    }
-            
-            # Fallback if initialization fails
-            return {
-                'file_count': 0,
-                'source': 'failed'
-            }
+        # Set project path in index manager
+        if not self._index_manager.set_project_path(project_path):
+            raise RuntimeError(f"Failed to set project path: {project_path}")
+
+        # Update context
+        self.helper.update_base_path(project_path)
+
+        # Try to load existing index or build new one
+        if self._index_manager.load_index():
+            source = "loaded_existing"
+        else:
+            if not self._index_manager.build_index():
+                raise RuntimeError("Failed to build index")
+            source = "built_new"
+
+        # Get stats
+        stats = self._index_manager.get_index_stats()
+        file_count = stats.get('indexed_files', 0)
+
+        return {
+            'file_count': file_count,
+            'source': source,
+            'total_symbols': stats.get('total_symbols', 0),
+            'languages': stats.get('languages', [])
+        }
+
 
     def _is_valid_existing_index(self, index_data: Dict[str, Any]) -> bool:
         """
@@ -261,53 +232,6 @@ class ProjectManagementService(BaseService):
             'source': 'loaded_existing'
         }
 
-    def _build_new_index(self, project_path: str) -> Dict[str, Any]:
-        """
-        Business logic to build new project index.
-
-        Args:
-            project_path: Project path to index
-
-        Returns:
-            Dictionary with build results
-        """
-        
-
-        try:
-            # Use SCIP tool to build index
-            file_count = self._scip_tool.build_index(project_path)
-
-            # Save the new index using config tool
-            # Note: This is a simplified approach - in a full implementation,
-            # we would need to convert SCIP data to the expected format
-            index_data = {
-                'index_metadata': {
-                    'version': '4.0-scip',
-                    'source_format': 'scip',
-                    'created_at': __import__('time').time()
-                },
-                'project_metadata': {
-                    'project_root': project_path,
-                    'total_files': file_count,
-                    'tool_version': 'scip-builder'
-                }
-            }
-
-            self._config_tool.save_index_data(index_data)
-
-            # Save project configuration
-            config = self._config_tool.create_default_config(project_path)
-            self._config_tool.save_project_config(config)
-
-            # No logging
-
-            return {
-                'file_count': file_count,
-                'source': 'built_new'
-            }
-
-        except Exception as e:
-            raise ValueError(f"Failed to build project index: {e}") from e
 
     def _setup_file_monitoring(self, project_path: str) -> str:
         """
@@ -322,22 +246,20 @@ class ProjectManagementService(BaseService):
         
 
         try:
-            # Create rebuild callback that uses our SCIP tool
+            # Create rebuild callback that uses the JSON index manager
             def rebuild_callback():
                 logger.info("File watcher triggered rebuild callback")
                 try:
                     logger.debug(f"Starting index rebuild for: {project_path}")
-                    # Business logic: File changed, rebuild through unified manager
-                    if self.helper.index_manager:
-                        success = self.helper.index_manager.refresh_index(force=True)
-                        if success:
-                            provider = self.helper.index_manager.get_provider()
-                            file_count = len(provider.get_file_list()) if provider else 0
-                            logger.info(f"File watcher rebuild completed successfully - indexed {file_count} files")
-                            return True
-                    
-                    logger.warning("File watcher rebuild failed - no index manager available")
-                    return False
+                    # Business logic: File changed, rebuild using JSON index manager
+                    if self._index_manager.refresh_index():
+                        stats = self._index_manager.get_index_stats()
+                        file_count = stats.get('indexed_files', 0)
+                        logger.info(f"File watcher rebuild completed successfully - indexed {file_count} files")
+                        return True
+                    else:
+                        logger.warning("File watcher rebuild failed")
+                        return False
                 except Exception as e:
                     import traceback
                     logger.error(f"File watcher rebuild failed: {e}")

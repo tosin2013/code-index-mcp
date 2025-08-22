@@ -13,16 +13,9 @@ import hashlib
  
 from datetime import datetime
 
-# SCIP protobuf import
-try:
-    from .scip.proto.scip_pb2 import Index as SCIPIndex
-    SCIP_AVAILABLE = True
-except ImportError:
-    SCIPIndex = None
-    SCIP_AVAILABLE = False
 
 from .constants import (
-    SETTINGS_DIR, CONFIG_FILE, SCIP_INDEX_FILE, INDEX_FILE
+    SETTINGS_DIR, CONFIG_FILE, INDEX_FILE
 )
 from .search.base import SearchStrategy
 from .search.ugrep import UgrepStrategy
@@ -188,14 +181,6 @@ class ProjectSettings:
             else:
                 return os.path.join(os.path.expanduser("~"), CONFIG_FILE)
 
-    def get_scip_index_path(self):
-        """Get the path to the SCIP index file"""
-        path = os.path.join(self.settings_path, SCIP_INDEX_FILE)
-        # Ensure directory exists
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        return path
-
-    # get_cache_path method removed - no longer needed with new indexing system
 
     def _get_timestamp(self):
         """Get current timestamp"""
@@ -346,133 +331,7 @@ class ProjectSettings:
         except Exception:
             return None
 
-    def save_scip_index(self, scip_index):
-        """Save SCIP index in protobuf binary format
 
-        Args:
-            scip_index: SCIP Index protobuf object
-        """
-        if not SCIP_AVAILABLE:
-            raise RuntimeError("SCIP protobuf not available. Cannot save SCIP index.")
-
-        if not isinstance(scip_index, SCIPIndex):
-            raise ValueError("scip_index must be a SCIP Index protobuf object")
-
-        try:
-            scip_path = self.get_scip_index_path()
-
-            # Ensure directory exists
-            dir_path = os.path.dirname(scip_path)
-            if not os.path.exists(dir_path):
-                os.makedirs(dir_path, exist_ok=True)
-
-            # Serialize to binary format
-            binary_data = scip_index.SerializeToString()
-
-            # Save binary data
-            with open(scip_path, 'wb') as f:
-                f.write(binary_data)
-
-            
-
-        except Exception:
-            # Try saving to project or home directory
-            try:
-                if self.base_path and os.path.exists(self.base_path):
-                    fallback_path = os.path.join(self.base_path, SCIP_INDEX_FILE)
-                else:
-                    fallback_path = os.path.join(os.path.expanduser("~"), SCIP_INDEX_FILE)
-                
-
-                binary_data = scip_index.SerializeToString()
-                with open(fallback_path, 'wb') as f:
-                    f.write(binary_data)
-            except Exception:
-                raise
-
-    def load_scip_index(self):
-        """Load SCIP index from protobuf binary format
-
-        Returns:
-            SCIP Index object, or None if file doesn't exist or has errors
-        """
-        if not SCIP_AVAILABLE:
-            return None
-
-        # If skip_load is set, return None directly
-        if self.skip_load:
-            return None
-
-        try:
-            scip_path = self.get_scip_index_path()
-
-            if os.path.exists(scip_path):
-                
-                try:
-                    with open(scip_path, 'rb') as f:
-                        binary_data = f.read()
-
-                    # Deserialize from binary format
-                    scip_index = SCIPIndex()
-                    scip_index.ParseFromString(binary_data)
-
-                    
-                    return scip_index
-
-                except Exception:
-                    return None
-            else:
-                # Try fallback paths
-                fallback_paths = []
-                if self.base_path and os.path.exists(self.base_path):
-                    fallback_paths.append(os.path.join(self.base_path, SCIP_INDEX_FILE))
-                fallback_paths.append(os.path.join(os.path.expanduser("~"), SCIP_INDEX_FILE))
-
-                for fallback_path in fallback_paths:
-                    if os.path.exists(fallback_path):
-                        
-                        try:
-                            with open(fallback_path, 'rb') as f:
-                                binary_data = f.read()
-
-                            scip_index = SCIPIndex()
-                            scip_index.ParseFromString(binary_data)
-
-                            
-                            return scip_index
-                        except Exception:
-                            continue
-
-                return None
-
-        except Exception:
-            return None
-
-    # save_cache and load_cache methods removed - no longer needed with new indexing system
-
-    def is_latest_index(self) -> bool:
-        """Check if SCIP index exists and is the latest version.
-        
-        Returns:
-            bool: True if latest SCIP index exists, False if needs rebuild
-        """
-        try:
-            # Only check for SCIP index at settings_path
-            scip_path = os.path.join(self.settings_path, SCIP_INDEX_FILE)
-            
-            if not os.path.exists(scip_path):
-                return False
-                
-            # Basic file integrity check
-            try:
-                with open(scip_path, 'rb') as f:
-                    # Check if file is readable and has content
-                    return f.read(1) != b''
-            except:
-                return False
-                
-        except Exception:
-            return False
 
     def cleanup_legacy_files(self) -> None:
         """Clean up any legacy index files found."""

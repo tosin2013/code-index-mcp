@@ -24,7 +24,6 @@ from .project_settings import ProjectSettings
 from .services import (
     SearchService, FileService, SettingsService, FileWatcherService
 )
-from .indexing.unified_index_manager import UnifiedIndexManager
 from .services.settings_service import manage_temp_directory
 from .services.file_discovery_service import FileDiscoveryService
 from .services.project_management_service import ProjectManagementService
