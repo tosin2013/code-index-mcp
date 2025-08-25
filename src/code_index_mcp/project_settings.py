@@ -13,16 +13,9 @@ import hashlib
  
 from datetime import datetime
 
-# SCIP protobuf import
-try:
-    from .scip.proto.scip_pb2 import Index as SCIPIndex
-    SCIP_AVAILABLE = True
-except ImportError:
-    SCIPIndex = None
-    SCIP_AVAILABLE = False
 
 from .constants import (
-    SETTINGS_DIR, CONFIG_FILE, SCIP_INDEX_FILE, INDEX_FILE
+    SETTINGS_DIR, CONFIG_FILE, INDEX_FILE
 )
 from .search.base import SearchStrategy
 from .search.ugrep import UgrepStrategy
@@ -188,35 +181,6 @@ class ProjectSettings:
             else:
                 return os.path.join(os.path.expanduser("~"), CONFIG_FILE)
 
-    def get_scip_index_path(self):
-        """Get the path to the SCIP index file"""
-        try:
-            path = os.path.join(self.settings_path, SCIP_INDEX_FILE)
-            # Ensure directory exists
-            os.makedirs(os.path.dirname(path), exist_ok=True)
-            return path
-        except Exception:
-            # If error occurs, use file in project or home directory as fallback
-            if self.base_path and os.path.exists(self.base_path):
-                return os.path.join(self.base_path, SCIP_INDEX_FILE)
-            else:
-                return os.path.join(os.path.expanduser("~"), SCIP_INDEX_FILE)
-
-    def get_index_path(self):
-        """Get the path to the legacy index file (for backward compatibility)"""
-        try:
-            path = os.path.join(self.settings_path, INDEX_FILE)
-            # Ensure directory exists
-            os.makedirs(os.path.dirname(path), exist_ok=True)
-            return path
-        except Exception:
-            # If error occurs, use file in project or home directory as fallback
-            if self.base_path and os.path.exists(self.base_path):
-                return os.path.join(self.base_path, INDEX_FILE)
-            else:
-                return os.path.join(os.path.expanduser("~"), INDEX_FILE)
-
-    # get_cache_path method removed - no longer needed with new indexing system
 
     def _get_timestamp(self):
         """Get current timestamp"""
@@ -367,214 +331,25 @@ class ProjectSettings:
         except Exception:
             return None
 
-    def save_scip_index(self, scip_index):
-        """Save SCIP index in protobuf binary format
 
-        Args:
-            scip_index: SCIP Index protobuf object
-        """
-        if not SCIP_AVAILABLE:
-            raise RuntimeError("SCIP protobuf not available. Cannot save SCIP index.")
 
-        if not isinstance(scip_index, SCIPIndex):
-            raise ValueError("scip_index must be a SCIP Index protobuf object")
-
+    def cleanup_legacy_files(self) -> None:
+        """Clean up any legacy index files found."""
         try:
-            scip_path = self.get_scip_index_path()
-
-            # Ensure directory exists
-            dir_path = os.path.dirname(scip_path)
-            if not os.path.exists(dir_path):
-                os.makedirs(dir_path, exist_ok=True)
-
-            # Serialize to binary format
-            binary_data = scip_index.SerializeToString()
-
-            # Save binary data
-            with open(scip_path, 'wb') as f:
-                f.write(binary_data)
-
+            legacy_files = [
+                os.path.join(self.settings_path, "file_index.pickle"),
+                os.path.join(self.settings_path, "content_cache.pickle"),
+                os.path.join(self.settings_path, INDEX_FILE)  # Legacy JSON
+            ]
             
-
+            for legacy_file in legacy_files:
+                if os.path.exists(legacy_file):
+                    try:
+                        os.remove(legacy_file)
+                    except Exception:
+                        pass
         except Exception:
-            # Try saving to project or home directory
-            try:
-                if self.base_path and os.path.exists(self.base_path):
-                    fallback_path = os.path.join(self.base_path, SCIP_INDEX_FILE)
-                else:
-                    fallback_path = os.path.join(os.path.expanduser("~"), SCIP_INDEX_FILE)
-                
-
-                binary_data = scip_index.SerializeToString()
-                with open(fallback_path, 'wb') as f:
-                    f.write(binary_data)
-            except Exception:
-                raise
-
-    def load_scip_index(self):
-        """Load SCIP index from protobuf binary format
-
-        Returns:
-            SCIP Index object, or None if file doesn't exist or has errors
-        """
-        if not SCIP_AVAILABLE:
-            return None
-
-        # If skip_load is set, return None directly
-        if self.skip_load:
-            return None
-
-        try:
-            scip_path = self.get_scip_index_path()
-
-            if os.path.exists(scip_path):
-                
-                try:
-                    with open(scip_path, 'rb') as f:
-                        binary_data = f.read()
-
-                    # Deserialize from binary format
-                    scip_index = SCIPIndex()
-                    scip_index.ParseFromString(binary_data)
-
-                    
-                    return scip_index
-
-                except Exception:
-                    return None
-            else:
-                # Try fallback paths
-                fallback_paths = []
-                if self.base_path and os.path.exists(self.base_path):
-                    fallback_paths.append(os.path.join(self.base_path, SCIP_INDEX_FILE))
-                fallback_paths.append(os.path.join(os.path.expanduser("~"), SCIP_INDEX_FILE))
-
-                for fallback_path in fallback_paths:
-                    if os.path.exists(fallback_path):
-                        
-                        try:
-                            with open(fallback_path, 'rb') as f:
-                                binary_data = f.read()
-
-                            scip_index = SCIPIndex()
-                            scip_index.ParseFromString(binary_data)
-
-                            
-                            return scip_index
-                        except Exception:
-                            continue
-
-                return None
-
-        except Exception:
-            return None
-
-    # save_cache and load_cache methods removed - no longer needed with new indexing system
-
-    def detect_index_version(self):
-        """Detect the version of the existing index
-
-        Returns:
-            str: Version string ('legacy', '3.0', or None if no index exists)
-        """
-        try:
-            # Check for new JSON format first
-            index_path = self.get_index_path()
-            if os.path.exists(index_path):
-                try:
-                    with open(index_path, 'r', encoding='utf-8') as f:
-                        index_data = json.load(f)
-
-                    # Check if it has the new structure
-                    if isinstance(index_data, dict) and 'index_metadata' in index_data:
-                        version = index_data.get('index_metadata', {}).get('version', '3.0')
-                        return version
-                    else:
-                        return 'legacy'
-                except (json.JSONDecodeError, UnicodeDecodeError):
-                    return 'legacy'
-
-            # Check for old pickle format
-            old_pickle_path = os.path.join(self.settings_path, "file_index.pickle")
-            if os.path.exists(old_pickle_path):
-                return 'legacy'
-
-            # Check fallback locations
-            if self.base_path and os.path.exists(self.base_path):
-                fallback_json = os.path.join(self.base_path, INDEX_FILE)
-                fallback_pickle = os.path.join(self.base_path, "file_index.pickle")
-            else:
-                fallback_json = os.path.join(os.path.expanduser("~"), INDEX_FILE)
-                fallback_pickle = os.path.join(os.path.expanduser("~"), "file_index.pickle")
-
-            if os.path.exists(fallback_json):
-                try:
-                    with open(fallback_json, 'r', encoding='utf-8') as f:
-                        index_data = json.load(f)
-                    if isinstance(index_data, dict) and 'index_metadata' in index_data:
-                        version = index_data.get('index_metadata', {}).get('version', '3.0')
-                        return version
-                    else:
-                        return 'legacy'
-                except Exception:
-                    return 'legacy'
-
-            if os.path.exists(fallback_pickle):
-                return 'legacy'
-
-            return None
-
-        except Exception:
-            return None
-
-    def migrate_legacy_index(self):
-        """Migrate legacy index format to new format
-
-        Returns:
-            bool: True if migration was successful or not needed, False if failed
-        """
-        try:
-            version = self.detect_index_version()
-
-            if version is None:
-                return True
-
-            if version == '3.0' or (isinstance(version, str) and version >= '3.0'):
-                return True
-
-            if version == 'legacy':
-
-                # Clean up legacy files
-                legacy_files = [
-                    os.path.join(self.settings_path, "file_index.pickle"),
-                    os.path.join(self.settings_path, "content_cache.pickle")
-                ]
-
-                # Add fallback locations
-                if self.base_path and os.path.exists(self.base_path):
-                    legacy_files.extend([
-                        os.path.join(self.base_path, "file_index.pickle"),
-                        os.path.join(self.base_path, "content_cache.pickle")
-                    ])
-                else:
-                    legacy_files.extend([
-                        os.path.join(os.path.expanduser("~"), "file_index.pickle"),
-                        os.path.join(os.path.expanduser("~"), "content_cache.pickle")
-                    ])
-
-                for legacy_file in legacy_files:
-                    if os.path.exists(legacy_file):
-                        try:
-                            os.remove(legacy_file)
-                        except Exception:
-                            pass
-
-                return False  # Indicate that manual rebuild is needed
-
-            return True
-
-        except Exception:
-            return False
+            pass
 
     def clear(self):
         """Clear config and index files"""

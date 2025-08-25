@@ -12,6 +12,7 @@ from .error_handler import handle_mcp_errors, handle_mcp_resource_errors, handle
 from .context_helper import ContextHelper
 from .validation import ValidationHelper
 from .response_formatter import ResponseFormatter
+from .file_filter import FileFilter
 
 __all__ = [
     'handle_mcp_errors',
@@ -19,5 +20,6 @@ __all__ = [
     'handle_mcp_tool_errors',
     'ContextHelper', 
     'ValidationHelper',
-    'ResponseFormatter'
+    'ResponseFormatter',
+    'FileFilter'
 ]

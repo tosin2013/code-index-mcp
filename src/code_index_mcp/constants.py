@@ -5,10 +5,7 @@ Shared constants for the Code Index MCP server.
 # Directory and file names
 SETTINGS_DIR = "code_indexer"
 CONFIG_FILE = "config.json"
-SCIP_INDEX_FILE = "index.scip"  # SCIP protobuf binary file
-# Legacy files
-INDEX_FILE = "index.json"  # Legacy JSON index file (to be removed)
-# CACHE_FILE removed - no longer needed with new indexing system
+INDEX_FILE = "index.json"  # JSON index file
 
 # Supported file extensions for code analysis
 # This is the authoritative list used by both old and new indexing systems
@@ -76,4 +73,45 @@ SUPPORTED_EXTENSIONS = [
     '.gql',                           # GraphQL
     '.liquibase', '.flyway',          # Migration tools
 ]
+
+# Centralized filtering configuration
+FILTER_CONFIG = {
+    "exclude_directories": {
+        # Version control
+        '.git', '.svn', '.hg', '.bzr',
+        
+        # Package managers & dependencies  
+        'node_modules', '__pycache__', '.venv', 'venv',
+        'vendor', 'bower_components',
+        
+        # Build outputs
+        'dist', 'build', 'target', 'out', 'bin', 'obj',
+        
+        # IDE & editors
+        '.idea', '.vscode', '.vs', '.sublime-workspace',
+        
+        # Testing & coverage
+        '.pytest_cache', '.coverage', '.tox', '.nyc_output',
+        'coverage', 'htmlcov',
+        
+        # OS artifacts
+        '.DS_Store', 'Thumbs.db', 'desktop.ini'
+    },
+    
+    "exclude_files": {
+        # Temporary files
+        '*.tmp', '*.temp', '*.swp', '*.swo',
+        
+        # Backup files  
+        '*.bak', '*~', '*.orig',
+        
+        # Log files
+        '*.log',
+        
+        # Lock files
+        'package-lock.json', 'yarn.lock', 'Pipfile.lock'
+    },
+    
+    "supported_extensions": SUPPORTED_EXTENSIONS
+}
 

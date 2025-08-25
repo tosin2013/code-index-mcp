@@ -132,9 +132,9 @@ class BaseService(ABC):
     @property
     def index_manager(self):
         """
-        Convenient access to the unified index manager.
+        Convenient access to the index manager.
 
         Returns:
-            The UnifiedIndexManager instance, or None if not available
+            The index manager instance, or None if not available
         """
         return self.helper.index_manager

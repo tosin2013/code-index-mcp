@@ -9,7 +9,14 @@ import fnmatch
 from typing import List, Set
 from pathlib import Path
 
-from ..scip.scip_index_tool import FileInfo
+# FileInfo defined locally for file matching operations
+from dataclasses import dataclass
+
+@dataclass
+class FileInfo:
+    """File information structure."""
+    relative_path: str
+    language: str
 
 
 class FileMatchingTool:

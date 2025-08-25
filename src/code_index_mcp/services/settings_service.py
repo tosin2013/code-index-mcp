@@ -13,6 +13,7 @@ from .base_service import BaseService
 from ..utils import ResponseFormatter
 from ..constants import SETTINGS_DIR
 from ..project_settings import ProjectSettings
+from ..indexing import get_index_manager
 
 
 def manage_temp_directory(action: str) -> Dict[str, Any]:
@@ -34,7 +35,12 @@ def manage_temp_directory(action: str) -> Dict[str, Any]:
     if action not in ['create', 'check']:
         raise ValueError(f"Invalid action: {action}. Must be 'create' or 'check'")
 
-    temp_dir = os.path.join(tempfile.gettempdir(), SETTINGS_DIR)
+    # Try to get the actual temp directory from index manager, fallback to default
+    try:
+        index_manager = get_index_manager()
+        temp_dir = index_manager.temp_dir if index_manager.temp_dir else os.path.join(tempfile.gettempdir(), SETTINGS_DIR)
+    except:
+        temp_dir = os.path.join(tempfile.gettempdir(), SETTINGS_DIR)
 
     if action == 'create':
         existed_before = os.path.exists(temp_dir)
@@ -118,13 +124,17 @@ class SettingsService(BaseService):
             Dictionary with settings directory, config, stats, and status information
         """
         temp_dir = os.path.join(tempfile.gettempdir(), SETTINGS_DIR)
+        
+        # Get the actual index directory from the index manager
+        index_manager = get_index_manager()
+        actual_temp_dir = index_manager.temp_dir if index_manager.temp_dir else temp_dir
 
         # Check if base_path is set
         if not self.base_path:
             return ResponseFormatter.settings_info_response(
                 settings_directory="",
-                temp_directory=temp_dir,
-                temp_directory_exists=os.path.exists(temp_dir),
+                temp_directory=actual_temp_dir,
+                temp_directory_exists=os.path.exists(actual_temp_dir),
                 config={},
                 stats={},
                 exists=False,
@@ -136,13 +146,13 @@ class SettingsService(BaseService):
         # Get config and stats
         config = self.settings.load_config() if self.settings else {}
         stats = self.settings.get_stats() if self.settings else {}
-        settings_directory = self.settings.settings_path if self.settings else ""
+        settings_directory = actual_temp_dir
         exists = os.path.exists(settings_directory) if settings_directory else False
 
         return ResponseFormatter.settings_info_response(
             settings_directory=settings_directory,
-            temp_directory=temp_dir,
-            temp_directory_exists=os.path.exists(temp_dir),
+            temp_directory=actual_temp_dir,
+            temp_directory_exists=os.path.exists(actual_temp_dir),
             config=config,
             stats=stats,
             exists=exists

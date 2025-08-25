@@ -1,1 +1,0 @@
-"""SCIP core components for standard-compliant indexing."""
