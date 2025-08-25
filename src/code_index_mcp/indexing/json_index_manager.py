@@ -35,6 +35,16 @@ class JSONIndexManager:
         """Set the project path and initialize index storage."""
         with self._lock:
             try:
+                # Input validation
+                if not project_path or not isinstance(project_path, str):
+                    logger.error(f"Invalid project path: {project_path}")
+                    return False
+                
+                project_path = project_path.strip()
+                if not project_path:
+                    logger.error("Project path cannot be empty")
+                    return False
+                
                 if not os.path.isdir(project_path):
                     logger.error(f"Project path does not exist: {project_path}")
                     return False
@@ -114,6 +124,15 @@ class JSONIndexManager:
     def find_files(self, pattern: str = "*") -> List[str]:
         """Find files matching a pattern."""
         with self._lock:
+            # Input validation
+            if not isinstance(pattern, str):
+                logger.error(f"Pattern must be a string, got {type(pattern)}")
+                return []
+                
+            pattern = pattern.strip()
+            if not pattern:
+                pattern = "*"
+            
             if not self.index_builder or not self.index_builder.in_memory_index:
                 logger.warning("Index not loaded")
                 return []
@@ -133,12 +152,35 @@ class JSONIndexManager:
                 return []
     
     def get_file_summary(self, file_path: str) -> Optional[Dict[str, Any]]:
-        """Get summary information for a file."""
+        """
+        Get summary information for a file.
+        
+        This method attempts to retrieve comprehensive file information including
+        symbol counts, functions, classes, methods, and imports. If the index
+        is not loaded, it will attempt auto-initialization to restore from the
+        most recent index state.
+        
+        Args:
+            file_path: Relative path to the file
+            
+        Returns:
+            Dictionary containing file summary information, or None if not found
+        """
         with self._lock:
-            # Auto-initialize if not ready but project path can be inferred
+            # Input validation
+            if not isinstance(file_path, str):
+                logger.error(f"File path must be a string, got {type(file_path)}")
+                return None
+                
+            file_path = file_path.strip()
+            if not file_path:
+                logger.error("File path cannot be empty")
+                return None
+            
+            # Try to load cached index if not ready
             if not self.index_builder or not self.index_builder.in_memory_index:
-                if not self._auto_initialize_from_context():
-                    logger.warning("Index not loaded and cannot auto-initialize")
+                if not self._try_load_cached_index():
+                    logger.warning("Index not loaded and no cached index available")
                     return None
             
             try:
@@ -275,18 +317,22 @@ class JSONIndexManager:
             return False
         
         try:
+            from ..utils import FileFilter
+            file_filter = FileFilter()
+            
             # Simple freshness check - index exists and is recent
             index_mtime = os.path.getmtime(self.index_path)
+            base_path = Path(self.project_path)
             
             # Check if any source files are newer than index
             for root, dirs, files in os.walk(self.project_path):
-                # Skip excluded directories
-                dirs[:] = [d for d in dirs if d not in {'.git', '__pycache__', 'node_modules', '.venv'}]
+                # Filter directories using centralized logic
+                dirs[:] = [d for d in dirs if not file_filter.should_exclude_directory(d)]
                 
                 for file in files:
-                    if any(file.endswith(ext) for ext in ['.py', '.js', '.ts', '.java']):
-                        file_path = os.path.join(root, file)
-                        if os.path.getmtime(file_path) > index_mtime:
+                    file_path = Path(root) / file
+                    if file_filter.should_process_path(file_path, base_path):
+                        if os.path.getmtime(str(file_path)) > index_mtime:
                             return False
             
             return True
@@ -295,45 +341,47 @@ class JSONIndexManager:
             logger.warning(f"Error checking index freshness: {e}")
             return False
     
-    def _auto_initialize_from_context(self) -> bool:
+    def _try_load_cached_index(self, expected_project_path: Optional[str] = None) -> bool:
         """
-        Auto-initialize from the most recent project context.
-        This handles the case where MCP tools run in separate processes.
+        Try to load a cached index file if available.
+        
+        This is a simplified version of auto-initialization that only loads
+        a cached index if we can verify it matches the expected project.
+        
+        Args:
+            expected_project_path: Optional path to verify against cached index
+            
+        Returns:
+            True if cached index was loaded successfully, False otherwise.
         """
         try:
-            import glob
-            import tempfile
-            
-            # Find the most recent index file
-            pattern = os.path.join(tempfile.gettempdir(), SETTINGS_DIR, "*", INDEX_FILE)
-            index_files = glob.glob(pattern)
-            
-            if not index_files:
-                logger.debug("No index files found for auto-initialization")
-                return False
-            
-            # Get the most recently modified index
-            latest_file = max(index_files, key=os.path.getmtime)
-            logger.info(f"Auto-initializing from latest index: {latest_file}")
-            
-            # Extract project path from the index
-            with open(latest_file, 'r', encoding='utf-8') as f:
-                import json
-                index_data = json.load(f)
-                project_path = index_data.get('metadata', {}).get('project_path')
-                
-            if not project_path or not os.path.exists(project_path):
-                logger.warning(f"Invalid project path in index: {project_path}")
-                return False
-            
-            # Initialize with this project path
-            if self.set_project_path(project_path):
+            # First try to load from current index_path if set
+            if self.index_path and os.path.exists(self.index_path):
                 return self.load_index()
+            
+            # If expected project path provided, try to find its cache
+            if expected_project_path:
+                project_hash = hashlib.md5(expected_project_path.encode()).hexdigest()[:12]
+                temp_dir = os.path.join(tempfile.gettempdir(), SETTINGS_DIR, project_hash)
+                index_path = os.path.join(temp_dir, INDEX_FILE)
+                
+                if os.path.exists(index_path):
+                    # Verify the cached index matches the expected project
+                    with open(index_path, 'r', encoding='utf-8') as f:
+                        index_data = json.load(f)
+                        cached_project = index_data.get('metadata', {}).get('project_path')
+                        
+                    if cached_project == expected_project_path:
+                        self.temp_dir = temp_dir
+                        self.index_path = index_path
+                        return self.load_index()
+                    else:
+                        logger.warning(f"Cached index project mismatch: {cached_project} != {expected_project_path}")
             
             return False
             
         except Exception as e:
-            logger.warning(f"Auto-initialization failed: {e}")
+            logger.debug(f"Failed to load cached index: {e}")
             return False
 
     def cleanup(self):

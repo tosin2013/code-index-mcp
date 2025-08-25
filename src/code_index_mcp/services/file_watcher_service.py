@@ -11,7 +11,7 @@ import logging
 import os
 import traceback
 from threading import Timer
-from typing import Optional, Callable
+from typing import Optional, Callable, List
 from pathlib import Path
 
 try:
@@ -50,7 +50,6 @@ except ImportError:
     WATCHDOG_AVAILABLE = False
 
 from .base_service import BaseService
-from ..constants import SUPPORTED_EXTENSIONS
 
 
 class FileWatcherService(BaseService):
@@ -311,7 +310,7 @@ class DebounceEventHandler(FileSystemEventHandler):
     """
 
     def __init__(self, debounce_seconds: float, rebuild_callback: Callable,
-                 base_path: Path, logger: logging.Logger):
+                 base_path: Path, logger: logging.Logger, additional_excludes: Optional[List[str]] = None):
         """
         Initialize the debounce event handler.
 
@@ -320,7 +319,10 @@ class DebounceEventHandler(FileSystemEventHandler):
             rebuild_callback: Function to call when rebuild is needed
             base_path: Base project path for filtering
             logger: Logger instance for debug messages
+            additional_excludes: Additional patterns to exclude
         """
+        from ..utils import FileFilter
+        
         super().__init__()
         self.debounce_seconds = debounce_seconds
         self.rebuild_callback = rebuild_callback
@@ -328,18 +330,8 @@ class DebounceEventHandler(FileSystemEventHandler):
         self.debounce_timer: Optional[Timer] = None
         self.logger = logger
 
-        # Exclusion patterns for directories and files to ignore
-        self.exclude_patterns = {
-            '.git', '.svn', '.hg',
-            'node_modules', '__pycache__', '.venv', 'venv',
-            '.DS_Store', 'Thumbs.db',
-            'dist', 'build', 'target', '.idea', '.vscode',
-            '.pytest_cache', '.coverage', '.tox',
-            'bin', 'obj'  # Additional build directories
-        }
-
-        # Convert supported extensions to set for faster lookup
-        self.supported_extensions = set(SUPPORTED_EXTENSIONS)
+        # Use centralized file filtering
+        self.file_filter = FileFilter(additional_excludes)
 
     def on_any_event(self, event: FileSystemEvent) -> None:
         """
@@ -360,7 +352,7 @@ class DebounceEventHandler(FileSystemEventHandler):
 
     def should_process_event(self, event: FileSystemEvent) -> bool:
         """
-        Determine if event should trigger index rebuild.
+        Determine if event should trigger index rebuild using centralized filtering.
 
         Args:
             event: The file system event to evaluate
@@ -381,139 +373,23 @@ class DebounceEventHandler(FileSystemEventHandler):
         else:
             target_path = event.src_path
 
-        # Fast path exclusion - check if path is in excluded directory before any processing
-        if self._is_path_in_excluded_directory(target_path):
-            return False
-
-        # Unified path checking
+        # Use centralized filtering logic
         try:
             path = Path(target_path)
-            return self._should_process_path(path)
-        except Exception:
-            return False
-
-    def _should_process_path(self, path: Path) -> bool:
-        """
-        Check if a specific path should trigger index rebuild.
-
-        Args:
-            path: The file path to check
-
-        Returns:
-            True if path should trigger rebuild, False otherwise
-        """
-        # Skip excluded paths
-        if self.is_excluded_path(path):
-            return False
-
-        # Only process supported file types
-        if not self.is_supported_file_type(path):
-            return False
-
-        # Skip temporary files
-        if self.is_temporary_file(path):
-            return False
-
-        return True
-
-    def _is_path_in_excluded_directory(self, file_path: str) -> bool:
-        """
-        Fast check if a file path is within an excluded directory.
-        
-        This method performs a quick string-based check to avoid expensive
-        Path operations for files in excluded directories like .venv.
-        
-        Args:
-            file_path: The file path to check
+            should_process = self.file_filter.should_process_path(path, self.base_path)
             
-        Returns:
-            True if the path is in an excluded directory, False otherwise
-        """
-        try:
-            # Normalize path separators for cross-platform compatibility
-            normalized_path = file_path.replace('\\', '/')
-            base_path_normalized = str(self.base_path).replace('\\', '/')
-            
-            # Get relative path string
-            if not normalized_path.startswith(base_path_normalized):
-                return True  # Path outside project - exclude it
+            # Skip temporary files using centralized logic
+            if not should_process or self.file_filter.is_temporary_file(path):
+                return False
                 
-            relative_path = normalized_path[len(base_path_normalized):].lstrip('/')
-            
-            # Quick check: if any excluded pattern appears as a path component
-            path_parts = relative_path.split('/')
-            for part in path_parts:
-                if part in self.exclude_patterns:
-                    return True
-                    
+            return True
+        except Exception:
             return False
-        except Exception:
-            # If any error occurs, err on the side of exclusion
-            return True
 
-    def is_excluded_path(self, path: Path) -> bool:
-        """
-        Check if path should be excluded from monitoring.
 
-        Args:
-            path: The file path to check
 
-        Returns:
-            True if path should be excluded, False otherwise
-        """
-        try:
-            relative_path = path.relative_to(self.base_path)
-            parts = relative_path.parts
 
-            # Check if any part of the path matches exclusion patterns
-            return any(part in self.exclude_patterns for part in parts)
-        except ValueError:
-            # Path is not relative to base_path - exclude it
-            return True
-        except Exception:
-            # Handle any other path processing issues
-            return True
 
-    def is_supported_file_type(self, path: Path) -> bool:
-        """
-        Check if file type is supported for indexing.
-
-        Args:
-            path: The file path to check
-
-        Returns:
-            True if file type is supported, False otherwise
-        """
-        return path.suffix.lower() in self.supported_extensions
-
-    def is_temporary_file(self, path: Path) -> bool:
-        """
-        Check if file is a temporary file.
-
-        Args:
-            path: The file path to check
-
-        Returns:
-            True if file appears to be temporary, False otherwise
-        """
-        name = path.name.lower()
-
-        # Common temporary file patterns
-        temp_patterns = ['.tmp', '.swp', '.swo', '~', '.bak', '.orig']
-
-        # Check for temporary file extensions
-        if any(name.endswith(pattern) for pattern in temp_patterns):
-            return True
-
-        # Check for vim/editor temporary files
-        if name.startswith('.') and (name.endswith('.swp') or name.endswith('.swo')):
-            return True
-
-        # Check for backup files (e.g., file.py~, file.py.bak)
-        if '~' in name or '.bak' in name:
-            return True
-
-        return False
 
     def reset_debounce_timer(self) -> None:
         """Reset the debounce timer, canceling any existing timer."""

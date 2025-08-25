@@ -44,7 +44,7 @@ The easiest way to get started with any MCP-compatible application:
 
 2. **Restart your application** – `uvx` automatically handles installation and execution
 
-3. **Start using**:
+3. **Start using** (give these prompts to your AI assistant):
    ```
    Set the project path to /Users/dev/my-react-app
    Find all TypeScript files in this project  
@@ -62,13 +62,16 @@ The easiest way to get started with any MCP-compatible application:
 ## Key Features
 
 ### 🔍 **Intelligent Search & Analysis**
-- **SCIP-Powered**: Industry-standard code intelligence format used by major IDEs
+- **Dual-Strategy Architecture**: Specialized tree-sitter parsing for 7 core languages, fallback strategy for 50+ file types
+- **Direct Tree-sitter Integration**: No regex fallbacks for specialized languages - fail fast with clear errors
 - **Advanced Search**: Auto-detects and uses the best available tool (ugrep, ripgrep, ag, or grep)
-- **Universal Understanding**: Single system comprehends all programming languages
+- **Universal File Support**: Comprehensive coverage from advanced AST parsing to basic file indexing
 - **File Analysis**: Deep insights into structure, imports, classes, methods, and complexity metrics
 
 ### 🗂️ **Multi-Language Support**  
-- **50+ File Types**: Java, Python, JavaScript/TypeScript, C/C++, Go, Rust, C#, Swift, Kotlin, Ruby, PHP, and more
+- **7 Languages with Tree-sitter AST Parsing**: Python, JavaScript, TypeScript, Java, Go, Objective-C, Zig
+- **50+ File Types with Fallback Strategy**: C/C++, Rust, Ruby, PHP, and all other programming languages
+- **Document & Config Files**: Markdown, JSON, YAML, XML with appropriate handling
 - **Web Frontend**: Vue, React, Svelte, HTML, CSS, SCSS
 - **Database**: SQL variants, NoSQL, stored procedures, migrations
 - **Configuration**: JSON, YAML, XML, Markdown
@@ -81,36 +84,32 @@ The easiest way to get started with any MCP-compatible application:
 - **Rich Metadata**: Captures symbols, references, definitions, and relationships
 
 ### ⚡ **Performance & Efficiency**
-- **SCIP Indexing**: Fast protobuf-based unified indexing system
+- **Tree-sitter AST Parsing**: Native syntax parsing for accurate symbol extraction
 - **Persistent Caching**: Stores indexes for lightning-fast subsequent access
 - **Smart Filtering**: Intelligent exclusion of build directories and temporary files
 - **Memory Efficient**: Optimized for large codebases
+- **Direct Dependencies**: No fallback mechanisms - fail fast with clear error messages
 
 ## Supported File Types
 
 <details>
 <summary><strong>📁 Programming Languages (Click to expand)</strong></summary>
 
-**System & Low-Level:**
-- C/C++ (`.c`, `.cpp`, `.h`, `.hpp`)
-- Rust (`.rs`)
-- Zig (`.zig`, `.zon`)
-- Go (`.go`)
+**Languages with Specialized Tree-sitter Strategies:**
+- **Python** (`.py`, `.pyw`) - Full AST analysis with class/method extraction and call tracking
+- **JavaScript** (`.js`, `.jsx`, `.mjs`, `.cjs`) - ES6+ class and function parsing with tree-sitter
+- **TypeScript** (`.ts`, `.tsx`) - Complete type-aware symbol extraction with interfaces
+- **Java** (`.java`) - Full class hierarchy, method signatures, and call relationships
+- **Go** (`.go`) - Struct methods, receiver types, and function analysis
+- **Objective-C** (`.m`, `.mm`) - Class/instance method distinction with +/- notation
+- **Zig** (`.zig`, `.zon`) - Function and struct parsing with tree-sitter AST
 
-**Object-Oriented:**
-- Java (`.java`)
-- C# (`.cs`)
-- Kotlin (`.kt`)
-- Scala (`.scala`)
-- Objective-C/C++ (`.m`, `.mm`)
-- Swift (`.swift`)
-
-**Scripting & Dynamic:**
-- Python (`.py`)
-- JavaScript/TypeScript (`.js`, `.ts`, `.jsx`, `.tsx`, `.mjs`, `.cjs`)
-- Ruby (`.rb`)
-- PHP (`.php`)
-- Shell (`.sh`, `.bash`)
+**All Other Programming Languages:**
+All other programming languages use the **FallbackParsingStrategy** which provides basic file indexing and metadata extraction. This includes:
+- **System & Low-Level:** C/C++ (`.c`, `.cpp`, `.h`, `.hpp`), Rust (`.rs`)
+- **Object-Oriented:** C# (`.cs`), Kotlin (`.kt`), Scala (`.scala`), Swift (`.swift`)
+- **Scripting & Dynamic:** Ruby (`.rb`), PHP (`.php`), Shell (`.sh`, `.bash`)
+- **And 40+ more file types** - All handled through the fallback strategy for basic indexing
 
 </details>
 
@@ -211,6 +210,7 @@ Then configure:
 ```
 
 </details>
+
 
 ## Available Tools
 

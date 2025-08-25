@@ -14,7 +14,6 @@ from typing import Dict, List, Optional, Any
 
 from .strategies import StrategyFactory
 from .models import SymbolInfo, FileInfo
-from ..constants import SUPPORTED_EXTENSIONS
 
 logger = logging.getLogger(__name__)
 
@@ -43,10 +42,24 @@ class JSONIndexBuilder:
     4. Assembling the final JSON index
     """
 
-    def __init__(self, project_path: str):
+    def __init__(self, project_path: str, additional_excludes: Optional[List[str]] = None):
+        from ..utils import FileFilter
+        
+        # Input validation
+        if not isinstance(project_path, str):
+            raise ValueError(f"Project path must be a string, got {type(project_path)}")
+        
+        project_path = project_path.strip()
+        if not project_path:
+            raise ValueError("Project path cannot be empty")
+            
+        if not os.path.isdir(project_path):
+            raise ValueError(f"Project path does not exist: {project_path}")
+        
         self.project_path = project_path
         self.in_memory_index: Optional[Dict[str, Any]] = None
         self.strategy_factory = StrategyFactory()
+        self.file_filter = FileFilter(additional_excludes)
 
         logger.info(f"Initialized JSON index builder for {project_path}")
         strategy_info = self.strategy_factory.get_strategy_info()
@@ -149,31 +162,24 @@ class JSONIndexBuilder:
 
     def _get_supported_files(self) -> List[str]:
         """
-        Get all supported files in the project.
+        Get all supported files in the project using centralized filtering.
 
         Returns:
             List of file paths that can be parsed
         """
         supported_files = []
-        supported_extensions = set(SUPPORTED_EXTENSIONS)
+        base_path = Path(self.project_path)
 
         try:
             for root, dirs, files in os.walk(self.project_path):
-                # Skip hidden directories and common ignore patterns
-                dirs[:] = [d for d in dirs if not d.startswith('.') and d not in {
-                    '__pycache__', 'node_modules', '.git', '.svn', '.hg',
-                    '.vscode', '.idea', 'target', 'build', 'dist'
-                }]
+                # Filter directories in-place using centralized logic
+                dirs[:] = [d for d in dirs if not self.file_filter.should_exclude_directory(d)]
 
+                # Filter files using centralized logic
                 for file in files:
-                    if file.startswith('.'):
-                        continue
-
-                    file_path = os.path.join(root, file)
-                    ext = Path(file_path).suffix.lower()
-
-                    if ext in supported_extensions:
-                        supported_files.append(file_path)
+                    file_path = Path(root) / file
+                    if self.file_filter.should_process_path(file_path, base_path):
+                        supported_files.append(str(file_path))
 
         except Exception as e:
             logger.error(f"Error scanning directory {self.project_path}: {e}")

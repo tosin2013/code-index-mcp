@@ -6,8 +6,7 @@ import ast
 import logging
 from typing import Dict, List, Tuple, Optional
 from .base_strategy import ParsingStrategy
-from ..models.symbol_info import SymbolInfo
-from ..models.file_info import FileInfo
+from ..models import SymbolInfo, FileInfo
 
 logger = logging.getLogger(__name__)
 
@@ -51,11 +50,22 @@ class PythonParsingStrategy(ParsingStrategy):
     def _visit_ast_node(self, node: ast.AST, symbols: Dict, functions: List, 
                        classes: List, imports: List, file_path: str, content: str):
         """Visit AST nodes and extract symbols."""
+        # Track processed nodes to avoid duplicates
+        processed_nodes = set()
+        
+        # First pass: handle classes and mark their methods as processed
         for child in ast.walk(node):
-            if isinstance(child, ast.FunctionDef):
+            if isinstance(child, ast.ClassDef):
+                self._handle_class(child, symbols, classes, file_path, functions)
+                # Mark all methods in this class as processed
+                for class_child in child.body:
+                    if isinstance(class_child, ast.FunctionDef):
+                        processed_nodes.add(id(class_child))
+        
+        # Second pass: handle standalone functions and imports
+        for child in ast.walk(node):
+            if isinstance(child, ast.FunctionDef) and id(child) not in processed_nodes:
                 self._handle_function(child, symbols, functions, file_path)
-            elif isinstance(child, ast.ClassDef):
-                self._handle_class(child, symbols, classes, file_path)
             elif isinstance(child, (ast.Import, ast.ImportFrom)):
                 self._handle_import(child, imports)
     
@@ -79,7 +89,7 @@ class PythonParsingStrategy(ParsingStrategy):
         )
         functions.append(func_name)
     
-    def _handle_class(self, node: ast.ClassDef, symbols: Dict, classes: List, file_path: str):
+    def _handle_class(self, node: ast.ClassDef, symbols: Dict, classes: List, file_path: str, functions: List = None):
         """Handle class definition."""
         class_name = node.name
         symbol_id = self._create_symbol_id(file_path, class_name)
@@ -111,6 +121,10 @@ class PythonParsingStrategy(ParsingStrategy):
                     signature=method_signature,
                     docstring=method_docstring
                 )
+                
+                # Add method to functions list if provided
+                if functions is not None:
+                    functions.append(method_name)
     
     def _handle_import(self, node, imports: List):
         """Handle import statements."""
@@ -155,12 +169,25 @@ class CallAnalysisVisitor(ast.NodeVisitor):
         self.symbols = symbols
         self.file_path = file_path
         self.current_function_stack = []
+        self.current_class = None
+    
+    def visit_ClassDef(self, node: ast.ClassDef):
+        """Visit class definition and track context."""
+        self.current_class = node.name
+        self.generic_visit(node)
+        self.current_class = None
     
     def visit_FunctionDef(self, node: ast.FunctionDef):
         """Visit function definition and track context."""
-        # Create symbol ID for this function using relative path
-        relative_path = self._get_relative_path(self.file_path)
-        function_id = f"{relative_path}::{node.name}"
+        # File path is already relative after our fix
+        relative_path = self.file_path
+        
+        # Handle methods within classes
+        if self.current_class:
+            function_id = f"{relative_path}::{self.current_class}.{node.name}"
+        else:
+            function_id = f"{relative_path}::{node.name}"
+            
         self.current_function_stack.append(function_id)
         
         # Visit all child nodes within this function
@@ -188,12 +215,17 @@ class CallAnalysisVisitor(ast.NodeVisitor):
                 
                 # Look for the called function in our symbols and add relationship
                 for symbol_id, symbol_info in self.symbols.items():
-                    if (symbol_info.type in ["function", "method"] and 
-                        called_function in symbol_id.split("::")[-1]):  # Match function name part
-                        # Add caller to the called function's called_by list
-                        if caller_function not in symbol_info.called_by:
-                            symbol_info.called_by.append(caller_function)
-                        break
+                    if symbol_info.type in ["function", "method"]:
+                        # Extract just the function/method name from the symbol ID
+                        symbol_name = symbol_id.split("::")[-1]
+                        
+                        # Check for exact match or method name match (ClassName.method)
+                        if (symbol_name == called_function or 
+                            symbol_name.endswith(f".{called_function}")):
+                            # Add caller to the called function's called_by list
+                            if caller_function not in symbol_info.called_by:
+                                symbol_info.called_by.append(caller_function)
+                            break
         except Exception:
             # Silently handle parsing errors for complex call patterns
             pass

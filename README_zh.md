@@ -44,7 +44,7 @@
 
 2. **重新啟動應用程式** – `uvx` 會自動處理安裝和執行
 
-3. **開始使用**：
+3. **開始使用**（向您的 AI 助理提供這些提示）：
    ```
    設定專案路徑為 /Users/dev/my-react-app
    在這個專案中找到所有 TypeScript 檔案
@@ -62,13 +62,16 @@
 ## 主要特性
 
 ### 🔍 **智慧搜尋與分析**
-- **SCIP 驅動**：業界標準程式碼智能格式，被主流 IDE 採用
+- **雙策略架構**：7 種核心語言使用專業化 Tree-sitter 解析，50+ 種檔案類型使用備用策略
+- **直接 Tree-sitter 整合**：專業化語言無正則表達式備用 - 快速失敗並提供清晰錯誤訊息
 - **進階搜尋**：自動偵測並使用最佳工具（ugrep、ripgrep、ag 或 grep）
-- **通用理解**：單一系統理解所有程式語言
+- **通用檔案支援**：從進階 AST 解析到基本檔案索引的全面覆蓋
 - **檔案分析**：深入了解結構、匯入、類別、方法和複雜度指標
 
 ### 🗂️ **多語言支援**
-- **50+ 種檔案類型**：Java、Python、JavaScript/TypeScript、C/C++、Go、Rust、C#、Swift、Kotlin、Ruby、PHP 等
+- **7 種語言使用 Tree-sitter AST 解析**：Python、JavaScript、TypeScript、Java、Go、Objective-C、Zig
+- **50+ 種檔案類型使用備用策略**：C/C++、Rust、Ruby、PHP 和所有其他程式語言
+- **文件與配置檔案**：Markdown、JSON、YAML、XML 適當處理
 - **網頁前端**：Vue、React、Svelte、HTML、CSS、SCSS
 - **資料庫**：SQL 變體、NoSQL、存儲過程、遷移腳本
 - **配置檔案**：JSON、YAML、XML、Markdown
@@ -81,36 +84,32 @@
 - **豐富元資料**：捕獲符號、引用、定義和關聯性
 
 ### ⚡ **效能與效率**
-- **智慧索引**：遞迴掃描並智慧篩選建構目錄
+- **Tree-sitter AST 解析**：原生語法解析以實現準確的符號提取
 - **持久快取**：儲存索引以實現超快速的後續存取
-- **延遲載入**：僅在需要時偵測工具以優化啟動速度
-- **記憶體高效**：針對大型程式碼庫的智慧快取策略
+- **智慧篩選**：智能排除建構目錄和暫存檔案
+- **記憶體高效**：針對大型程式碼庫優化
+- **直接依賴**：無備用機制 - 快速失敗並提供清晰錯誤訊息
 
 ## 支援的檔案類型
 
 <details>
 <summary><strong>📁 程式語言（點擊展開）</strong></summary>
 
-**系統與低階語言：**
-- C/C++ (`.c`, `.cpp`, `.h`, `.hpp`)
-- Rust (`.rs`)
-- Zig (`.zig`)
-- Go (`.go`)
+**專業化 Tree-sitter 策略語言：**
+- **Python** (`.py`, `.pyw`) - 完整 AST 分析，包含類別/方法提取和呼叫追蹤
+- **JavaScript** (`.js`, `.jsx`, `.mjs`, `.cjs`) - ES6+ 類別和函數解析使用 Tree-sitter
+- **TypeScript** (`.ts`, `.tsx`) - 完整類型感知符號提取，包含介面
+- **Java** (`.java`) - 完整類別階層、方法簽名和呼叫關係
+- **Go** (`.go`) - 結構方法、接收者類型和函數分析
+- **Objective-C** (`.m`, `.mm`) - 類別/實例方法區分，使用 +/- 標記法
+- **Zig** (`.zig`, `.zon`) - 函數和結構解析使用 Tree-sitter AST
 
-**物件導向語言：**
-- Java (`.java`)
-- C# (`.cs`)
-- Kotlin (`.kt`)
-- Scala (`.scala`)
-- Objective-C/C++ (`.m`, `.mm`)
-- Swift (`.swift`)
-
-**腳本與動態語言：**
-- Python (`.py`)
-- JavaScript/TypeScript (`.js`, `.ts`, `.jsx`, `.tsx`, `.mjs`, `.cjs`)
-- Ruby (`.rb`)
-- PHP (`.php`)
-- Shell (`.sh`, `.bash`)
+**所有其他程式語言：**
+所有其他程式語言使用 **備用解析策略**，提供基本檔案索引和元資料提取。包括：
+- **系統與低階語言：** C/C++ (`.c`, `.cpp`, `.h`, `.hpp`)、Rust (`.rs`)
+- **物件導向語言：** C# (`.cs`)、Kotlin (`.kt`)、Scala (`.scala`)、Swift (`.swift`)
+- **腳本與動態語言：** Ruby (`.rb`)、PHP (`.php`)、Shell (`.sh`, `.bash`)
+- **以及 40+ 種檔案類型** - 全部通過備用策略處理進行基本索引
 
 </details>
 
@@ -233,6 +232,7 @@ pip install code-index-mcp
 ```
 
 </details>
+
 
 ## 可用工具
 

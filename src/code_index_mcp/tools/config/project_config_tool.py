@@ -9,7 +9,6 @@ from typing import Dict, Any, Optional
 from pathlib import Path
 
 from ...project_settings import ProjectSettings
-from ...constants import SUPPORTED_EXTENSIONS
 
 
 class ProjectConfigTool:
@@ -178,9 +177,12 @@ class ProjectConfigTool:
         Returns:
             Default configuration dictionary
         """
+        from ...utils import FileFilter
+        
+        file_filter = FileFilter()
         return {
             "base_path": project_path,
-            "supported_extensions": SUPPORTED_EXTENSIONS,
+            "supported_extensions": list(file_filter.supported_extensions),
             "last_indexed": None,
             "file_watcher": self.get_file_watcher_config() if self._settings else {}
         }
@@ -253,8 +255,12 @@ class ProjectConfigTool:
         Returns:
             Basic directory structure dictionary
         """
+        from ...utils import FileFilter
+        
+        file_filter = FileFilter()
+        
         def build_tree(path: str, max_depth: int = 3, current_depth: int = 0) -> Dict[str, Any]:
-            """Build directory tree with limited depth."""
+            """Build directory tree with limited depth using centralized filtering."""
             if current_depth >= max_depth:
                 return {"type": "directory", "truncated": True}
 
@@ -262,24 +268,18 @@ class ProjectConfigTool:
                 items = []
                 path_obj = Path(path)
 
-                # Skip hidden directories and common ignore patterns
-                skip_patterns = {'.git', '.svn', '__pycache__', 'node_modules', '.vscode', '.idea'}
-
                 for item in sorted(path_obj.iterdir()):
-                    if item.name.startswith('.') and item.name not in {'.gitignore', '.env'}:
-                        continue
-                    if item.name in skip_patterns:
-                        continue
-
                     if item.is_dir():
-                        items.append({
-                            "name": item.name,
-                            "type": "directory",
-                            "children": build_tree(str(item), max_depth, current_depth + 1)
-                        })
+                        # Use centralized directory filtering
+                        if not file_filter.should_exclude_directory(item.name):
+                            items.append({
+                                "name": item.name,
+                                "type": "directory",
+                                "children": build_tree(str(item), max_depth, current_depth + 1)
+                            })
                     else:
-                        # Only include supported file types
-                        if item.suffix.lower() in SUPPORTED_EXTENSIONS:
+                        # Use centralized file filtering
+                        if not file_filter.should_exclude_file(item):
                             items.append({
                                 "name": item.name,
                                 "type": "file",

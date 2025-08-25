@@ -74,3 +74,44 @@ SUPPORTED_EXTENSIONS = [
     '.liquibase', '.flyway',          # Migration tools
 ]
 
+# Centralized filtering configuration
+FILTER_CONFIG = {
+    "exclude_directories": {
+        # Version control
+        '.git', '.svn', '.hg', '.bzr',
+        
+        # Package managers & dependencies  
+        'node_modules', '__pycache__', '.venv', 'venv',
+        'vendor', 'bower_components',
+        
+        # Build outputs
+        'dist', 'build', 'target', 'out', 'bin', 'obj',
+        
+        # IDE & editors
+        '.idea', '.vscode', '.vs', '.sublime-workspace',
+        
+        # Testing & coverage
+        '.pytest_cache', '.coverage', '.tox', '.nyc_output',
+        'coverage', 'htmlcov',
+        
+        # OS artifacts
+        '.DS_Store', 'Thumbs.db', 'desktop.ini'
+    },
+    
+    "exclude_files": {
+        # Temporary files
+        '*.tmp', '*.temp', '*.swp', '*.swo',
+        
+        # Backup files  
+        '*.bak', '*~', '*.orig',
+        
+        # Log files
+        '*.log',
+        
+        # Lock files
+        'package-lock.json', 'yarn.lock', 'Pipfile.lock'
+    },
+    
+    "supported_extensions": SUPPORTED_EXTENSIONS
+}
+

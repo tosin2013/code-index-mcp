@@ -11,8 +11,9 @@ from .qualified_names import (
 )
 
 # New JSON-based indexing system
-from .json_index_builder import JSONIndexBuilder, SymbolInfo, FileInfo, IndexMetadata
+from .json_index_builder import JSONIndexBuilder, IndexMetadata
 from .json_index_manager import JSONIndexManager, get_index_manager
+from .models import SymbolInfo, FileInfo
 
 __all__ = [
     'generate_qualified_name',
