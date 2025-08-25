@@ -50,6 +50,7 @@ except ImportError:
     WATCHDOG_AVAILABLE = False
 
 from .base_service import BaseService
+from ..constants import SUPPORTED_EXTENSIONS
 
 
 class FileWatcherService(BaseService):
