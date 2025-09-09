@@ -33,17 +33,35 @@ def parse_search_output(output: str, base_path: str) -> Dict[str, List[Tuple[int
         if not line.strip():
             continue
         try:
-            # Handle Windows paths which might have a drive letter, e.g., C:
+            # Try to parse as a matched line first (format: path:linenum:content)
             parts = line.split(':', 2)
-            if sys.platform == "win32" and len(parts[0]) == 1 and parts[1].startswith('\\'):
-                # Re-join drive letter with the rest of the path
+            
+            # Check if this might be a context line (format: path-linenum-content)
+            # Context lines use '-' as separator in grep/ag output
+            if len(parts) < 3 and '-' in line:
+                # Try to parse as context line
+                # Match pattern: path-linenum-content or path-linenum-\tcontent
+                match = re.match(r'^(.*?)-(\d+)[-\t](.*)$', line)
+                if match:
+                    file_path_abs = match.group(1)
+                    line_number_str = match.group(2)
+                    content = match.group(3)
+                else:
+                    # If regex doesn't match, skip this line
+                    continue
+            elif sys.platform == "win32" and len(parts) >= 3 and len(parts[0]) == 1 and parts[1].startswith('\\'):
+                # Handle Windows paths with drive letter (e.g., C:\path\file.txt)
                 file_path_abs = f"{parts[0]}:{parts[1]}"
                 line_number_str = parts[2].split(':', 1)[0]
-                content = parts[2].split(':', 1)[1]
-            else:
+                content = parts[2].split(':', 1)[1] if ':' in parts[2] else parts[2]
+            elif len(parts) >= 3:
+                # Standard format: path:linenum:content
                 file_path_abs = parts[0]
                 line_number_str = parts[1]
                 content = parts[2]
+            else:
+                # Line doesn't match any expected format
+                continue
             
             line_number = int(line_number_str)
 
