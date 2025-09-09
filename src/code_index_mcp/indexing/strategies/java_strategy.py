@@ -134,7 +134,8 @@ class JavaParsingStrategy(ParsingStrategy):
                 if called_method:
                     # Find the called method in symbols and add relationship
                     for symbol_id, symbol_info in symbols.items():
-                        if called_method in symbol_id.split("::")[-1]:
+                        symbol_name = symbol_id.split("::")[-1]
+                        if symbol_name == called_method:  # Exact match instead of substring
                             if current_method not in symbol_info.called_by:
                                 symbol_info.called_by.append(current_method)
 
@@ -144,7 +145,15 @@ class JavaParsingStrategy(ParsingStrategy):
 
     def _get_called_method_name(self, node, content: str) -> Optional[str]:
         """Extract called method name from method invocation node."""
+        # Handle obj.method() pattern - look for the method name after the dot
         for child in node.children:
-            if child.type == 'identifier':
+            if child.type == 'field_access':
+                # For field_access nodes, get the field (method) name
+                for subchild in child.children:
+                    if subchild.type == 'identifier' and subchild.start_byte > child.start_byte:
+                        # Get the rightmost identifier (the method name)
+                        return content[subchild.start_byte:subchild.end_byte]
+            elif child.type == 'identifier':
+                # Direct method call without object reference
                 return content[child.start_byte:child.end_byte]
         return None
