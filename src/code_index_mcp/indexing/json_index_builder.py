@@ -8,9 +8,10 @@ maintainable Strategy pattern architecture.
 import logging
 import os
 import time
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, asdict
 from pathlib import Path
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Tuple
 
 from .strategies import StrategyFactory
 from .models import SymbolInfo, FileInfo
@@ -70,14 +71,53 @@ class JSONIndexBuilder:
         fallback = len(self.strategy_factory.get_fallback_extensions())
         logger.info(f"Specialized parsers: {specialized} extensions, Fallback coverage: {fallback} extensions")
 
-    def build_index(self) -> Dict[str, Any]:
+    def _process_file(self, file_path: str, specialized_extensions: set) -> Optional[Tuple[Dict, Dict, str, bool]]:
         """
-        Build the complete index using Strategy pattern.
+        Process a single file - designed for parallel execution.
+        
+        Args:
+            file_path: Path to the file to process
+            specialized_extensions: Set of extensions with specialized parsers
+        
+        Returns:
+            Tuple of (symbols, file_info, language, is_specialized) or None on error
+        """
+        try:
+            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                content = f.read()
+
+            ext = Path(file_path).suffix.lower()
+            rel_path = os.path.relpath(file_path, self.project_path).replace('\\', '/')
+            
+            # Get appropriate strategy
+            strategy = self.strategy_factory.get_strategy(ext)
+            
+            # Track strategy usage
+            is_specialized = ext in specialized_extensions
+            
+            # Parse file using strategy
+            symbols, file_info = strategy.parse_file(rel_path, content)
+            
+            logger.debug(f"Parsed {rel_path}: {len(symbols)} symbols ({file_info.language})")
+            
+            return (symbols, {rel_path: file_info}, file_info.language, is_specialized)
+        
+        except Exception as e:
+            logger.warning(f"Error processing {file_path}: {e}")
+            return None
+
+    def build_index(self, parallel: bool = True, max_workers: Optional[int] = None) -> Dict[str, Any]:
+        """
+        Build the complete index using Strategy pattern with parallel processing.
+
+        Args:
+            parallel: Whether to use parallel processing (default: True)
+            max_workers: Maximum number of worker processes/threads (default: CPU count)
 
         Returns:
             Complete JSON index with metadata, symbols, and file information
         """
-        logger.info("Building JSON index using Strategy pattern...")
+        logger.info(f"Building JSON index using Strategy pattern (parallel={parallel})...")
         start_time = time.time()
 
         all_symbols = {}
@@ -88,39 +128,67 @@ class JSONIndexBuilder:
 
         # Get specialized extensions for tracking
         specialized_extensions = set(self.strategy_factory.get_specialized_extensions())
-
-        # Traverse project files
-        for file_path in self._get_supported_files():
-            try:
-                with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-                    content = f.read()
-
-                ext = Path(file_path).suffix.lower()
-
-                # Convert to relative path first
-                rel_path = os.path.relpath(file_path, self.project_path).replace('\\', '/')
-
-                # Get appropriate strategy
-                strategy = self.strategy_factory.get_strategy(ext)
-
-                # Track strategy usage
-                if ext in specialized_extensions:
-                    specialized_count += 1
-                else:
-                    fallback_count += 1
-
-                # Parse file using strategy with relative path
-                symbols, file_info = strategy.parse_file(rel_path, content)
-
-                # Add to index
-                all_symbols.update(symbols)
-                all_files[rel_path] = file_info
-                languages.add(file_info.language)
-
-                logger.debug(f"Parsed {rel_path}: {len(symbols)} symbols ({file_info.language})")
-
-            except Exception as e:
-                logger.warning(f"Error processing {file_path}: {e}")
+        
+        # Get list of files to process
+        files_to_process = self._get_supported_files()
+        total_files = len(files_to_process)
+        
+        if total_files == 0:
+            logger.warning("No files to process")
+            return self._create_empty_index()
+        
+        logger.info(f"Processing {total_files} files...")
+        
+        if parallel and total_files > 1:
+            # Use ThreadPoolExecutor for I/O-bound file reading
+            # ProcessPoolExecutor has issues with strategy sharing
+            if max_workers is None:
+                max_workers = min(os.cpu_count() or 4, total_files)
+            
+            logger.info(f"Using parallel processing with {max_workers} workers")
+            
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                # Submit all tasks
+                future_to_file = {
+                    executor.submit(self._process_file, file_path, specialized_extensions): file_path
+                    for file_path in files_to_process
+                }
+                
+                # Process completed tasks
+                processed = 0
+                for future in as_completed(future_to_file):
+                    file_path = future_to_file[future]
+                    result = future.result()
+                    
+                    if result:
+                        symbols, file_info_dict, language, is_specialized = result
+                        all_symbols.update(symbols)
+                        all_files.update(file_info_dict)
+                        languages.add(language)
+                        
+                        if is_specialized:
+                            specialized_count += 1
+                        else:
+                            fallback_count += 1
+                    
+                    processed += 1
+                    if processed % 100 == 0:
+                        logger.debug(f"Processed {processed}/{total_files} files")
+        else:
+            # Sequential processing
+            logger.info("Using sequential processing")
+            for file_path in files_to_process:
+                result = self._process_file(file_path, specialized_extensions)
+                if result:
+                    symbols, file_info_dict, language, is_specialized = result
+                    all_symbols.update(symbols)
+                    all_files.update(file_info_dict)
+                    languages.add(language)
+                    
+                    if is_specialized:
+                        specialized_count += 1
+                    else:
+                        fallback_count += 1
 
         # Build index metadata
         metadata = IndexMetadata(
@@ -150,6 +218,25 @@ class JSONIndexBuilder:
         logger.info(f"Strategy usage: {specialized_count} specialized, {fallback_count} fallback")
 
         return index
+    
+    def _create_empty_index(self) -> Dict[str, Any]:
+        """Create an empty index structure."""
+        metadata = IndexMetadata(
+            project_path=self.project_path,
+            indexed_files=0,
+            index_version="2.0.0-strategy",
+            timestamp=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            languages=[],
+            total_symbols=0,
+            specialized_parsers=0,
+            fallback_files=0
+        )
+        
+        return {
+            "metadata": asdict(metadata),
+            "symbols": {},
+            "files": {}
+        }
 
     def get_index(self) -> Optional[Dict[str, Any]]:
         """Get the current in-memory index."""
