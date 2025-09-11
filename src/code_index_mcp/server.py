@@ -87,10 +87,6 @@ async def indexer_lifespan(_server: FastMCP) -> AsyncIterator[CodeIndexerContext
         if context.file_watcher_service:
             context.file_watcher_service.stop_monitoring()
 
-        # Only save index if project path has been set
-        if context.base_path and context.index_manager:
-            context.index_manager.save_index()
-
 # Create the MCP server with lifespan manager
 mcp = FastMCP("CodeIndexer", lifespan=indexer_lifespan, dependencies=["pathlib"])
 
