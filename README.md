@@ -47,16 +47,185 @@ The easiest way to get started with any MCP-compatible application:
 3. **Start using** (give these prompts to your AI assistant):
    ```
    Set the project path to /Users/dev/my-react-app
-   Find all TypeScript files in this project  
+   Find all TypeScript files in this project
    Search for "authentication" functions
    Analyze the main App.tsx file
    ```
 
+## 🔒 Security & Contributing
+
+**CRITICAL for contributors:** This repository uses **pre-commit hooks** to prevent credential leaks and ensure code quality before commits.
+
+### Pre-commit Setup (Required for Contributors)
+
+```bash
+# 1. Install pre-commit
+pip install pre-commit
+
+# 2. Install the hooks
+pre-commit install
+
+# 3. Test the hooks
+pre-commit run --all-files
+```
+
+**What's protected:**
+- ✅ MCP API keys (ci_* prefix)
+- ✅ Database connection strings
+- ✅ GCP service account keys
+- ✅ Webhook secrets (GitHub, GitLab, Gitea)
+- ✅ Private keys and credentials
+
+**Configuration files:**
+- `.pre-commit-config.yaml` - Pre-commit hook configuration
+- `.gitleaks.toml` - Secret detection rules
+- `.gitignore` - Credential exclusions
+
+See [Deployment Lifecycle Guide](DEPLOYMENT_LIFECYCLE.md#security-setup-pre-commit-hooks) for detailed setup instructions.
+
+## ☁️ Cloud Deployment
+
+Code Index MCP supports **two deployment modes**:
+
+### Local Mode (Default)
+Perfect for individual developers - runs directly on your machine with zero deployment complexity.
+
+### Cloud Mode (Teams & Organizations)
+Deploy to cloud infrastructure for team collaboration with multi-user support, auto-scaling, and semantic code search capabilities.
+
+**🚀 NEW: Git-Sync Feature**
+- Ingest code directly from Git repositories (GitHub, GitLab, Bitbucket, Gitea)
+- Auto-sync on every push via webhooks
+- 99% token savings, 95% faster incremental updates
+- See [Git-Sync Deployment Guide](deployment/gcp/GIT_SYNC_DEPLOYMENT_GUIDE.md)
+
+**Supported Platforms:**
+- **Google Cloud** - Cloud Run + AlloyDB + Vertex AI (~$6-25/month with Git-sync)
+  - **🚀 Deployment Lifecycle**: [Complete repeatable workflow guide](DEPLOYMENT_LIFECYCLE.md) (NEW!)
+  - **Quick Deploy**: [5-minute setup guide](deployment/gcp/QUICK_DEPLOY.md)
+  - **Full Guide**: [GCP deployment with Git-sync](deployment/gcp/GIT_SYNC_DEPLOYMENT_GUIDE.md)
+- **AWS** - Lambda/ECS + Aurora PostgreSQL + Amazon Bedrock (~$2.50-65/month)
+- **OpenShift** - Kubernetes pods + Milvus + vLLM + ODF (on-premise ready)
+
+**Features:**
+- ✅ HTTP/SSE transport for cloud endpoints
+- ✅ Multi-user authentication with API keys
+- ✅ Automatic resource cleanup (no manual maintenance)
+- ✅ Vector embeddings for semantic code search
+- ✅ **Git-sync auto-update** (NEW!)
+- ✅ Platform-native integrations
+
+**Get Started:** See [Cloud Deployment Guide](docs/DEPLOYMENT.md) for platform-specific setup instructions.
+
+### 📤 Code Ingestion for Cloud Mode
+
+#### 🚀 **Recommended: Git-Sync (99% Token Savings)**
+
+**NEW!** The best way to ingest code is directly from your Git repository - no file uploads needed!
+
+**Benefits:**
+- ✅ **99% token savings** vs file upload (no need to send files through AI)
+- ✅ **95% faster** incremental updates (pulls only changes)
+- ✅ **Auto-sync** via webhooks on every git push
+- ✅ **Supports** GitHub, GitLab, Bitbucket, Gitea
+
+**Usage:**
+```
+# Public repository
+ingest_code_from_git(git_url="https://github.com/user/repo")
+
+# Private repository
+ingest_code_from_git(
+    git_url="https://github.com/user/private-repo",
+    auth_token="ghp_xxxxxxxxxxxx"
+)
+
+# Gitea custom domain
+ingest_code_from_git(
+    git_url="https://gitea.example.com/user/app",
+    auth_token="your_token"
+)
+```
+
+**Setup Webhooks (Optional):**
+Configure webhooks in your Git platform to auto-sync on push:
+- **GitHub**: `https://your-service.run.app/webhook/github`
+- **GitLab**: `https://your-service.run.app/webhook/gitlab`
+- **Gitea**: `https://your-service.run.app/webhook/gitea`
+
+**Deployment Guide:** See [Git-Sync Deployment Guide](deployment/gcp/GIT_SYNC_DEPLOYMENT_GUIDE.md) for full setup instructions.
+
+**Quick Deploy:** See [Quick Deploy Guide](deployment/gcp/QUICK_DEPLOY.md) for 5-minute setup.
+
+#### 📦 **Legacy: File Upload (Deprecated)**
+
+<details>
+<summary>Click to expand legacy file upload method (not recommended)</summary>
+
+**Note:** This method is deprecated. Use Git-sync instead for better performance.
+
+1. **Get the upload script via MCP:**
+   ```
+   Ask your AI assistant: "Get me the cloud upload script"
+   ```
+
+2. **Or download manually:**
+   ```bash
+   curl -O https://raw.githubusercontent.com/YOUR-REPO/main/upload_code_for_ingestion.py
+   python upload_code_for_ingestion.py /path/to/your/project --project-name my-app
+   ```
+
+**See:** [Cloud Ingestion Guide](CLOUD_INGESTION_GUIDE.md) for legacy upload details.
+
+</details>
+
+### 🔗 Connecting to Cloud Deployment
+
+Once you've deployed Code Index MCP to the cloud, configure your MCP client to connect via HTTP/SSE:
+
+#### Google Cloud Run
+
+1. **Get your API key** from your administrator or generate one:
+   ```bash
+   cd deployment/gcp
+   ./setup-secrets.sh YOUR_NAME read,write
+   ```
+
+2. **Add to your MCP configuration** (e.g., `claude_desktop_config.json`):
+   ```json
+   {
+     "mcpServers": {
+       "code-index-cloud": {
+         "url": "https://code-index-mcp-dev-XXXX.run.app/sse",
+         "transport": "sse",
+         "headers": {
+           "X-API-Key": "ci_your_api_key_here"
+         }
+       }
+     }
+   }
+   ```
+
+3. **Restart your MCP client** - The server is now ready for team collaboration!
+
+**Note:** Replace `XXXX` with your Cloud Run service identifier and `ci_your_api_key_here` with your actual API key.
+
+#### AWS Lambda / OpenShift
+
+Configuration is similar - see the [Cloud Deployment Guide](docs/DEPLOYMENT.md#configuring-mcp-clients) for platform-specific URLs and authentication details.
+
+**Benefits of Cloud Mode:**
+- 🌐 Access from anywhere (no local installation needed)
+- 👥 Share with your team (multi-user support)
+- 🔍 Semantic code search (with vector embeddings)
+- 💰 Pay per use (scales to $0 when idle)
+- 🔐 API key authentication (secure team access)
+
 ## Typical Use Cases
 
-**Code Review**: "Find all places using the old API"  
-**Refactoring Help**: "Where is this function called?"  
-**Learning Projects**: "Show me the main components of this React project"  
+**Code Review**: "Find all places using the old API"
+**Refactoring Help**: "Where is this function called?"
+**Learning Projects**: "Show me the main components of this React project"
 **Debugging**: "Search for all error handling related code"
 
 ## Key Features
@@ -68,7 +237,7 @@ The easiest way to get started with any MCP-compatible application:
 - **Universal File Support**: Comprehensive coverage from advanced AST parsing to basic file indexing
 - **File Analysis**: Deep insights into structure, imports, classes, methods, and complexity metrics after running `build_deep_index`
 
-### 🗂️ **Multi-Language Support**  
+### 🗂️ **Multi-Language Support**
 - **7 Languages with Tree-sitter AST Parsing**: Python, JavaScript, TypeScript, Java, Go, Objective-C, Zig
 - **50+ File Types with Fallback Strategy**: C/C++, Rust, Ruby, PHP, and all other programming languages
 - **Document & Config Files**: Markdown, JSON, YAML, XML with appropriate handling
@@ -345,7 +514,19 @@ npx @modelcontextprotocol/inspector uvx code-index-mcp
 ```
 
 ### 🤝 **Contributing**
+
 Contributions are welcome! Please feel free to submit a Pull Request.
+
+**For Contributors**:
+- See [AGENTS.md](AGENTS.md) for repository guidelines and coding standards
+- Review [CLAUDE.md](CLAUDE.md) for comprehensive architecture documentation
+- Check [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md) for planned features and roadmap
+
+**Want to Implement Cloud Features?**
+- Start with [Implementation Plan](docs/IMPLEMENTATION_PLAN.md) for detailed task breakdowns
+- Choose a platform: [Google Cloud](docs/adrs/0002-cloud-run-http-deployment-with-auto-cleanup.md), [AWS](docs/adrs/0006-aws-http-deployment-with-auto-cleanup.md), or [OpenShift](docs/adrs/0007-openshift-http-deployment-with-auto-cleanup.md)
+- Follow the week-by-week implementation sequence
+- All ADRs are documented in [docs/adrs/](docs/adrs/)
 
 ---
 
