@@ -178,15 +178,17 @@ def check_alloydb_schema(conn: psycopg2.extensions.connection) -> None:
                     f"Apply schema: ansible-playbook utilities.yml -i inventory/dev.yml -e operation=apply_schema"
                 )
 
-            # Check critical columns exist in code_chunks
+            # Check critical columns exist in code_chunks (including git metadata)
             required_columns = ['chunk_id', 'project_id', 'user_id', 'file_path',
-                              'content', 'embedding', 'line_start', 'line_end']
+                              'content', 'embedding', 'line_start', 'line_end',
+                              'commit_hash', 'branch_name', 'author_name', 'commit_timestamp']
             cur.execute("""
                 SELECT column_name
                 FROM information_schema.columns
                 WHERE table_name = 'code_chunks'
                 AND column_name IN ('chunk_id', 'project_id', 'user_id', 'file_path',
-                                   'content', 'embedding', 'line_start', 'line_end')
+                                   'content', 'embedding', 'line_start', 'line_end',
+                                   'commit_hash', 'branch_name', 'author_name', 'commit_timestamp')
             """)
             existing_columns = [row[0] for row in cur.fetchall()]
             missing_columns = set(required_columns) - set(existing_columns)
