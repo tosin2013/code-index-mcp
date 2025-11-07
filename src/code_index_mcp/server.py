@@ -860,20 +860,25 @@ def get_cloud_upload_script() -> Dict[str, str]:
         ]
     }
 
-@mcp.tool()
+# REMOVED: reset_alloydb_schema tool - use Cloud Run Job 'fix-schema' instead
+# This tool was too dangerous to expose to MCP clients as they might call it automatically.
+#
+# To fix schema issues, use:
+#   gcloud run jobs execute fix-schema --region=us-east1 --wait
+#
+# Old implementation preserved below for reference but NOT exposed as MCP tool:
 @handle_mcp_tool_errors(return_type='dict')
 def reset_alloydb_schema() -> Dict[str, Any]:
     """
+    [INTERNAL ONLY - NOT EXPOSED AS MCP TOOL]
     Reset AlloyDB schema (drops and recreates all tables, functions, indexes).
     ⚠️ WARNING: This will DELETE ALL DATA in the database!
-    
-    Use this only in development or when you need to fix schema issues.
-    
+
+    This function is no longer exposed to MCP clients.
+    Use the Cloud Run Job 'fix-schema' instead for schema management.
+
     Returns:
         Dictionary with reset status
-        
-    Example:
-        reset_alloydb_schema()
     """
     import psycopg2
     import logging
