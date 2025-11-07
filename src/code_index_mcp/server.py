@@ -32,6 +32,7 @@ from .services.project_management_service import ProjectManagementService
 from .services.index_management_service import IndexManagementService
 from .services.code_intelligence_service import CodeIntelligenceService
 from .services.system_management_service import SystemManagementService
+from .middleware.auth import AuthMiddleware, require_authentication, AuthenticationError
 from .utils import (
     handle_mcp_resource_errors, handle_mcp_tool_errors
 )
@@ -230,6 +231,7 @@ class CodeIndexerContext:
     settings: ProjectSettings
     file_count: int = 0
     file_watcher_service: FileWatcherService = None
+    auth_middleware: AuthMiddleware = None
 
 @asynccontextmanager
 async def indexer_lifespan(_server: FastMCP) -> AsyncIterator[CodeIndexerContext]:
@@ -248,11 +250,25 @@ async def indexer_lifespan(_server: FastMCP) -> AsyncIterator[CodeIndexerContext
     # Initialize settings manager with skip_load=True to skip loading files
     settings = ProjectSettings(base_path, skip_load=True)
 
+    # Initialize auth middleware if in HTTP mode
+    auth_middleware = None
+    if os.getenv("MCP_TRANSPORT") == "http":
+        try:
+            auth_middleware = AuthMiddleware(
+                provider='gcp',
+                project_id=os.getenv('GCP_PROJECT_ID')
+            )
+            logging.info("✅ Auth middleware initialized for HTTP mode")
+        except Exception as e:
+            logging.warning(f"⚠️  Auth middleware initialization failed: {e}")
+            logging.warning("Continuing without authentication - development mode only!")
+
     # Initialize context - file watcher will be initialized later when project path is set
     context = CodeIndexerContext(
         base_path=base_path,
         settings=settings,
-        file_watcher_service=None
+        file_watcher_service=None,
+        auth_middleware=auth_middleware
     )
 
     try:
@@ -1266,11 +1282,32 @@ async def ingest_code_from_git(
         git_bucket = os.getenv("GCS_GIT_BUCKET", "code-index-git-repos")
         logging.info(f"[GIT-SYNC] Using GCS bucket: {git_bucket}")
 
-        # Use test user ID (in production, this would come from auth middleware)
-        # This matches the user created by seed_test_user utility
-        from uuid import UUID
-        user_id = UUID("00000000-0000-0000-0000-000000000001")
-        logging.info(f"[GIT-SYNC] Using test user_id: {user_id}")
+        # Authenticate user and get user_id from API key
+        user_context = None
+        try:
+            auth_middleware = ctx.request_context.lifespan_context.auth_middleware
+        except AttributeError:
+            auth_middleware = None
+
+        if auth_middleware:
+            try:
+                user_context = await require_authentication(
+                    ctx.request_context.session,
+                    auth_middleware
+                )
+                user_id = user_context.user_id
+                logging.info(f"[GIT-SYNC] Authenticated user: {user_id}")
+            except AuthenticationError as e:
+                logging.error(f"[GIT-SYNC] Authentication failed: {e}")
+                raise RuntimeError(f"Authentication required for git ingestion: {str(e)}")
+        else:
+            # Fallback to test user for local/stdio mode
+            from uuid import UUID
+            user_id = UUID("00000000-0000-0000-0000-000000000001")
+            logging.warning(
+                f"[GIT-SYNC] Using test user_id: {user_id} "
+                "(auth middleware not available - development mode)"
+            )
 
         # Initialize GitRepositoryManager
         git_manager = GitRepositoryManager(
