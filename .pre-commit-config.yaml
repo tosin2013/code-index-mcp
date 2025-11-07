@@ -1,0 +1,106 @@
+# Pre-commit hooks for Code Index MCP
+#
+# Install pre-commit: pip install pre-commit
+# Install hooks: pre-commit install
+# Run manually: pre-commit run --all-files
+# Update hooks: pre-commit autoupdate
+
+repos:
+  # Gitleaks - Detect secrets and credentials
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.28.0
+    hooks:
+      - id: gitleaks
+        name: Gitleaks secret detection
+        description: Scan for hardcoded secrets, API keys, passwords, tokens
+        entry: gitleaks protect --verbose --redact --staged
+        language: system
+        pass_filenames: false
+
+  # Python code formatting and linting
+  - repo: https://github.com/psf/black
+    rev: 24.10.0
+    hooks:
+      - id: black
+        name: Black code formatter
+        language_version: python3.11
+        args: ['--line-length=100']
+
+  - repo: https://github.com/pycqa/isort
+    rev: 5.13.2
+    hooks:
+      - id: isort
+        name: isort import sorting
+        args: ['--profile=black', '--line-length=100']
+
+  # Basic file checks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        name: Trim trailing whitespace
+      - id: end-of-file-fixer
+        name: Fix end of files
+      - id: check-yaml
+        name: Check YAML syntax
+        args: ['--allow-multiple-documents']
+      - id: check-added-large-files
+        name: Check for large files
+        args: ['--maxkb=2048']
+      - id: check-merge-conflict
+        name: Check for merge conflicts
+      - id: detect-private-key
+        name: Detect private keys
+      - id: check-case-conflict
+        name: Check for case conflicts
+
+  # Terraform/IaC checks
+  - repo: https://github.com/antonbabenko/pre-commit-terraform
+    rev: v1.96.0
+    hooks:
+      - id: terraform_fmt
+        name: Terraform format
+      - id: terraform_validate
+        name: Terraform validate
+        args:
+          - --hook-config=--retry-once-with-cleanup=true
+
+  # Ansible checks (commented out until dependency issue resolved)
+  # - repo: https://github.com/ansible/ansible-lint
+  #   rev: v24.9.2
+  #   hooks:
+  #     - id: ansible-lint
+  #       name: Ansible lint
+  #       files: \.(yaml|yml)$
+  #       exclude: ^deployment/gcp/ansible/(requirements|inventory)/
+
+  # Security scanning
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.7.10
+    hooks:
+      - id: bandit
+        name: Bandit security checks
+        args: ['-c', 'pyproject.toml']
+        additional_dependencies: ['bandit[toml]']
+
+# CI mode - fail fast on first error
+fail_fast: false
+
+# Skip these hooks in CI (they're informational)
+ci:
+  skip: []
+
+# Exclude patterns
+exclude: |
+  (?x)^(
+    \.terraform/.*|
+    \.venv/.*|
+    \.git/.*|
+    __pycache__/.*|
+    .*\.pyc|
+    .*\.pyo|
+    .*\.egg-info/.*|
+    deployment/gcp/.terraform/.*|
+    deployment/gcp/\.terraform\.lock\.hcl|
+    .*\.tfstate.*
+  )$

@@ -1,0 +1,88 @@
+# Gitleaks configuration for Code Index MCP
+# https://github.com/gitleaks/gitleaks
+
+title = "Code Index MCP Gitleaks Configuration"
+
+[extend]
+# Use default gitleaks rules as baseline
+useDefault = true
+
+# Custom rules for this project
+[[rules]]
+id = "mcp-api-key"
+description = "MCP API Key (ci_ prefix)"
+regex = '''ci_[A-Za-z0-9]{40,}'''
+tags = ["api-key", "mcp"]
+
+[[rules]]
+id = "alloydb-connection-string"
+description = "AlloyDB PostgreSQL connection string"
+regex = '''postgresql://[^:]+:[^@]+@[^/]+/\w+'''
+tags = ["database", "connection-string"]
+
+[[rules]]
+id = "gcp-service-account-key"
+description = "Google Cloud service account JSON key"
+regex = '''"type":\s*"service_account"'''
+tags = ["gcp", "service-account"]
+file = '''\.json$'''
+
+[[rules]]
+id = "github-webhook-secret"
+description = "GitHub webhook secret"
+regex = '''github[_-]?webhook[_-]?secret["\']?\s*[:=]\s*["\']?[A-Za-z0-9_-]{32,}'''
+tags = ["webhook", "github"]
+
+[[rules]]
+id = "gitlab-webhook-secret"
+description = "GitLab webhook secret"
+regex = '''gitlab[_-]?webhook[_-]?secret["\']?\s*[:=]\s*["\']?[A-Za-z0-9_-]{32,}'''
+tags = ["webhook", "gitlab"]
+
+[[rules]]
+id = "gitea-webhook-secret"
+description = "Gitea webhook secret"
+regex = '''gitea[_-]?webhook[_-]?secret["\']?\s*[:=]\s*["\']?[A-Za-z0-9_-]{32,}'''
+tags = ["webhook", "gitea"]
+
+# Allowlist - paths to exclude from scanning
+[allowlist]
+description = "Global allowlist for safe patterns"
+
+# Allow test fixtures and example files
+paths = [
+    '''tests/fixtures/.*''',
+    '''tests/test_.*\.py''',
+    '''.*_test\.py''',
+    '''examples/.*''',
+    '''docs/.*\.md''',
+]
+
+# Allow safe patterns in code
+regexes = [
+    # Example/placeholder keys (not real)
+    '''ci_example[A-Za-z0-9]+''',
+    '''ci_YOUR_API_KEY_HERE''',
+    '''ci_xxxx+''',
+
+    # Test/mock connection strings
+    '''postgresql://test:test@localhost''',
+    '''postgresql://postgres:localdevpass@localhost''',
+
+    # Documentation examples
+    '''ghp_xxxx+''',
+    '''your_token''',
+    '''YOUR_TOKEN_HERE''',
+    '''<YOUR_.*>''',
+]
+
+# Stopwords - ignore these
+stopwords = [
+    'example',
+    'sample',
+    'test',
+    'mock',
+    'placeholder',
+    'your_key_here',
+    'xxx',
+]
