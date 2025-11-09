@@ -1,0 +1,198 @@
+---
+# Database schema application tasks (for AlloyDB)
+
+- name: Check if schema file exists
+  ansible.builtin.stat:
+    path: "{{ playbook_dir }}/{{ schema_file }}"
+  register: schema_file_check
+
+- name: Fail if schema file not found
+  ansible.builtin.fail:
+    msg: "Schema file not found at {{ playbook_dir }}/{{ schema_file }}"
+  when: not schema_file_check.stat.exists
+
+- name: Copy schema file to build context
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/{{ schema_file }}"
+    dest: "/tmp/alloydb-schema.sql"
+    mode: '0644'
+
+- name: Create schema applier Python script
+  ansible.builtin.template:
+    src: apply_schema.py.j2
+    dest: "/tmp/apply_schema.py"
+    mode: '0755'
+
+- name: Create schema applier Dockerfile
+  ansible.builtin.template:
+    src: Dockerfile.schema.j2
+    dest: "/tmp/Dockerfile.schema"
+
+- name: Create Cloud Build config for schema applier
+  ansible.builtin.copy:
+    content: |
+      steps:
+      - name: 'gcr.io/cloud-builders/docker'
+        args:
+          - 'build'
+          - '-t'
+          - '{{ gcp_region }}-docker.pkg.dev/{{ gcp_project_id }}/code-index/alloydb-schema-applier:latest'
+          - '-f'
+          - 'Dockerfile.schema'
+          - '.'
+      - name: 'gcr.io/cloud-builders/docker'
+        args:
+          - 'push'
+          - '{{ gcp_region }}-docker.pkg.dev/{{ gcp_project_id }}/code-index/alloydb-schema-applier:latest'
+      images:
+        - '{{ gcp_region }}-docker.pkg.dev/{{ gcp_project_id }}/code-index/alloydb-schema-applier:latest'
+    dest: "/tmp/cloudbuild-schema.yaml"
+    mode: '0644'
+
+- name: Build and push schema applier image using Cloud Build
+  ansible.builtin.command: >
+    gcloud builds submit /tmp
+    --config=/tmp/cloudbuild-schema.yaml
+    --project={{ gcp_project_id }}
+  register: schema_image_build
+  changed_when: schema_image_build.rc == 0
+
+- name: Check if schema job exists
+  ansible.builtin.command: >
+    gcloud run jobs describe {{ schema_job_name }}
+    --region={{ gcp_region }}
+    --project={{ gcp_project_id }}
+  register: schema_job_check
+  changed_when: false
+  failed_when: false
+
+# Commented out to preserve existing job for log inspection
+# - name: Delete existing schema job
+#   ansible.builtin.command: >
+#     gcloud run jobs delete {{ schema_job_name }}
+#     --region={{ gcp_region }}
+#     --project={{ gcp_project_id }}
+#     --quiet
+#   when: schema_job_check.rc == 0
+#   register: schema_job_delete
+#   changed_when: schema_job_delete.rc == 0
+
+- name: Create schema application job (if not exists)
+  ansible.builtin.command: >
+    gcloud run jobs create {{ schema_job_name }}
+    --image={{ gcp_region }}-docker.pkg.dev/{{ gcp_project_id }}/code-index/alloydb-schema-applier:latest
+    --region={{ gcp_region }}
+    --vpc-connector={{ vpc_connector_name }}
+    --set-secrets=ALLOYDB_CONNECTION_STRING={{ alloydb_connection_secret }}:latest,DATABASE_URL={{ alloydb_connection_secret }}:latest
+    --max-retries=0
+    --task-timeout=5m
+    --project={{ gcp_project_id }}
+  when: schema_job_check.rc != 0
+  register: schema_job_create
+  changed_when: schema_job_create.rc == 0
+
+- name: Execute schema application job
+  ansible.builtin.command: >
+    gcloud run jobs execute {{ schema_job_name }}
+    --region={{ gcp_region }}
+    --project={{ gcp_project_id }}
+    --wait
+  register: schema_job_execute
+  changed_when: schema_job_execute.rc == 0
+  failed_when: false
+
+- name: Get latest execution name
+  ansible.builtin.shell: >
+    gcloud run jobs executions list
+    --job={{ schema_job_name }}
+    --region={{ gcp_region }}
+    --project={{ gcp_project_id }}
+    --limit=1
+    --format='value(name)'
+  register: schema_execution_name
+  changed_when: false
+
+- name: Wait for logs to be available
+  ansible.builtin.pause:
+    seconds: 10
+
+- name: Get schema job logs
+  ansible.builtin.command: >
+    gcloud logging read
+    "resource.type=cloud_run_job AND resource.labels.job_name={{ schema_job_name }}"
+    --limit=100
+    --format="value(textPayload)"
+    --freshness=5m
+    --project={{ gcp_project_id }}
+  register: schema_job_logs
+  changed_when: false
+  failed_when: false
+
+- name: Get schema job exit code
+  ansible.builtin.shell: >
+    gcloud logging read
+    "resource.type=cloud_run_job AND
+     resource.labels.job_name={{ schema_job_name }} AND
+     textPayload=~'Container called exit'"
+    --limit=1
+    --format="value(textPayload)"
+    --freshness=5m
+    --project={{ gcp_project_id }} |
+    grep -oP 'exit\(\K\d+' || echo "0"
+  register: schema_job_exit_code
+  changed_when: false
+
+- name: Display schema job output
+  ansible.builtin.debug:
+    msg:
+      - "=== Schema Application Job Output ==="
+      - "{{ schema_job_logs.stdout_lines | default([]) }}"
+      - ""
+      - "Job Exit Code: {{ schema_job_exit_code.stdout }}"
+
+- name: Fail if schema job failed
+  ansible.builtin.fail:
+    msg: |
+      ❌ Schema application job FAILED with exit code {{ schema_job_exit_code.stdout }}
+
+      Check logs above for details. Common issues:
+      - Database connectivity problems (VPC/firewall)
+      - Invalid connection string
+      - Missing pgvector extension
+      - SQL syntax errors in schema file
+  when: schema_job_exit_code.stdout != "0"
+
+# Commented out to preserve job for log inspection
+# - name: Cleanup schema job
+#   ansible.builtin.command: >
+#     gcloud run jobs delete {{ schema_job_name }}
+#     --region={{ gcp_region }}
+#     --project={{ gcp_project_id }}
+#     --quiet
+#   register: schema_job_cleanup
+#   changed_when: schema_job_cleanup.rc == 0
+
+- name: Cleanup temporary files
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "/tmp/apply_schema.py"
+    - "/tmp/Dockerfile.schema"
+    - "/tmp/cloudbuild-schema.yaml"
+    - "/tmp/alloydb-schema.sql"
+
+- name: Display schema application success
+  ansible.builtin.debug:
+    msg:
+      - ""
+      - "✅ ==================================="
+      - "✅ Database Schema Applied Successfully"
+      - "✅ ==================================="
+      - "Job: {{ schema_job_name }}"
+      - "Exit Code: {{ schema_job_exit_code.stdout }}"
+      - ""
+      - "All required tables created:"
+      - "  - users"
+      - "  - projects"
+      - "  - code_chunks"
