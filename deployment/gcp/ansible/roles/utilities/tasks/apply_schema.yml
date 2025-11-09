@@ -1,0 +1,84 @@
+---
+# Apply AlloyDB schema via Cloud Shell (has VPC access)
+- name: Display schema application info
+  ansible.builtin.debug:
+    msg:
+      - "========================================"
+      - "  Apply AlloyDB Schema"
+      - "========================================"
+      - "Project: {{ gcp_project_id }}"
+      - "Environment: {{ env_name }}"
+      - "Schema File: ../../alloydb-schema.sql"
+      - "Method: Cloud Shell (VPC access)"
+
+- name: Check if schema file exists
+  ansible.builtin.stat:
+    path: "{{ playbook_dir }}/../alloydb-schema.sql"
+  register: schema_file
+
+- name: Fail if schema file not found
+  ansible.builtin.fail:
+    msg: "Schema file not found at {{ playbook_dir }}/../alloydb-schema.sql"
+  when: not schema_file.stat.exists
+
+- name: Upload schema file to Cloud Shell
+  ansible.builtin.shell: |
+    gcloud cloud-shell scp localhost:{{ playbook_dir }}/../alloydb-schema.sql \
+      cloudshell:/tmp/alloydb-schema.sql \
+      --project={{ gcp_project_id }}
+  register: upload_schema
+  changed_when: upload_schema.rc == 0
+
+- name: Upload application script to Cloud Shell
+  ansible.builtin.shell: |
+    gcloud cloud-shell scp localhost:{{ role_path }}/files/apply_schema_cloudshell.sh \
+      cloudshell:/tmp/apply_schema_cloudshell.sh \
+      --project={{ gcp_project_id }}
+  register: upload_script
+  changed_when: upload_script.rc == 0
+
+- name: Execute schema application in Cloud Shell
+  ansible.builtin.shell: |
+    gcloud cloud-shell ssh \
+      --project={{ gcp_project_id }} \
+      --authorize-session \
+      --command="bash /tmp/apply_schema_cloudshell.sh {{ gcp_project_id }} {{ env_name }} {{ gcp_region }} /tmp/alloydb-schema.sql"
+  register: schema_apply_result
+  changed_when: schema_apply_result.rc == 0
+  failed_when: schema_apply_result.rc > 1
+
+- name: Display schema application output
+  ansible.builtin.debug:
+    msg: "{{ schema_apply_result.stdout_lines }}"
+
+- name: Display errors if any
+  ansible.builtin.debug:
+    msg: "{{ schema_apply_result.stderr_lines }}"
+  when: schema_apply_result.stderr_lines is defined and schema_apply_result.stderr_lines | length > 0
+
+- name: Cleanup Cloud Shell temp files
+  ansible.builtin.shell: |
+    gcloud cloud-shell ssh \
+      --project={{ gcp_project_id }} \
+      --command="rm -f /tmp/alloydb-schema.sql /tmp/apply_schema_cloudshell.sh"
+  register: cleanup_result
+  changed_when: false
+  failed_when: false
+
+- name: Final success message
+  ansible.builtin.debug:
+    msg:
+      - ""
+      - "════════════════════════════════════════"
+      - "✅ AlloyDB Schema Application Complete"
+      - "════════════════════════════════════════"
+      - "Environment: {{ env_name }}"
+      - "Database: code_index"
+      - "Method: Cloud Shell (VPC access)"
+      - ""
+      - "Next steps:"
+      - "  1. Test semantic search: semantic_search_code()"
+      - "  2. Ingest test repo: ingest_code_from_git()"
+      - "  3. Run cloud tests: ansible-playbook test-cloud.yml"
+      - ""
+  when: schema_apply_result.rc == 0

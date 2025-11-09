@@ -4,8 +4,9 @@ Abstract base class for language parsing strategies.
 
 import os
 from abc import ABC, abstractmethod
-from typing import Dict, List, Tuple, Optional
-from ..models import SymbolInfo, FileInfo
+from typing import Dict, List, Optional, Tuple
+
+from ..models import FileInfo, SymbolInfo
 
 
 class ParsingStrategy(ABC):
@@ -50,14 +51,14 @@ class ParsingStrategy(ABC):
 
     def _get_relative_path(self, file_path: str) -> str:
         """Convert absolute file path to relative path."""
-        parts = file_path.replace('\\', '/').split('/')
+        parts = file_path.replace("\\", "/").split("/")
 
         # Priority order: test > src (outermost project roots first)
-        for root_dir in ['test', 'src']:
+        for root_dir in ["test", "src"]:
             if root_dir in parts:
                 root_index = parts.index(root_dir)
                 relative_parts = parts[root_index:]
-                return '/'.join(relative_parts)
+                return "/".join(relative_parts)
 
         # Fallback: use just filename
         return os.path.basename(file_path)
@@ -73,7 +74,7 @@ class ParsingStrategy(ABC):
         Returns:
             Line number (1-based)
         """
-        return content[:symbol_position].count('\n') + 1
+        return content[:symbol_position].count("\n") + 1
 
     def _get_file_name(self, file_path: str) -> str:
         """Get just the filename from a full path."""

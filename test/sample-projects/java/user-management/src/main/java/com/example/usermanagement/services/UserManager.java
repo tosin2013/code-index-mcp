@@ -29,23 +29,23 @@ import java.util.stream.Collectors;
  * Provides CRUD operations, search functionality, and data persistence.
  */
 public class UserManager {
-    
+
     private static final Logger logger = LoggerFactory.getLogger(UserManager.class);
-    
+
     private final Map<String, User> users;
     private final ObjectMapper objectMapper;
     private final String storagePath;
-    
+
     /**
      * Constructor with default storage path.
      */
     public UserManager() {
         this(null);
     }
-    
+
     /**
      * Constructor with custom storage path.
-     * 
+     *
      * @param storagePath The file path for user data storage
      */
     public UserManager(String storagePath) {
@@ -53,15 +53,15 @@ public class UserManager {
         this.objectMapper = new ObjectMapper();
         this.objectMapper.registerModule(new JavaTimeModule());
         this.storagePath = storagePath;
-        
+
         if (StringUtils.isNotBlank(storagePath)) {
             loadUsersFromFile();
         }
     }
-    
+
     /**
      * Creates a new user in the system.
-     * 
+     *
      * @param name The user's name
      * @param age The user's age
      * @param username The username
@@ -73,29 +73,29 @@ public class UserManager {
      */
     public User createUser(String name, int age, String username, String email, UserRole role) {
         logger.debug("Creating user with username: {}", username);
-        
+
         if (users.containsKey(username)) {
             throw new DuplicateUserException("User with username '" + username + "' already exists");
         }
-        
+
         // Validate inputs
         ValidationUtils.validateUsername(username);
         if (StringUtils.isNotBlank(email)) {
             ValidationUtils.validateEmail(email);
         }
-        
+
         User user = new User(name, age, username, email, role);
         users.put(username, user);
-        
+
         saveUsersToFile();
         logger.info("User created successfully: {}", username);
-        
+
         return user;
     }
-    
+
     /**
      * Creates a new user with default role.
-     * 
+     *
      * @param name The user's name
      * @param age The user's age
      * @param username The username
@@ -105,10 +105,10 @@ public class UserManager {
     public User createUser(String name, int age, String username, String email) {
         return createUser(name, age, username, email, UserRole.USER);
     }
-    
+
     /**
      * Creates a new user with minimal information.
-     * 
+     *
      * @param name The user's name
      * @param age The user's age
      * @param username The username
@@ -117,10 +117,10 @@ public class UserManager {
     public User createUser(String name, int age, String username) {
         return createUser(name, age, username, null, UserRole.USER);
     }
-    
+
     /**
      * Retrieves a user by username.
-     * 
+     *
      * @param username The username
      * @return The user
      * @throws UserNotFoundException if user is not found
@@ -132,10 +132,10 @@ public class UserManager {
         }
         return user;
     }
-    
+
     /**
      * Retrieves a user by email address.
-     * 
+     *
      * @param email The email address
      * @return The user or null if not found
      */
@@ -145,10 +145,10 @@ public class UserManager {
                    .findFirst()
                    .orElse(null);
     }
-    
+
     /**
      * Updates user information.
-     * 
+     *
      * @param username The username
      * @param updates A map of field updates
      * @return The updated user
@@ -156,7 +156,7 @@ public class UserManager {
      */
     public User updateUser(String username, Map<String, Object> updates) {
         User user = getUser(username);
-        
+
         updates.forEach((field, value) -> {
             switch (field.toLowerCase()) {
                 case "name":
@@ -186,16 +186,16 @@ public class UserManager {
                     logger.warn("Unknown field for update: {}", field);
             }
         });
-        
+
         saveUsersToFile();
         logger.info("User updated successfully: {}", username);
-        
+
         return user;
     }
-    
+
     /**
      * Deletes a user (soft delete).
-     * 
+     *
      * @param username The username
      * @return true if user was deleted
      * @throws UserNotFoundException if user is not found
@@ -203,16 +203,16 @@ public class UserManager {
     public boolean deleteUser(String username) {
         User user = getUser(username);
         user.delete();
-        
+
         saveUsersToFile();
         logger.info("User deleted successfully: {}", username);
-        
+
         return true;
     }
-    
+
     /**
      * Removes a user completely from the system.
-     * 
+     *
      * @param username The username
      * @return true if user was removed
      * @throws UserNotFoundException if user is not found
@@ -221,26 +221,26 @@ public class UserManager {
         if (!users.containsKey(username)) {
             throw new UserNotFoundException("User with username '" + username + "' not found");
         }
-        
+
         users.remove(username);
         saveUsersToFile();
         logger.info("User removed completely: {}", username);
-        
+
         return true;
     }
-    
+
     /**
      * Gets all users in the system.
-     * 
+     *
      * @return A list of all users
      */
     public List<User> getAllUsers() {
         return new ArrayList<>(users.values());
     }
-    
+
     /**
      * Gets all active users.
-     * 
+     *
      * @return A list of active users
      */
     public List<User> getActiveUsers() {
@@ -248,10 +248,10 @@ public class UserManager {
                    .filter(User::isActive)
                    .collect(Collectors.toList());
     }
-    
+
     /**
      * Gets users by role.
-     * 
+     *
      * @param role The user role
      * @return A list of users with the specified role
      */
@@ -260,10 +260,10 @@ public class UserManager {
                    .filter(user -> user.getRole() == role)
                    .collect(Collectors.toList());
     }
-    
+
     /**
      * Filters users using a custom predicate.
-     * 
+     *
      * @param predicate The filter predicate
      * @return A list of filtered users
      */
@@ -272,10 +272,10 @@ public class UserManager {
                    .filter(predicate)
                    .collect(Collectors.toList());
     }
-    
+
     /**
      * Searches users by name or username.
-     * 
+     *
      * @param query The search query
      * @return A list of matching users
      */
@@ -283,75 +283,75 @@ public class UserManager {
         if (StringUtils.isBlank(query)) {
             return new ArrayList<>();
         }
-        
+
         String lowercaseQuery = query.toLowerCase();
         return users.values().stream()
-                   .filter(user -> 
+                   .filter(user ->
                        user.getName().toLowerCase().contains(lowercaseQuery) ||
                        user.getUsername().toLowerCase().contains(lowercaseQuery) ||
                        (user.getEmail() != null && user.getEmail().toLowerCase().contains(lowercaseQuery)))
                    .collect(Collectors.toList());
     }
-    
+
     /**
      * Gets users older than specified age.
-     * 
+     *
      * @param age The age threshold
      * @return A list of users older than the specified age
      */
     public List<User> getUsersOlderThan(int age) {
         return filterUsers(user -> user.getAge() > age);
     }
-    
+
     /**
      * Gets users with email addresses.
-     * 
+     *
      * @return A list of users with email addresses
      */
     public List<User> getUsersWithEmail() {
         return filterUsers(User::hasEmail);
     }
-    
+
     /**
      * Gets users with specific permission.
-     * 
+     *
      * @param permission The permission to check
      * @return A list of users with the specified permission
      */
     public List<User> getUsersWithPermission(String permission) {
         return filterUsers(user -> user.hasPermission(permission));
     }
-    
+
     /**
      * Gets the total number of users.
-     * 
+     *
      * @return The user count
      */
     public int getUserCount() {
         return users.size();
     }
-    
+
     /**
      * Gets user statistics.
-     * 
+     *
      * @return A map of user statistics
      */
     public Map<String, Integer> getUserStats() {
         Map<String, Integer> stats = new HashMap<>();
-        
+
         stats.put("total", users.size());
         stats.put("active", getActiveUsers().size());
         stats.put("admin", getUsersByRole(UserRole.ADMIN).size());
         stats.put("user", getUsersByRole(UserRole.USER).size());
         stats.put("guest", getUsersByRole(UserRole.GUEST).size());
         stats.put("with_email", getUsersWithEmail().size());
-        
+
         return stats;
     }
-    
+
     /**
      * Exports users to specified format.
-     * 
+     *
      * @param format The export format ("json" or "csv")
      * @return The exported data as string
      * @throws IllegalArgumentException if format is unsupported
@@ -366,10 +366,10 @@ public class UserManager {
                 throw new IllegalArgumentException("Unsupported export format: " + format);
         }
     }
-    
+
     /**
      * Exports users to JSON format.
-     * 
+     *
      * @return JSON string representation of users
      */
     private String exportToJson() {
@@ -381,17 +381,17 @@ public class UserManager {
             return "[]";
         }
     }
-    
+
     /**
      * Exports users to CSV format.
-     * 
+     *
      * @return CSV string representation of users
      */
     private String exportToCsv() {
         try (StringWriter writer = new StringWriter();
              CSVPrinter printer = new CSVPrinter(writer, CSVFormat.DEFAULT.withHeader(
                  "Username", "Name", "Age", "Email", "Role", "Status", "Last Login"))) {
-            
+
             for (User user : users.values()) {
                 printer.printRecord(
                     user.getUsername(),
@@ -403,24 +403,24 @@ public class UserManager {
                     user.getLastLogin()
                 );
             }
-            
+
             return writer.toString();
         } catch (IOException e) {
             logger.error("Error exporting users to CSV", e);
             return "Username,Name,Age,Email,Role,Status,Last Login\n";
         }
     }
-    
+
     /**
      * Checks if a username exists in the system.
-     * 
+     *
      * @param username The username to check
      * @return true if username exists
      */
     public boolean userExists(String username) {
         return users.containsKey(username);
     }
-    
+
     /**
      * Clears all users from the system.
      */
@@ -429,7 +429,7 @@ public class UserManager {
         saveUsersToFile();
         logger.info("All users cleared from system");
     }
-    
+
     /**
      * Loads users from file storage.
      */
@@ -437,28 +437,28 @@ public class UserManager {
         if (StringUtils.isBlank(storagePath)) {
             return;
         }
-        
+
         try {
             Path path = Paths.get(storagePath);
             if (!Files.exists(path)) {
                 logger.debug("User storage file does not exist: {}", storagePath);
                 return;
             }
-            
+
             String content = Files.readString(path);
             List<User> userList = Arrays.asList(objectMapper.readValue(content, User[].class));
-            
+
             users.clear();
             for (User user : userList) {
                 users.put(user.getUsername(), user);
             }
-            
+
             logger.info("Loaded {} users from file: {}", users.size(), storagePath);
         } catch (IOException e) {
             logger.error("Error loading users from file: {}", storagePath, e);
         }
     }
-    
+
     /**
      * Saves users to file storage.
      */
@@ -466,15 +466,15 @@ public class UserManager {
         if (StringUtils.isBlank(storagePath)) {
             return;
         }
-        
+
         try {
             Path path = Paths.get(storagePath);
             Files.createDirectories(path.getParent());
-            
+
             String content = objectMapper.writerWithDefaultPrettyPrinter()
                                         .writeValueAsString(users.values());
             Files.writeString(path, content);
-            
+
             logger.debug("Saved {} users to file: {}", users.size(), storagePath);
         } catch (IOException e) {
             logger.error("Error saving users to file: {}", storagePath, e);

@@ -9,12 +9,12 @@ import logging
 import os
 import time
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Any, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
+from .models import FileInfo, SymbolInfo
 from .strategies import StrategyFactory
-from .models import SymbolInfo, FileInfo
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class IndexMetadata:
     """Metadata for the JSON index."""
+
     project_path: str
     indexed_files: int
     index_version: str
@@ -69,9 +70,13 @@ class JSONIndexBuilder:
         # Log specialized vs fallback coverage
         specialized = len(self.strategy_factory.get_specialized_extensions())
         fallback = len(self.strategy_factory.get_fallback_extensions())
-        logger.info(f"Specialized parsers: {specialized} extensions, Fallback coverage: {fallback} extensions")
+        logger.info(
+            f"Specialized parsers: {specialized} extensions, Fallback coverage: {fallback} extensions"
+        )
 
-    def _process_file(self, file_path: str, specialized_extensions: set) -> Optional[Tuple[Dict, Dict, str, bool]]:
+    def _process_file(
+        self, file_path: str, specialized_extensions: set
+    ) -> Optional[Tuple[Dict, Dict, str, bool]]:
         """
         Process a single file - designed for parallel execution.
 
@@ -83,11 +88,11 @@ class JSONIndexBuilder:
             Tuple of (symbols, file_info, language, is_specialized) or None on error
         """
         try:
-            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+            with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
                 content = f.read()
 
             ext = Path(file_path).suffix.lower()
-            rel_path = os.path.relpath(file_path, self.project_path).replace('\\', '/')
+            rel_path = os.path.relpath(file_path, self.project_path).replace("\\", "/")
 
             # Get appropriate strategy
             strategy = self.strategy_factory.get_strategy(ext)
@@ -106,7 +111,9 @@ class JSONIndexBuilder:
             logger.warning(f"Error processing {file_path}: {e}")
             return None
 
-    def build_index(self, parallel: bool = True, max_workers: Optional[int] = None) -> Dict[str, Any]:
+    def build_index(
+        self, parallel: bool = True, max_workers: Optional[int] = None
+    ) -> Dict[str, Any]:
         """
         Build the complete index using Strategy pattern with parallel processing.
 
@@ -150,7 +157,9 @@ class JSONIndexBuilder:
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
                 # Submit all tasks
                 future_to_file = {
-                    executor.submit(self._process_file, file_path, specialized_extensions): file_path
+                    executor.submit(
+                        self._process_file, file_path, specialized_extensions
+                    ): file_path
                     for file_path in files_to_process
                 }
 
@@ -173,7 +182,9 @@ class JSONIndexBuilder:
 
                     processed += 1
                     if processed % 100 == 0:
-                        logger.debug(f"Processed {processed}/{total_files} files")
+                        logger.info(
+                            f"[INDEX PROGRESS] Processed {processed}/{total_files} files ({processed*100//total_files}%)"
+                        )
         else:
             # Sequential processing
             logger.info("Using sequential processing")
@@ -199,21 +210,23 @@ class JSONIndexBuilder:
             languages=sorted(list(languages)),
             total_symbols=len(all_symbols),
             specialized_parsers=specialized_count,
-            fallback_files=fallback_count
+            fallback_files=fallback_count,
         )
 
         # Assemble final index
         index = {
             "metadata": asdict(metadata),
             "symbols": {k: asdict(v) for k, v in all_symbols.items()},
-            "files": {k: asdict(v) for k, v in all_files.items()}
+            "files": {k: asdict(v) for k, v in all_files.items()},
         }
 
         # Cache in memory
         self.in_memory_index = index
 
         elapsed = time.time() - start_time
-        logger.info(f"Built index with {len(all_symbols)} symbols from {len(all_files)} files in {elapsed:.2f}s")
+        logger.info(
+            f"Built index with {len(all_symbols)} symbols from {len(all_files)} files in {elapsed:.2f}s"
+        )
         logger.info(f"Languages detected: {sorted(languages)}")
         logger.info(f"Strategy usage: {specialized_count} specialized, {fallback_count} fallback")
 
@@ -229,14 +242,10 @@ class JSONIndexBuilder:
             languages=[],
             total_symbols=0,
             specialized_parsers=0,
-            fallback_files=0
+            fallback_files=0,
         )
 
-        return {
-            "metadata": asdict(metadata),
-            "symbols": {},
-            "files": {}
-        }
+        return {"metadata": asdict(metadata), "symbols": {}, "files": {}}
 
     def get_index(self) -> Optional[Dict[str, Any]]:
         """Get the current in-memory index."""
@@ -289,9 +298,9 @@ class JSONIndexBuilder:
             absolute_files = self._get_supported_files()
             result: List[str] = []
             for abs_path in absolute_files:
-                rel_path = os.path.relpath(abs_path, self.project_path).replace('\\', '/')
+                rel_path = os.path.relpath(abs_path, self.project_path).replace("\\", "/")
                 # Normalize leading './'
-                if rel_path.startswith('./'):
+                if rel_path.startswith("./"):
                     rel_path = rel_path[2:]
                 result.append(rel_path)
             return result
@@ -312,7 +321,8 @@ class JSONIndexBuilder:
         """
         try:
             import json
-            with open(index_path, 'w', encoding='utf-8') as f:
+
+            with open(index_path, "w", encoding="utf-8") as f:
                 json.dump(index, f, indent=2, ensure_ascii=False)
             logger.info(f"Saved index to {index_path}")
             return True
@@ -336,7 +346,8 @@ class JSONIndexBuilder:
                 return None
 
             import json
-            with open(index_path, 'r', encoding='utf-8') as f:
+
+            with open(index_path, "r", encoding="utf-8") as f:
                 index = json.load(f)
 
             # Cache in memory
@@ -359,12 +370,18 @@ class JSONIndexBuilder:
 
         return {
             "total_strategies": len(strategy_info),
-            "specialized_languages": [lang for lang in strategy_info.keys() if not lang.startswith('fallback_')],
-            "fallback_languages": [lang.replace('fallback_', '') for lang in strategy_info.keys() if lang.startswith('fallback_')],
+            "specialized_languages": [
+                lang for lang in strategy_info.keys() if not lang.startswith("fallback_")
+            ],
+            "fallback_languages": [
+                lang.replace("fallback_", "")
+                for lang in strategy_info.keys()
+                if lang.startswith("fallback_")
+            ],
             "total_extensions": len(self.strategy_factory.get_all_supported_extensions()),
             "specialized_extensions": len(self.strategy_factory.get_specialized_extensions()),
             "fallback_extensions": len(self.strategy_factory.get_fallback_extensions()),
-            "strategy_details": strategy_info
+            "strategy_details": strategy_info,
         }
 
     def get_file_symbols(self, file_path: str) -> List[Dict[str, Any]]:
@@ -383,8 +400,8 @@ class JSONIndexBuilder:
 
         try:
             # Normalize file path
-            file_path = file_path.replace('\\', '/')
-            if file_path.startswith('./'):
+            file_path = file_path.replace("\\", "/")
+            if file_path.startswith("./"):
                 file_path = file_path[2:]
 
             # Get file info
@@ -411,7 +428,7 @@ class JSONIndexBuilder:
                         "name": symbol_name,
                         "called_by": symbol_data.get("called_by", []),
                         "line": symbol_data.get("line"),
-                        "signature": symbol_data.get("signature")
+                        "signature": symbol_data.get("signature"),
                     }
 
                     # Categorize by type

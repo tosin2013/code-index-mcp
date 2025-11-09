@@ -8,9 +8,9 @@ and search strategy selection.
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from .base_service import BaseService
-from ..utils import FileFilter, ResponseFormatter, ValidationHelper
 from ..search.base import is_safe_regex_pattern
+from ..utils import FileFilter, ResponseFormatter, ValidationHelper
+from .base_service import BaseService
 
 
 class SearchService(BaseService):
@@ -28,7 +28,7 @@ class SearchService(BaseService):
         file_pattern: Optional[str] = None,
         fuzzy: bool = False,
         regex: Optional[bool] = None,
-        max_line_length: Optional[int] = None
+        max_line_length: Optional[int] = None,
     ) -> Dict[str, Any]:
         """Search for code patterns in the project."""
         self._require_project_setup()
@@ -63,7 +63,7 @@ class SearchService(BaseService):
                 file_pattern=file_pattern,
                 fuzzy=fuzzy,
                 regex=regex,
-                max_line_length=max_line_length
+                max_line_length=max_line_length,
             )
             filtered = self._filter_results(results)
             return ResponseFormatter.search_results_response(filtered)
@@ -78,8 +78,8 @@ class SearchService(BaseService):
         self.settings.refresh_available_strategies()
         config = self.settings.get_search_tools_config()
 
-        available = config['available_tools']
-        preferred = config['preferred_tool']
+        available = config["available_tools"]
+        preferred = config["preferred_tool"]
         return f"Search tools refreshed. Available: {available}. Preferred: {preferred}."
 
     def get_search_capabilities(self) -> Dict[str, Any]:
@@ -90,20 +90,20 @@ class SearchService(BaseService):
         config = self.settings.get_search_tools_config()
 
         capabilities = {
-            "available_tools": config.get('available_tools', []),
-            "preferred_tool": config.get('preferred_tool', 'basic'),
+            "available_tools": config.get("available_tools", []),
+            "preferred_tool": config.get("preferred_tool", "basic"),
             "supports_regex": True,
             "supports_fuzzy": True,
             "supports_case_sensitivity": True,
             "supports_context_lines": True,
-            "supports_file_patterns": True
+            "supports_file_patterns": True,
         }
 
         return capabilities
 
     def _configure_strategy(self, strategy) -> None:
         """Apply shared exclusion configuration to the strategy if supported."""
-        configure = getattr(strategy, 'configure_excludes', None)
+        configure = getattr(strategy, "configure_excludes", None)
         if not configure:
             return
 
@@ -124,7 +124,7 @@ class SearchService(BaseService):
             except Exception:  # pragma: no cover - fallback if config fails
                 config = {}
 
-            for key in ('exclude_patterns', 'additional_exclude_patterns'):
+            for key in ("exclude_patterns", "additional_exclude_patterns"):
                 patterns = config.get(key) or []
                 for pattern in patterns:
                     if not isinstance(pattern, str):
@@ -147,7 +147,7 @@ class SearchService(BaseService):
         if not isinstance(results, dict) or not results:
             return results
 
-        if 'error' in results or not self.file_filter or not self.base_path:
+        if "error" in results or not self.file_filter or not self.base_path:
             return results
 
         base_path = Path(self.base_path)
@@ -157,7 +157,7 @@ class SearchService(BaseService):
             if not isinstance(rel_path, str):
                 continue
 
-            normalized = Path(rel_path.replace('\\', '/'))
+            normalized = Path(rel_path.replace("\\", "/"))
             try:
                 absolute = (base_path / normalized).resolve()
             except Exception:  # pragma: no cover - invalid path safety

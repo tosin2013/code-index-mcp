@@ -1,0 +1,62 @@
+[WARNING]: provided hosts list is empty, only localhost is available. Note that the implicit localhost does not match 'all'
+[WARNING]: Deprecation warnings can be disabled by setting `deprecation_warnings=False` in ansible.cfg.
+[DEPRECATION WARNING]: community.general.yaml has been deprecated. The plugin has been superseded by the option `result_format=yaml` in callback plugin ansible.builtin.default from ansible-core 2.13 onwards. This feature will be removed from collection 'community.general' version 12.0.0.
+
+PLAY [Test Code Index MCP Server - Local stdio Mode] ***************************
+
+TASK [Gathering Facts] *********************************************************
+ok: [localhost]
+
+TASK [Display test configuration] **********************************************
+ok: [localhost] => 
+  msg:
+  - 'Transport: stdio'
+  - 'Server Command: uvx'
+  - 'Server Args: [''code-index-mcp'']'
+  - 'Test Project: /tmp/code-index-mcp-test-project'
+
+TASK [Create test project directory] *******************************************
+ok: [localhost]
+
+TASK [Create sample Python file for testing] ***********************************
+ok: [localhost]
+
+TASK [Get server information] **************************************************
+ok: [localhost]
+
+TASK [Display server capabilities] *********************************************
+ok: [localhost] => 
+  server_info:
+    changed: false
+    error: null
+    execution_time: 3.012
+    failed: false
+    metadata:
+      timestamp: '2025-11-06T17:45:02.391234Z'
+    server_info:
+      available_prompts: 0
+      available_resources: 1
+      available_tools: 13
+      capabilities: {}
+      server_name: unknown
+      server_version: unknown
+    status: Successfully retrieved server information
+    success: true
+
+TASK [Validate server basic info] **********************************************
+[ERROR]: Task failed: Action failed: ❌ Server info validation failed
+Origin: /Users/tosinakinosho/workspaces/code-index-mcp/tests/ansible/test-local.yml:62:7
+
+60       when: verbose_output | default(false)
+61
+62     - name: Validate server basic info
+         ^ column 7
+
+fatal: [localhost]: FAILED! => changed=false 
+  assertion: server_info.server_info.capabilities.tools is defined
+  evaluated_to: false
+  msg: ❌ Server info validation failed
+
+PLAY RECAP *********************************************************************
+localhost                  : ok=6    changed=0    unreachable=0    failed=1    skipped=0    rescued=0    ignored=0   
+

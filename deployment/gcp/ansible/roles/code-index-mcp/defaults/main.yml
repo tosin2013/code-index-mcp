@@ -1,0 +1,94 @@
+---
+# Default variables for code-index-mcp role
+# These can be overridden in playbook or inventory
+
+# GCP Project Configuration
+gcp_project_id: "{{ lookup('env', 'GCP_PROJECT_ID') | default('', true) }}"
+gcp_region: "us-east1"
+gcp_zone: "us-east1-b"
+
+# Environment (dev, staging, prod)
+env_name: "dev"
+
+# Service Configuration
+service_name: "code-index-mcp-{{ env_name }}"
+service_description: "Code Index MCP Server - {{ env_name }}"
+container_port: 8080
+service_account: "{{ service_name }}@{{ gcp_project_id }}.iam.gserviceaccount.com"
+
+# Container Image
+image_name: "code-index-mcp"
+image_tag: "latest"
+image_registry: "{{ gcp_region }}-docker.pkg.dev/{{ gcp_project_id }}/code-index"
+full_image_path: "{{ image_registry }}/{{ image_name }}:{{ image_tag }}"
+
+# Cloud Run Configuration
+cloudrun_cpu: "2"
+cloudrun_memory: "2Gi"
+cloudrun_min_instances: 0
+cloudrun_max_instances: 10
+cloudrun_concurrency: 80
+cloudrun_timeout: "300s"
+cloudrun_execution_environment: "gen2"
+
+# AlloyDB Configuration
+with_alloydb: true
+alloydb_connection_secret: "alloydb-connection-string"
+vpc_connector_name: "alloydb-connector"
+
+# Storage Configuration
+storage_bucket: "code-index-projects-{{ gcp_project_id }}"
+git_bucket: "code-index-git-repos-{{ gcp_project_id }}"
+bucket_location: "US"
+bucket_lifecycle_days: 90
+
+# Docker Build Configuration
+build_timeout: "1200s"
+build_machine_type: "E2_HIGHCPU_8"
+use_cloud_build: true
+
+# Webhook Secrets
+webhook_secrets:
+  - name: "github-webhook-secret"
+    length: 32
+  - name: "gitlab-webhook-secret"
+    length: 32
+  - name: "gitea-webhook-secret"
+    length: 32
+
+# Required GCP APIs
+required_apis:
+  - run.googleapis.com
+  - cloudbuild.googleapis.com
+  - secretmanager.googleapis.com
+  - storage.googleapis.com
+  - cloudscheduler.googleapis.com
+  - artifactregistry.googleapis.com
+  - vpcaccess.googleapis.com
+  - compute.googleapis.com
+  - aiplatform.googleapis.com
+
+# Schema and Migration Configuration
+schema_file: "../alloydb-schema.sql"  # Relative to ansible/ directory
+migrations_dir: "migrations"
+schema_job_name: "apply-alloydb-schema-{{ env_name }}"
+migration_job_name: "apply-migration-{{ env_name }}"
+
+# Monitoring and Logging
+enable_logging: true
+log_level: "INFO"
+enable_tracing: false
+enable_profiling: false
+
+# Security Configuration
+allow_unauthenticated: false
+require_api_key: true
+enable_cors: true
+cors_origins:
+  - "https://claude.ai"
+  - "https://*.anthropic.com"
+
+# Cleanup Configuration
+enable_auto_cleanup: true
+cleanup_schedule: "0 2 * * *"  # 2 AM daily
+inactive_project_days: 30

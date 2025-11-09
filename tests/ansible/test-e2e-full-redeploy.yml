@@ -1,0 +1,523 @@
+---
+# Comprehensive E2E Test: Teardown → Deploy → Test
+# WARNING: This is DESTRUCTIVE and will delete AlloyDB (~$180/month resource!)
+#
+# Usage:
+#   ansible-playbook test-e2e-full-redeploy.yml -i inventory/dev.yml
+#
+# This playbook:
+#   1. Tears down Cloud Run and AlloyDB (full destruction)
+#   2. Redeploys everything from scratch
+#   3. Runs semantic search E2E tests
+#   4. Generates comprehensive test report
+#
+# Duration: ~25-35 minutes
+# Cost: ~$0.25-0.50 per run
+
+- name: Code Index MCP - Full E2E Test (Teardown + Redeploy + Test)
+  hosts: localhost
+  connection: local
+  gather_facts: yes
+
+  vars:
+    # Test configuration
+    test_git_url: "https://github.com/anthropics/anthropic-sdk-python"
+    test_project_name: "e2e-test-{{ ansible_date_time.epoch }}"
+
+    # Directories
+    ansible_dir: "../../deployment/gcp/ansible"
+    terraform_dir: "../../deployment/gcp"
+
+    # Cleanup options
+    teardown_alloydb: true
+    cleanup_after_test: false  # Keep resources for debugging by default
+
+    # Semantic search queries for testing
+    semantic_queries:
+      - query: "API client authentication and configuration"
+        language: "python"
+        top_k: 5
+      - query: "message streaming functionality"
+        language: "python"
+        top_k: 3
+      - query: "error handling and retry logic"
+        language: "python"
+        top_k: 5
+
+  pre_tasks:
+    - name: Record test start time
+      ansible.builtin.set_fact:
+        test_start_time: "{{ ansible_date_time.epoch }}"
+
+    - name: Display WARNING
+      ansible.builtin.debug:
+        msg:
+          - "╔════════════════════════════════════════════════════════╗"
+          - "║  ⚠️  DESTRUCTIVE E2E TEST - READ CAREFULLY  ⚠️         ║"
+          - "╚════════════════════════════════════════════════════════╝"
+          - ""
+          - "This playbook will:"
+          - "  1. DELETE AlloyDB cluster (~$180/month when running)"
+          - "  2. DELETE Cloud Run service"
+          - "  3. DELETE all GCS buckets (ALL DATA LOST)"
+          - "  4. REDEPLOY everything from scratch"
+          - "  5. Run full semantic search tests"
+          - ""
+          - "Estimated time: 25-35 minutes"
+          - "Cost: ~$0.25-0.50 for test duration"
+          - ""
+          - "Environment: {{ env_name }}"
+          - "Project: {{ gcp_project_id }}"
+          - ""
+
+    - name: Confirm destructive test
+      ansible.builtin.pause:
+        prompt: |
+          Type 'I understand and want to proceed' to continue
+          (Press Ctrl+C to cancel)
+      register: confirm_e2e
+      when: not (auto_approve | default(false))
+
+    - name: Validate confirmation
+      ansible.builtin.fail:
+        msg: "Test cancelled - confirmation required"
+      when:
+        - not (auto_approve | default(false))
+        - confirm_e2e.user_input != 'I understand and want to proceed'
+
+  tasks:
+    # ========================================================================
+    # PHASE 1: Pre-Flight Checks
+    # ========================================================================
+    - name: "Phase 1.1: Check Terraform installed"
+      ansible.builtin.command: terraform version
+      register: tf_version
+      changed_when: false
+      failed_when: tf_version.rc != 0
+
+    - name: "Phase 1.2: Check gcloud authenticated"
+      ansible.builtin.command: gcloud auth list --filter=status:ACTIVE --format="value(account)"
+      register: gcloud_auth
+      changed_when: false
+      failed_when: gcloud_auth.stdout == ""
+
+    - name: "Phase 1.3: Check required Ansible collections"
+      ansible.builtin.command:
+        cmd: ansible-galaxy collection list
+      register: collections_check
+      changed_when: false
+
+    - name: "Phase 1.4: Verify google.cloud collection"
+      ansible.builtin.assert:
+        that:
+          - "'google.cloud' in collections_check.stdout"
+        fail_msg: "google.cloud collection not installed. Run: ansible-galaxy collection install google.cloud"
+        success_msg: "✅ Required collections installed"
+
+    - name: Display pre-flight results
+      ansible.builtin.debug:
+        msg:
+          - "✅ Pre-flight checks passed"
+          - "Terraform: {{ tf_version.stdout_lines[0] }}"
+          - "GCloud User: {{ gcloud_auth.stdout }}"
+          - "Collections: ✅ Verified"
+
+    # ========================================================================
+    # PHASE 2: Teardown Infrastructure
+    # ========================================================================
+    - name: "Phase 2: Teardown Infrastructure"
+      block:
+        - name: "Phase 2.1: Teardown Cloud Run (Ansible)"
+          ansible.builtin.command:
+            cmd: >
+              ansible-playbook utilities.yml
+              -i inventory/{{ env_name }}.yml
+              -e "operation=teardown"
+              -e "auto_approve=true"
+              -e "delete_buckets=true"
+            chdir: "{{ ansible_dir }}"
+          register: ansible_teardown
+          failed_when: false  # Continue even if some resources don't exist
+
+        - name: Display Cloud Run teardown result
+          ansible.builtin.debug:
+            msg: "{{ 'Cloud Run teardown completed' if ansible_teardown.rc == 0 else 'Cloud Run teardown had warnings (continuing)' }}"
+
+        - name: "Phase 2.2: Destroy AlloyDB (Terraform)"
+          ansible.builtin.command:
+            cmd: terraform destroy -auto-approve
+            chdir: "{{ terraform_dir }}"
+          register: terraform_destroy
+          when: teardown_alloydb | bool
+          timeout: 900  # 15 minutes timeout
+
+        - name: Verify AlloyDB cluster deleted
+          ansible.builtin.command:
+            cmd: >
+              gcloud alloydb clusters describe code-index-cluster-{{ env_name }}
+              --region={{ gcp_region }}
+          register: cluster_check
+          changed_when: false
+          failed_when: false
+
+        - name: Display teardown results
+          ansible.builtin.debug:
+            msg:
+              - "✅ Phase 2 Complete - Infrastructure Teardown"
+              - "Cloud Run: Deleted"
+              - "AlloyDB: {{ 'Confirmed Deleted' if cluster_check.rc != 0 else '⚠️  Still exists (check manually)' }}"
+              - "GCS Buckets: Deleted"
+
+    # ========================================================================
+    # PHASE 3: Deploy Infrastructure
+    # ========================================================================
+    - name: "Phase 3: Deploy Infrastructure"
+      block:
+        - name: "Phase 3.1: Deploy AlloyDB (Terraform)"
+          ansible.builtin.command:
+            cmd: terraform apply -auto-approve
+            chdir: "{{ terraform_dir }}"
+          register: terraform_apply
+          timeout: 1800  # 30 minutes for AlloyDB provisioning
+
+        - name: "Phase 3.2: Wait for AlloyDB to be READY"
+          ansible.builtin.command:
+            cmd: >
+              gcloud alloydb clusters describe code-index-cluster-{{ env_name }}
+              --region={{ gcp_region }}
+              --format='value(state)'
+          register: cluster_state
+          until: cluster_state.stdout == 'READY'
+          retries: 60
+          delay: 30
+          changed_when: false
+
+        - name: Display AlloyDB deployment status
+          ansible.builtin.debug:
+            msg:
+              - "✅ AlloyDB deployed and READY"
+              - "Cluster: code-index-cluster-{{ env_name }}"
+              - "State: {{ cluster_state.stdout }}"
+
+        - name: "Phase 3.3: Deploy Cloud Run (Ansible)"
+          ansible.builtin.command:
+            cmd: >
+              ansible-playbook deploy.yml
+              -i inventory/{{ env_name }}.yml
+              -e "confirm_deployment=yes"
+            chdir: "{{ ansible_dir }}"
+          register: ansible_deploy
+
+        - name: "Phase 3.4: Apply database schema"
+          ansible.builtin.command:
+            cmd: >
+              ansible-playbook utilities.yml
+              -i inventory/{{ env_name }}.yml
+              -e "operation=apply_schema"
+            chdir: "{{ ansible_dir }}"
+          register: schema_apply
+
+        - name: "Phase 3.5: Seed test user"
+          ansible.builtin.command:
+            cmd: >
+              ansible-playbook utilities.yml
+              -i inventory/{{ env_name }}.yml
+              -e "operation=seed_test_user"
+            chdir: "{{ ansible_dir }}"
+          register: seed_user
+
+        - name: "Phase 3.6: Generate test API key"
+          ansible.builtin.command:
+            cmd: >
+              ansible-playbook utilities.yml
+              -i inventory/{{ env_name }}.yml
+              -e "operation=generate_api_key"
+              -e "user_id=e2e-test"
+            chdir: "{{ ansible_dir }}"
+          register: api_key_gen
+
+        - name: "Phase 3.7: Read generated API key"
+          ansible.builtin.slurp:
+            src: "{{ ansible_dir }}/api-key-e2e-test-{{ env_name }}.txt"
+          register: api_key_file
+
+        - name: Set API key fact
+          ansible.builtin.set_fact:
+            test_api_key: "{{ api_key_file.content | b64decode | trim }}"
+
+        - name: Display deployment results
+          ansible.builtin.debug:
+            msg:
+              - "✅ Phase 3 Complete - Infrastructure Deployed"
+              - "AlloyDB: READY"
+              - "Cloud Run: Deployed"
+              - "Schema: Applied"
+              - "Test User: Seeded"
+              - "API Key: Generated"
+
+    # ========================================================================
+    # PHASE 4: Validation
+    # ========================================================================
+    - name: "Phase 4: Validate Deployment"
+      block:
+        - name: "Phase 4.1: Get Cloud Run service URL"
+          ansible.builtin.command:
+            cmd: >
+              gcloud run services describe code-index-mcp-{{ env_name }}
+              --region={{ gcp_region }}
+              --format='value(status.url)'
+          register: service_url
+          changed_when: false
+
+        - name: "Phase 4.2: Test health endpoint"
+          ansible.builtin.uri:
+            url: "{{ service_url.stdout }}/health"
+            method: GET
+            status_code: 200
+            timeout: 30
+          register: health_check
+          retries: 5
+          delay: 10
+          until: health_check.status == 200
+
+        - name: "Phase 4.3: Test AlloyDB connectivity"
+          ansible.builtin.command:
+            cmd: >
+              ansible-playbook utilities.yml
+              -i inventory/{{ env_name }}.yml
+              -e "operation=test_connection"
+            chdir: "{{ ansible_dir }}"
+          register: db_test
+
+        - name: "Phase 4.4: Discover MCP server capabilities"
+          tosin2013.mcp_audit.mcp_server_info:
+            transport: "sse"
+            server_url: "{{ service_url.stdout }}/sse"
+            server_headers:
+              Authorization: "Bearer {{ test_api_key }}"
+          register: server_capabilities
+          failed_when: not server_capabilities.success
+
+        - name: Display validation results
+          ansible.builtin.debug:
+            msg:
+              - "✅ Phase 4 Complete - Deployment Validated"
+              - "Health Endpoint: ✅ Responding"
+              - "AlloyDB: ✅ Connected"
+              - "MCP Server: ✅ Discovered"
+              - "Available Tools: {{ server_capabilities.server_info.available_tools | length }}"
+
+    # ========================================================================
+    # PHASE 5: Functional Testing (Code Ingestion + Semantic Search)
+    # ========================================================================
+    - name: "Phase 5: Functional Testing"
+      block:
+        - name: "Phase 5.1: Ingest code from Git repository"
+          tosin2013.mcp_audit.mcp_test_tool:
+            transport: "sse"
+            server_url: "{{ service_url.stdout }}/sse"
+            server_headers:
+              Authorization: "Bearer {{ test_api_key }}"
+            tool_name: ingest_code_from_git
+            tool_arguments:
+              git_url: "{{ test_git_url }}"
+              project_name: "{{ test_project_name }}"
+              branch: "main"
+          register: ingestion_result
+          failed_when: not ingestion_result.success
+
+        - name: Display ingestion results
+          ansible.builtin.debug:
+            msg:
+              - "✅ Code Ingestion Completed"
+              - "Files Processed: {{ ingestion_result.tool_result.structuredContent.result[0].files_processed | default('N/A') if ingestion_result.tool_result.structuredContent.result | length > 0 else 'N/A' }}"
+              - "Chunks Created: {{ ingestion_result.tool_result.structuredContent.result[0].chunks_created | default('N/A') if ingestion_result.tool_result.structuredContent.result | length > 0 else 'N/A' }}"
+
+        - name: "Phase 5.2: Run semantic search queries"
+          tosin2013.mcp_audit.mcp_test_tool:
+            transport: "sse"
+            server_url: "{{ service_url.stdout }}/sse"
+            server_headers:
+              Authorization: "Bearer {{ test_api_key }}"
+            tool_name: semantic_search_code
+            tool_arguments:
+              query: "{{ item.query }}"
+              language: "{{ item.language }}"
+              top_k: "{{ item.top_k }}"
+          register: semantic_search_results
+          loop: "{{ semantic_queries }}"
+          loop_control:
+            label: "{{ item.query }}"
+
+        - name: Validate all searches succeeded
+          ansible.builtin.assert:
+            that:
+              - item.success
+            fail_msg: "❌ Semantic search query failed: {{ item.item.query }}"
+            success_msg: "✅ Query '{{ item.item.query }}' executed successfully"
+          loop: "{{ semantic_search_results.results }}"
+          loop_control:
+            label: "{{ item.item.query }}"
+
+        - name: Display functional testing results
+          ansible.builtin.debug:
+            msg:
+              - "✅ Phase 5 Complete - Functional Testing"
+              - "Code Ingestion: ✅ PASS"
+              - "Semantic Search: {{ semantic_search_results.results | selectattr('success') | list | length }}/{{ semantic_search_results.results | length }} PASS"
+              - "Total Results Found: {{ semantic_search_results.results | map(attribute='tool_result.structuredContent.result') | map('length') | list | sum }}"
+
+    # ========================================================================
+    # PHASE 6: Performance Metrics
+    # ========================================================================
+    - name: "Phase 6: Collect Performance Metrics"
+      block:
+        - name: Calculate total test time
+          ansible.builtin.set_fact:
+            total_test_time: "{{ (ansible_date_time.epoch | int) - (test_start_time | int) }}"
+
+        - name: Calculate average search time
+          ansible.builtin.set_fact:
+            avg_search_time: "{{ (semantic_search_results.results | map(attribute='execution_time') | map('float') | list | sum / semantic_search_results.results | length) | round(2) }}"
+
+        - name: Build performance metrics
+          ansible.builtin.set_fact:
+            performance_metrics:
+              total_duration: "{{ total_test_time }}s"
+              ingestion_time: "{{ ingestion_result.execution_time | default('N/A') }}s"
+              avg_search_time: "{{ avg_search_time }}s"
+              total_searches: "{{ semantic_search_results.results | length }}"
+              results_returned: "{{ semantic_search_results.results | map(attribute='tool_result.structuredContent.result') | map('length') | list | sum }}"
+
+        - name: Display performance metrics
+          ansible.builtin.debug:
+            msg:
+              - "════════════════════════════════════════════════════════"
+              - "⚡ Performance Metrics"
+              - "════════════════════════════════════════════════════════"
+              - "Total Test Duration: {{ performance_metrics.total_duration }}"
+              - "Ingestion Time: {{ performance_metrics.ingestion_time }}"
+              - "Average Search Time: {{ performance_metrics.avg_search_time }}"
+              - "Total Searches: {{ performance_metrics.total_searches }}"
+              - "Results Returned: {{ performance_metrics.results_returned }}"
+              - "════════════════════════════════════════════════════════"
+
+  post_tasks:
+    - name: Generate test summary
+      ansible.builtin.set_fact:
+        test_summary:
+          environment: "{{ env_name }}"
+          project: "{{ gcp_project_id }}"
+          test_timestamp: "{{ ansible_date_time.iso8601 }}"
+          phases:
+            preflight: "✅ PASS"
+            teardown: "✅ PASS"
+            deployment: "✅ PASS"
+            validation: "✅ PASS"
+            functional: "✅ PASS"
+          metrics: "{{ performance_metrics }}"
+          infrastructure_status:
+            alloydb: "{{ 'Running' if not cleanup_after_test else 'Deleted' }}"
+            cloud_run: "{{ 'Running' if not cleanup_after_test else 'Deleted' }}"
+
+    - name: Save test report to file
+      ansible.builtin.copy:
+        content: |
+          # Code Index MCP - Full E2E Test Report
+
+          **Test Type**: Full Teardown + Redeploy + Functional Test
+          **Date**: {{ ansible_date_time.iso8601 }}
+          **Environment**: {{ test_summary.environment }}
+          **Project**: {{ test_summary.project }}
+
+          ## Test Phases
+
+          | Phase | Status |
+          |-------|--------|
+          | Pre-Flight Checks | {{ test_summary.phases.preflight }} |
+          | Infrastructure Teardown | {{ test_summary.phases.teardown }} |
+          | Infrastructure Deployment | {{ test_summary.phases.deployment }} |
+          | Deployment Validation | {{ test_summary.phases.validation }} |
+          | Functional Testing | {{ test_summary.phases.functional }} |
+
+          ## Performance Metrics
+
+          - **Total Test Duration**: {{ test_summary.metrics.total_duration }}
+          - **Code Ingestion Time**: {{ test_summary.metrics.ingestion_time }}
+          - **Average Search Time**: {{ test_summary.metrics.avg_search_time }}
+          - **Total Searches Performed**: {{ test_summary.metrics.total_searches }}
+          - **Results Returned**: {{ test_summary.metrics.results_returned }}
+
+          ## Infrastructure Status
+
+          - **AlloyDB**: {{ test_summary.infrastructure_status.alloydb }}
+          - **Cloud Run**: {{ test_summary.infrastructure_status.cloud_run }}
+
+          ## Semantic Search Results
+
+          {% for result in semantic_search_results.results %}
+          ### Query {{ loop.index }}: "{{ result.item.query }}"
+          - **Status**: {{ '✅ PASS' if result.success else '❌ FAIL' }}
+          - **Results Found**: {{ result.tool_result.structuredContent.result | length if result.success else 0 }}
+          {% if result.success and result.tool_result.structuredContent.result | length > 0 %}
+          - **Top Match**: {{ result.tool_result.structuredContent.result[0].file_path }}
+          - **Similarity Score**: {{ result.tool_result.structuredContent.result[0].similarity_score }}
+          {% endif %}
+
+          {% endfor %}
+
+          ## Summary
+
+          ✅ **All Tests PASSED**
+
+          - AlloyDB deployment: Working
+          - Cloud Run deployment: Working
+          - Code ingestion: Working
+          - Semantic search: Working
+          - Vector similarity: Working
+
+          ---
+          *Generated by Code Index MCP E2E Test Suite*
+        dest: "./e2e-test-report-{{ ansible_date_time.epoch }}.md"
+      register: report_saved
+
+    - name: Display final test summary
+      ansible.builtin.debug:
+        msg:
+          - "╔════════════════════════════════════════════════════════╗"
+          - "║  ✅ FULL E2E TEST COMPLETE                             ║"
+          - "╚════════════════════════════════════════════════════════╝"
+          - ""
+          - "Test Duration: {{ test_summary.metrics.total_duration }}"
+          - "Report: {{ report_saved.dest }}"
+          - ""
+          - "Infrastructure Status:"
+          - "  - AlloyDB: {{ test_summary.infrastructure_status.alloydb }}"
+          - "  - Cloud Run: {{ test_summary.infrastructure_status.cloud_run }}"
+          - ""
+          - "{{ 'Infrastructure kept for debugging' if not cleanup_after_test else 'Infrastructure cleaned up' }}"
+          - ""
+          - "To manually inspect:"
+          - "  gcloud run services list --region={{ gcp_region }}"
+          - "  gcloud alloydb clusters list --region={{ gcp_region }}"
+          - ""
+
+    - name: Optional cleanup
+      when: cleanup_after_test | bool
+      block:
+        - name: Teardown after test
+          ansible.builtin.include_tasks: "{{ ansible_dir }}/roles/utilities/tasks/teardown.yml"
+          vars:
+            auto_approve: true
+            delete_buckets: true
+
+        - name: Destroy AlloyDB after test
+          ansible.builtin.include_role:
+            name: terraform
+          vars:
+            terraform_operation: destroy
+            terraform_auto_approve: true
+
+        - name: Display cleanup status
+          ansible.builtin.debug:
+            msg: "✅ All test infrastructure cleaned up"

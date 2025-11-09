@@ -6,17 +6,19 @@ file watcher status, configuration management, and system health monitoring.
 It composes technical tools to achieve business goals.
 """
 
-from typing import Dict, Any, Optional
 from dataclasses import dataclass
-from .index_management_service import IndexManagementService
-from .base_service import BaseService
+from typing import Any, Dict, Optional
+
 # FileWatcherTool will be imported locally to avoid circular import
 from ..tools.config import ProjectConfigTool, SettingsTool
+from .base_service import BaseService
+from .index_management_service import IndexManagementService
 
 
 @dataclass
 class FileWatcherStatus:
     """Business result for file watcher status operations."""
+
     available: bool
     active: bool
     status: str
@@ -40,6 +42,7 @@ class SystemManagementService(BaseService):
         super().__init__(ctx)
         # Import FileWatcherTool locally to avoid circular import
         from ..tools.monitoring import FileWatcherTool
+
         self._watcher_tool = FileWatcherTool(ctx)
         self._config_tool = ProjectConfigTool()
         self._settings_tool = SettingsTool()
@@ -61,9 +64,12 @@ class SystemManagementService(BaseService):
         # Business result formatting
         return self._format_status_result(status_result)
 
-    def configure_file_watcher(self, enabled: Optional[bool] = None,
-                             debounce_seconds: Optional[float] = None,
-                             additional_exclude_patterns: Optional[list] = None) -> str:
+    def configure_file_watcher(
+        self,
+        enabled: Optional[bool] = None,
+        debounce_seconds: Optional[float] = None,
+        additional_exclude_patterns: Optional[list] = None,
+    ) -> str:
         """
         Configure file watcher settings with business validation.
 
@@ -82,7 +88,9 @@ class SystemManagementService(BaseService):
         self._validate_configuration_request(enabled, debounce_seconds, additional_exclude_patterns)
 
         # Business workflow: Apply configuration
-        result = self._apply_file_watcher_configuration(enabled, debounce_seconds, additional_exclude_patterns)
+        result = self._apply_file_watcher_configuration(
+            enabled, debounce_seconds, additional_exclude_patterns
+        )
 
         return result
 
@@ -114,7 +122,7 @@ class SystemManagementService(BaseService):
             Error information dictionary or None if no errors
         """
         # Check context for recorded errors
-        if hasattr(self.ctx.request_context.lifespan_context, 'file_watcher_error'):
+        if hasattr(self.ctx.request_context.lifespan_context, "file_watcher_error"):
             return self.ctx.request_context.lifespan_context.file_watcher_error
 
         return None
@@ -139,18 +147,18 @@ class SystemManagementService(BaseService):
         recommendations = [
             "Use refresh_index tool for manual updates",
             "File watcher auto-refresh is disabled due to errors",
-            "Consider restarting the project or checking system permissions"
+            "Consider restarting the project or checking system permissions",
         ]
 
         return FileWatcherStatus(
             available=True,
             active=False,
             status="error",
-            message=error_info.get('message', 'File watcher error occurred'),
+            message=error_info.get("message", "File watcher error occurred"),
             error_info=error_info,
             configuration=configuration,
             rebuild_status=rebuild_status,
-            recommendations=recommendations
+            recommendations=recommendations,
         )
 
     def _create_not_initialized_status(self) -> FileWatcherStatus:
@@ -169,7 +177,7 @@ class SystemManagementService(BaseService):
         # Business logic: Generate initialization recommendations
         recommendations = [
             "Use set_project_path tool to initialize file watcher",
-            "File monitoring will be enabled after project initialization"
+            "File monitoring will be enabled after project initialization",
         ]
 
         return FileWatcherStatus(
@@ -180,7 +188,7 @@ class SystemManagementService(BaseService):
             error_info=None,
             configuration=configuration,
             rebuild_status=rebuild_status,
-            recommendations=recommendations
+            recommendations=recommendations,
         )
 
     def _create_active_status(self, watcher_service) -> FileWatcherStatus:
@@ -206,14 +214,14 @@ class SystemManagementService(BaseService):
         recommendations = self._generate_active_recommendations(watcher_status)
 
         return FileWatcherStatus(
-            available=watcher_status.get('available', True),
-            active=watcher_status.get('active', False),
-            status=watcher_status.get('status', 'active'),
-            message=watcher_status.get('message'),
+            available=watcher_status.get("available", True),
+            active=watcher_status.get("active", False),
+            status=watcher_status.get("status", "active"),
+            message=watcher_status.get("message"),
             error_info=None,
             configuration=configuration,
             rebuild_status=rebuild_status,
-            recommendations=recommendations
+            recommendations=recommendations,
         )
 
     def _get_file_watcher_configuration(self) -> Dict[str, Any]:
@@ -225,23 +233,25 @@ class SystemManagementService(BaseService):
         """
         try:
             # Try to get from project settings
-            if (hasattr(self.ctx.request_context.lifespan_context, 'settings') and
-                self.ctx.request_context.lifespan_context.settings):
+            if (
+                hasattr(self.ctx.request_context.lifespan_context, "settings")
+                and self.ctx.request_context.lifespan_context.settings
+            ):
                 return self.ctx.request_context.lifespan_context.settings.get_file_watcher_config()
 
             # Fallback to default configuration
             return {
-                'enabled': True,
-                'debounce_seconds': 6.0,
-                'additional_exclude_patterns': [],
-                'note': 'Default configuration - project not fully initialized'
+                "enabled": True,
+                "debounce_seconds": 6.0,
+                "additional_exclude_patterns": [],
+                "note": "Default configuration - project not fully initialized",
             }
 
         except Exception as e:
             return {
-                'error': f'Could not load configuration: {e}',
-                'enabled': True,
-                'debounce_seconds': 6.0
+                "error": f"Could not load configuration: {e}",
+                "enabled": True,
+                "debounce_seconds": 6.0,
             }
 
     def _get_rebuild_status(self) -> Dict[str, Any]:
@@ -256,10 +266,7 @@ class SystemManagementService(BaseService):
             return index_service.get_rebuild_status()
 
         except Exception as e:
-            return {
-                'status': 'unknown',
-                'error': f'Could not get rebuild status: {e}'
-            }
+            return {"status": "unknown", "error": f"Could not get rebuild status: {e}"}
 
     def _generate_active_recommendations(self, watcher_status: Dict[str, Any]) -> list[str]:
         """
@@ -273,7 +280,7 @@ class SystemManagementService(BaseService):
         """
         recommendations = []
 
-        if watcher_status.get('active', False):
+        if watcher_status.get("active", False):
             recommendations.append("File watcher is active - automatic index updates enabled")
             recommendations.append("Files will be re-indexed automatically when changed")
         else:
@@ -281,15 +288,20 @@ class SystemManagementService(BaseService):
             recommendations.append("Use refresh_index for manual updates")
 
         # Add performance recommendations
-        restart_attempts = watcher_status.get('restart_attempts', 0)
+        restart_attempts = watcher_status.get("restart_attempts", 0)
         if restart_attempts > 0:
-            recommendations.append(f"File watcher has restarted {restart_attempts} times - monitor for stability")
+            recommendations.append(
+                f"File watcher has restarted {restart_attempts} times - monitor for stability"
+            )
 
         return recommendations
 
-    def _validate_configuration_request(self, enabled: Optional[bool],
-                                      debounce_seconds: Optional[float],
-                                      additional_exclude_patterns: Optional[list]) -> None:
+    def _validate_configuration_request(
+        self,
+        enabled: Optional[bool],
+        debounce_seconds: Optional[float],
+        additional_exclude_patterns: Optional[list],
+    ) -> None:
         """
         Business validation for file watcher configuration.
 
@@ -323,9 +335,12 @@ class SystemManagementService(BaseService):
                 if not pattern.strip():
                     raise ValueError("Exclude patterns cannot be empty")
 
-    def _apply_file_watcher_configuration(self, enabled: Optional[bool],
-                                        debounce_seconds: Optional[float],
-                                        additional_exclude_patterns: Optional[list]) -> str:
+    def _apply_file_watcher_configuration(
+        self,
+        enabled: Optional[bool],
+        debounce_seconds: Optional[float],
+        additional_exclude_patterns: Optional[list],
+    ) -> str:
         """
         Business logic to apply file watcher configuration.
 
@@ -341,8 +356,10 @@ class SystemManagementService(BaseService):
             ValueError: If configuration cannot be applied
         """
         # Business rule: Settings must be available
-        if (not hasattr(self.ctx.request_context.lifespan_context, 'settings') or
-            not self.ctx.request_context.lifespan_context.settings):
+        if (
+            not hasattr(self.ctx.request_context.lifespan_context, "settings")
+            or not self.ctx.request_context.lifespan_context.settings
+        ):
             raise ValueError("Settings not available - project path not set")
 
         settings = self.ctx.request_context.lifespan_context.settings
@@ -364,18 +381,20 @@ class SystemManagementService(BaseService):
 
         # Business logic: Generate informative result message
         changes_summary = []
-        if 'enabled' in updates:
+        if "enabled" in updates:
             changes_summary.append(f"enabled={updates['enabled']}")
-        if 'debounce_seconds' in updates:
+        if "debounce_seconds" in updates:
             changes_summary.append(f"debounce={updates['debounce_seconds']}s")
-        if 'additional_exclude_patterns' in updates:
-            pattern_count = len(updates['additional_exclude_patterns'])
+        if "additional_exclude_patterns" in updates:
+            pattern_count = len(updates["additional_exclude_patterns"])
             changes_summary.append(f"exclude_patterns={pattern_count}")
 
         changes_str = ", ".join(changes_summary)
 
-        return (f"File watcher configuration updated: {changes_str}. "
-                f"Restart may be required for changes to take effect.")
+        return (
+            f"File watcher configuration updated: {changes_str}. "
+            f"Restart may be required for changes to take effect."
+        )
 
     def _format_status_result(self, status_result: FileWatcherStatus) -> Dict[str, Any]:
         """
@@ -388,20 +407,20 @@ class SystemManagementService(BaseService):
             Formatted result dictionary for MCP response
         """
         result = {
-            'available': status_result.available,
-            'active': status_result.active,
-            'status': status_result.status,
-            'configuration': status_result.configuration,
-            'rebuild_status': status_result.rebuild_status,
-            'recommendations': status_result.recommendations
+            "available": status_result.available,
+            "active": status_result.active,
+            "status": status_result.status,
+            "configuration": status_result.configuration,
+            "rebuild_status": status_result.rebuild_status,
+            "recommendations": status_result.recommendations,
         }
 
         # Add optional fields
         if status_result.message:
-            result['message'] = status_result.message
+            result["message"] = status_result.message
 
         if status_result.error_info:
-            result['error'] = status_result.error_info
-            result['manual_refresh_required'] = True
+            result["error"] = status_result.error_info
+            result["manual_refresh_required"] = True
 
         return result

@@ -1,0 +1,47 @@
+---
+# GCP Test Environment Inventory - For Phase 2A.1 MCP Testing
+#
+# Purpose: MCP tool validation testing after deployment
+# Updated: 2025-11-04 for Phase 2A.1 validation
+#
+# Usage:
+#   export CLOUDRUN_SERVICE_URL="https://code-index-mcp-test-xxxxx.run.app"
+#   export MCP_API_KEY_TEST="ci_your_test_api_key"  # Optional if allow_unauthenticated=true
+#   ansible-playbook test-cloud.yml -i inventory/gcp-test.yml
+
+all:
+  hosts:
+    localhost:
+      ansible_connection: local
+      ansible_python_interpreter: "/Users/tosinakinosho/workspaces/code-index-mcp/.venv/bin/python3"
+
+  vars:
+    # Environment
+    env_name: "test"
+    transport: "sse"
+
+    # GCP Configuration
+    gcp_project_id: "tosinscloud"
+    gcp_region: "us-east1"
+
+    # MCP Server Configuration (set via environment variables)
+    mcp_server_url: "{{ lookup('env', 'CLOUDRUN_SERVICE_URL') }}"
+    api_key: "{{ lookup('env', 'MCP_API_KEY_TEST') | default('', true) }}"
+
+    # Testing Configuration
+    with_alloydb: false  # Phase 2A.1 testing without AlloyDB
+    test_semantic_search: false  # Skip semantic search tests (requires AlloyDB)
+    test_git_ingestion: true  # Test git ingestion (mock mode)
+
+    # Test Project Configuration
+    test_project_path: "/tmp/code-index-mcp-test-project"
+    test_git_repo: "https://github.com/anthropics/anthropic-sdk-python"
+
+    # LLM Testing Configuration (optional)
+    ollama_available: false
+    ollama_base_url: "http://localhost:11434"
+    run_llm_tests: false  # Disable LLM tests for initial validation
+
+    # Timeout Configuration
+    test_timeout: 300  # 5 minutes per test
+    connection_timeout: 30  # 30 seconds connection timeout

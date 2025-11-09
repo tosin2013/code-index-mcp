@@ -83,7 +83,7 @@ User user = userManager.createUser("John Doe", 30, "john_doe", "john@example.com
 user.setPassword("SecurePass123!");
 
 // Create an admin user
-User admin = userManager.createUser("Jane Smith", 35, "jane_admin", 
+User admin = userManager.createUser("Jane Smith", 35, "jane_admin",
                                   "jane@example.com", UserRole.ADMIN);
 admin.setPassword("AdminPass123!");
 admin.addPermission("user_management");

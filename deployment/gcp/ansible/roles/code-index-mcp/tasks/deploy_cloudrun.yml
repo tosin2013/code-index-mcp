@@ -1,0 +1,90 @@
+---
+# Cloud Run deployment tasks
+
+- name: Build gcloud run deploy command
+  ansible.builtin.set_fact:
+    deploy_command: >-
+      gcloud run deploy {{ service_name }}
+      --image={{ full_image_path }}
+      --region={{ gcp_region }}
+      --platform=managed
+      --cpu={{ cloudrun_cpu }}
+      --memory={{ cloudrun_memory }}
+      --min-instances={{ cloudrun_min_instances }}
+      --max-instances={{ cloudrun_max_instances }}
+      --concurrency={{ cloudrun_concurrency }}
+      --timeout={{ cloudrun_timeout }}
+      --execution-environment={{ cloudrun_execution_environment }}
+      --service-account={{ service_account }}
+      --set-env-vars=MCP_TRANSPORT=http,GCP_PROJECT_ID={{ gcp_project_id }},GCS_BUCKET={{ storage_bucket }},GCS_GIT_BUCKET={{ git_bucket }},ENVIRONMENT={{ env_name }}
+      --set-secrets=GITHUB_WEBHOOK_SECRET=github-webhook-secret:latest,GITLAB_WEBHOOK_SECRET=gitlab-webhook-secret:latest,GITEA_WEBHOOK_SECRET=gitea-webhook-secret:latest
+      {{ '--vpc-connector=' + vpc_connector_name if with_alloydb else '' }}
+      {{ '--set-secrets=ALLOYDB_CONNECTION_STRING=' + alloydb_connection_secret + ':latest' if with_alloydb else '' }}
+      {{ '--allow-unauthenticated' if allow_unauthenticated else '--no-allow-unauthenticated' }}
+      --project={{ gcp_project_id }}
+      --quiet
+
+- name: Display deployment command
+  ansible.builtin.debug:
+    msg: "Deploying Cloud Run service: {{ service_name }}"
+    verbosity: 1
+
+- name: Deploy Cloud Run service
+  ansible.builtin.shell: |
+    {{ deploy_command }}
+  register: deploy_result
+  changed_when: "'Deploying' in deploy_result.stderr or 'deployed' in deploy_result.stderr"
+  failed_when: deploy_result.rc != 0
+
+- name: Parse service URL from deployment output
+  ansible.builtin.set_fact:
+    cloudrun_service_url: "{{ deploy_result.stderr | regex_search('https://[^\\s]+', multiline=True) }}"
+  when: deploy_result.rc == 0
+
+- name: Get service URL if not parsed
+  ansible.builtin.command: >
+    gcloud run services describe {{ service_name }}
+    --region={{ gcp_region }}
+    --project={{ gcp_project_id }}
+    --format='value(status.url)'
+  register: service_url_result
+  when: cloudrun_service_url is not defined
+  changed_when: false
+
+- name: Set service URL from describe command
+  ansible.builtin.set_fact:
+    cloudrun_service_url: "{{ service_url_result.stdout | trim }}"
+  when:
+    - cloudrun_service_url is not defined
+    - service_url_result.stdout is defined
+
+- name: Wait for service to be ready
+  ansible.builtin.command: >
+    gcloud run services describe {{ service_name }}
+    --region={{ gcp_region }}
+    --project={{ gcp_project_id }}
+    --format='value(status.conditions[0].status)'
+  register: service_status
+  retries: 10
+  delay: 10
+  until: service_status.stdout == 'True'
+  changed_when: false
+
+- name: Set IAM policy for invoker access (if authentication required)
+  ansible.builtin.command: >
+    gcloud run services add-iam-policy-binding {{ service_name }}
+    --region={{ gcp_region }}
+    --member='allUsers'
+    --role='roles/run.invoker'
+    --project={{ gcp_project_id }}
+  when: allow_unauthenticated | bool
+  register: iam_policy
+  changed_when: "'Updated IAM policy' in iam_policy.stdout"
+
+- name: Display deployment success
+  ansible.builtin.debug:
+    msg:
+      - "✅ Cloud Run service deployed successfully"
+      - "Service: {{ service_name }}"
+      - "URL: {{ cloudrun_service_url }}"
+      - "Region: {{ gcp_region }}"

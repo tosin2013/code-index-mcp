@@ -1,0 +1,65 @@
+---
+# Local HTTP Mode Testing Inventory
+# Use this to test MCP server in HTTP/SSE mode locally
+# This matches cloud behavior (stateful sessions) while using local PostgreSQL
+
+all:
+  hosts:
+    localhost:
+      ansible_connection: local
+      ansible_python_interpreter: "/Users/tosinakinosho/workspaces/code-index-mcp/.venv/bin/python"
+
+  vars:
+    # ============================================
+    # Transport Configuration
+    # ============================================
+    transport: sse
+
+    # Local HTTP server URL (matches cloud structure)
+    mcp_server_url: "http://localhost:8080"
+
+    # ============================================
+    # Authentication
+    # ============================================
+    # For local testing without auth, use a dummy key
+    # For testing auth middleware, generate a real key
+    api_key: "test_local_key"
+
+    # ============================================
+    # Feature Flags (match cloud inventory structure)
+    # ============================================
+    with_alloydb: false  # Using local PostgreSQL
+    test_git_ingestion: false  # Skip cloud-only features
+    run_llm_tests: false
+    ollama_available: false
+
+    # ============================================
+    # Test Configuration
+    # ============================================
+    test_project_path: "/tmp/code-index-mcp-test-project"
+    test_timeout_seconds: 60
+    verbose_output: false
+
+    # Expected Server Configuration
+    expected_server_name: "CodeIndexer"
+    expected_protocol_version: "2024-11-05"
+
+    # ============================================
+    # Usage Instructions
+    # ============================================
+    # 1. Start PostgreSQL:
+    #    docker compose up -d postgres
+    #
+    # 2. Start MCP server in HTTP mode:
+    #    export MCP_TRANSPORT=http
+    #    export PORT=8080
+    #    export DATABASE_URL=postgresql://postgres:localdevpass@localhost:5432/code_index
+    #    uv run code-index-mcp
+    #
+    # 3. Run tests:
+    #    ansible-playbook test-cloud.yml -i inventory/local-http.yml
+    #
+    # This gives you:
+    # ✅ Stateful behavior (like cloud)
+    # ✅ HTTP/SSE transport testing
+    # ✅ 100% confidence in cloud deployment

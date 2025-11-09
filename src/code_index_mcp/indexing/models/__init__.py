@@ -2,7 +2,7 @@
 Model classes for the indexing system.
 """
 
-from .symbol_info import SymbolInfo
 from .file_info import FileInfo
+from .symbol_info import SymbolInfo
 
-__all__ = ['SymbolInfo', 'FileInfo']
+__all__ = ["SymbolInfo", "FileInfo"]

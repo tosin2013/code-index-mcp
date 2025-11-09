@@ -1,0 +1,14 @@
+FROM python:3.11-slim
+
+# Install psycopg2
+RUN pip install --no-cache-dir psycopg2-binary
+
+# Copy schema files
+COPY apply_schema.py /app/apply_schema.py
+COPY alloydb-schema.sql /app/alloydb-schema.sql
+
+RUN chmod +x /app/apply_schema.py
+
+WORKDIR /app
+
+CMD ["python", "apply_schema.py"]

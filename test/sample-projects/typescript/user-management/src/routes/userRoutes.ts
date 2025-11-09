@@ -154,17 +154,17 @@ router.get(
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 20;
     const filter: any = {};
-    
+
     // Add filtering by role if provided
     if (req.query.role) {
       filter.role = req.query.role;
     }
-    
+
     // Add filtering by status if provided
     if (req.query.status) {
       filter.status = req.query.status;
     }
-    
+
     const result = await userService.getAllUsers(page, limit, filter);
     res.json(createSuccessResponse(result, 'Users retrieved successfully'));
   })
@@ -182,7 +182,7 @@ router.get(
     const query = req.query.q as string;
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 20;
-    
+
     const result = await userService.searchUsers(query, page, limit);
     res.json(createSuccessResponse(result, 'Search completed successfully'));
   })

@@ -5,8 +5,8 @@ This tool handles low-level file system operations without any business logic.
 """
 
 import os
-from typing import Dict, Any, Optional
 from pathlib import Path
+from typing import Any, Dict, Optional
 
 
 class FileSystemTool:
@@ -42,14 +42,14 @@ class FileSystemTool:
             path_obj = Path(file_path)
 
             return {
-                'size_bytes': stat_info.st_size,
-                'modified_time': stat_info.st_mtime,
-                'created_time': stat_info.st_ctime,
-                'is_file': path_obj.is_file(),
-                'is_directory': path_obj.is_dir(),
-                'extension': path_obj.suffix,
-                'name': path_obj.name,
-                'parent': str(path_obj.parent)
+                "size_bytes": stat_info.st_size,
+                "modified_time": stat_info.st_mtime,
+                "created_time": stat_info.st_ctime,
+                "is_file": path_obj.is_file(),
+                "is_directory": path_obj.is_dir(),
+                "extension": path_obj.suffix,
+                "name": path_obj.name,
+                "parent": str(path_obj.parent),
             }
 
         except OSError as e:
@@ -74,16 +74,16 @@ class FileSystemTool:
 
         # Try UTF-8 first (most common)
         try:
-            with open(file_path, 'r', encoding='utf-8') as f:
+            with open(file_path, "r", encoding="utf-8") as f:
                 return f.read()
         except UnicodeDecodeError:
             pass
 
         # Try other common encodings
-        encodings = ['utf-8-sig', 'latin-1', 'cp1252', 'iso-8859-1']
+        encodings = ["utf-8-sig", "latin-1", "cp1252", "iso-8859-1"]
         for encoding in encodings:
             try:
-                with open(file_path, 'r', encoding=encoding) as f:
+                with open(file_path, "r", encoding=encoding) as f:
                     return f.read()
             except UnicodeDecodeError:
                 continue
@@ -123,51 +123,51 @@ class FileSystemTool:
         extension = Path(file_path).suffix.lower()
 
         lang_map = {
-            '.py': 'python',
-            '.js': 'javascript',
-            '.jsx': 'javascript',
-            '.ts': 'typescript',
-            '.tsx': 'typescript',
-            '.java': 'java',
-            '.cpp': 'cpp',
-            '.cxx': 'cpp',
-            '.cc': 'cpp',
-            '.c': 'c',
-            '.h': 'c',
-            '.hpp': 'cpp',
-            '.hxx': 'cpp',
-            '.cs': 'csharp',
-            '.go': 'go',
-            '.rs': 'rust',
-            '.php': 'php',
-            '.rb': 'ruby',
-            '.swift': 'swift',
-            '.kt': 'kotlin',
-            '.scala': 'scala',
-            '.m': 'objc',
-            '.mm': 'objc',
-            '.html': 'html',
-            '.htm': 'html',
-            '.css': 'css',
-            '.scss': 'scss',
-            '.sass': 'sass',
-            '.less': 'less',
-            '.json': 'json',
-            '.xml': 'xml',
-            '.yaml': 'yaml',
-            '.yml': 'yaml',
-            '.md': 'markdown',
-            '.txt': 'text',
-            '.sh': 'shell',
-            '.bash': 'shell',
-            '.zsh': 'shell',
-            '.fish': 'shell',
-            '.ps1': 'powershell',
-            '.bat': 'batch',
-            '.cmd': 'batch'
+            ".py": "python",
+            ".js": "javascript",
+            ".jsx": "javascript",
+            ".ts": "typescript",
+            ".tsx": "typescript",
+            ".java": "java",
+            ".cpp": "cpp",
+            ".cxx": "cpp",
+            ".cc": "cpp",
+            ".c": "c",
+            ".h": "c",
+            ".hpp": "cpp",
+            ".hxx": "cpp",
+            ".cs": "csharp",
+            ".go": "go",
+            ".rs": "rust",
+            ".php": "php",
+            ".rb": "ruby",
+            ".swift": "swift",
+            ".kt": "kotlin",
+            ".scala": "scala",
+            ".m": "objc",
+            ".mm": "objc",
+            ".html": "html",
+            ".htm": "html",
+            ".css": "css",
+            ".scss": "scss",
+            ".sass": "sass",
+            ".less": "less",
+            ".json": "json",
+            ".xml": "xml",
+            ".yaml": "yaml",
+            ".yml": "yaml",
+            ".md": "markdown",
+            ".txt": "text",
+            ".sh": "shell",
+            ".bash": "shell",
+            ".zsh": "shell",
+            ".fish": "shell",
+            ".ps1": "powershell",
+            ".bat": "batch",
+            ".cmd": "batch",
         }
 
-        return lang_map.get(extension, 'unknown')
+        return lang_map.get(extension, "unknown")
 
     def is_text_file(self, file_path: str) -> bool:
         """
@@ -181,20 +181,20 @@ class FileSystemTool:
         """
         try:
             # Try to read a small portion of the file
-            with open(file_path, 'rb') as f:
+            with open(file_path, "rb") as f:
                 chunk = f.read(1024)
 
             # Check for null bytes (common in binary files)
-            if b'\x00' in chunk:
+            if b"\x00" in chunk:
                 return False
 
             # Try to decode as UTF-8
             try:
-                chunk.decode('utf-8')
+                chunk.decode("utf-8")
                 return True
             except UnicodeDecodeError:
                 # Try other encodings
-                for encoding in ['latin-1', 'cp1252']:
+                for encoding in ["latin-1", "cp1252"]:
                     try:
                         chunk.decode(encoding)
                         return True
@@ -220,15 +220,15 @@ class FileSystemTool:
             size = os.path.getsize(file_path)
 
             if size < 1024:  # < 1KB
-                return 'tiny'
+                return "tiny"
             elif size < 10 * 1024:  # < 10KB
-                return 'small'
+                return "small"
             elif size < 100 * 1024:  # < 100KB
-                return 'medium'
+                return "medium"
             elif size < 1024 * 1024:  # < 1MB
-                return 'large'
+                return "large"
             else:
-                return 'very_large'
+                return "very_large"
 
         except Exception:
-            return 'unknown'
+            return "unknown"

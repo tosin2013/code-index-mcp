@@ -181,13 +181,13 @@ func main() {
     if err != nil {
         panic(err)
     }
-    
+
     // Auto migrate
     db.AutoMigrate(&models.User{})
-    
+
     // Initialize service
     userService := services.NewUserService(db)
-    
+
     // Create user
     req := &models.UserRequest{
         Username: "alice",
@@ -197,18 +197,18 @@ func main() {
         Password: "password123",
         Role:     models.RoleUser,
     }
-    
+
     user, err := userService.CreateUser(req)
     if err != nil {
         panic(err)
     }
-    
+
     // Authenticate user
     authUser, err := userService.AuthenticateUser("alice", "password123")
     if err != nil {
         panic(err)
     }
-    
+
     // Get statistics
     stats, err := userService.GetUserStats()
     if err != nil {
@@ -283,11 +283,11 @@ The application can be configured using environment variables or a configuration
 database:
   driver: sqlite
   database: users.db
-  
+
 server:
   port: 8080
   host: localhost
-  
+
 jwt:
   secret_key: your-secret-key
   expiration_hours: 24

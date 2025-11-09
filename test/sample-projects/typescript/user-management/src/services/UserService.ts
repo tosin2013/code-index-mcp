@@ -42,7 +42,7 @@ export class UserService {
 
       // Create new user
       const user = new User(userData);
-      
+
       // Validate user data
       const validationErrors = user.validateUser();
       if (validationErrors.length > 0) {
@@ -50,7 +50,7 @@ export class UserService {
       }
 
       await user.save();
-      
+
       logger.info(`User created successfully: ${user.username}`);
       return user.response;
     } catch (error) {
@@ -140,7 +140,7 @@ export class UserService {
       }
 
       await user.save();
-      
+
       logger.info(`User updated successfully: ${user.username}`);
       return user.response;
     } catch (error) {
@@ -163,7 +163,7 @@ export class UserService {
 
       user.delete();
       await user.save();
-      
+
       logger.info(`User deleted successfully: ${user.username}`);
       return true;
     } catch (error) {
@@ -183,7 +183,7 @@ export class UserService {
       if (result.deletedCount === 0) {
         throw new AppError('User not found', 404);
       }
-      
+
       logger.info(`User permanently deleted: ${id}`);
       return true;
     } catch (error) {
@@ -206,7 +206,7 @@ export class UserService {
   ): Promise<IPaginatedUsers> {
     try {
       const skip = (page - 1) * limit;
-      
+
       const users = await User.find(filter)
         .sort({ createdAt: -1 })
         .skip(skip)
@@ -275,7 +275,7 @@ export class UserService {
   ): Promise<ISearchUsersResponse> {
     try {
       const skip = (page - 1) * limit;
-      
+
       const users = await User.searchUsers(query, {
         skip,
         limit,
@@ -328,7 +328,7 @@ export class UserService {
   async authenticateUser(username: string, password: string): Promise<IAuthResult> {
     try {
       const user = await User.findByUsername(username).select('+password');
-      
+
       if (!user || !(await user.checkPassword(password))) {
         // Record failed login attempt if user exists
         if (user) {
@@ -354,7 +354,7 @@ export class UserService {
       const token = user.generateToken();
 
       logger.info(`User authenticated successfully: ${user.username}`);
-      
+
       return {
         user: user.response,
         token,

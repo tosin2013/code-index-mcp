@@ -5,6 +5,7 @@ This replaces the SCIP unified_index_manager with a simpler approach
 focused on fast JSON-based indexing and querying.
 """
 
+import fnmatch
 import hashlib
 import json
 import logging
@@ -12,12 +13,11 @@ import os
 import re
 import tempfile
 import threading
-import fnmatch
 from pathlib import Path
-from typing import Dict, List, Optional, Any
+from typing import Any, Dict, List, Optional
 
+from ..constants import INDEX_FILE, INDEX_FILE_SHALLOW, SETTINGS_DIR
 from .json_index_builder import JSONIndexBuilder
-from ..constants import SETTINGS_DIR, INDEX_FILE, INDEX_FILE_SHALLOW
 
 logger = logging.getLogger(__name__)
 
@@ -128,10 +128,12 @@ class JSONIndexManager:
             try:
                 file_list = self.index_builder.build_shallow_file_list()
                 # Persist as a JSON array for minimal overhead
-                with open(self.shallow_index_path, 'w', encoding='utf-8') as f:
+                with open(self.shallow_index_path, "w", encoding="utf-8") as f:
                     json.dump(file_list, f, ensure_ascii=False)
                 self._shallow_file_list = file_list
-                logger.info(f"Saved shallow index with {len(file_list)} files to {self.shallow_index_path}")
+                logger.info(
+                    f"Saved shallow index with {len(file_list)} files to {self.shallow_index_path}"
+                )
                 return True
             except Exception as e:
                 logger.error(f"Failed to build shallow index: {e}")
@@ -144,7 +146,7 @@ class JSONIndexManager:
                 if not self.shallow_index_path or not os.path.exists(self.shallow_index_path):
                     logger.warning("No existing shallow index found")
                     return False
-                with open(self.shallow_index_path, 'r', encoding='utf-8') as f:
+                with open(self.shallow_index_path, "r", encoding="utf-8") as f:
                     data = json.load(f)
                     if not isinstance(data, list):
                         logger.error("Shallow index format invalid (expected list)")
@@ -153,8 +155,8 @@ class JSONIndexManager:
                     normalized = []
                     for p in data:
                         if isinstance(p, str):
-                            q = p.replace('\\\\', '/').replace('\\', '/')
-                            if q.startswith('./'):
+                            q = p.replace("\\\\", "/").replace("\\", "/")
+                            if q.startswith("./"):
                                 q = q[2:]
                             normalized.append(q)
                     self._shallow_file_list = normalized
@@ -192,7 +194,7 @@ class JSONIndexManager:
                 pattern = "*"
 
             # Normalize to forward slashes
-            norm_pattern = pattern.replace('\\\\', '/').replace('\\', '/')
+            norm_pattern = pattern.replace("\\\\", "/").replace("\\", "/")
 
             # Build glob regex: '*' does not cross '/', '**' crosses directories
             regex = self._compile_glob_regex(norm_pattern)
@@ -251,8 +253,8 @@ class JSONIndexManager:
 
             try:
                 # Normalize file path
-                file_path = file_path.replace('\\', '/')
-                if file_path.startswith('./'):
+                file_path = file_path.replace("\\", "/")
+                if file_path.startswith("./"):
                     file_path = file_path[2:]
 
                 # Get file info
@@ -303,7 +305,7 @@ class JSONIndexManager:
                     "classes": classes,
                     "methods": methods,
                     "imports": file_info.get("imports", []),
-                    "exports": file_info.get("exports", [])
+                    "exports": file_info.get("exports", []),
                 }
 
             except Exception as e:
@@ -333,7 +335,7 @@ class JSONIndexManager:
                     "symbol_types": symbol_counts,
                     "languages": metadata["languages"],
                     "index_version": metadata["index_version"],
-                    "timestamp": metadata["timestamp"]
+                    "timestamp": metadata["timestamp"],
                 }
 
             except Exception as e:
@@ -346,7 +348,10 @@ class JSONIndexManager:
             return False
 
         try:
-            from code_index_mcp.utils.file_filter import FileFilter as _FileFilter  # pylint: disable=C0415
+            from code_index_mcp.utils.file_filter import (
+                FileFilter as _FileFilter,  # pylint: disable=C0415
+            )
+
             file_filter = _FileFilter()
 
             # Simple freshness check - index exists and is recent
@@ -396,16 +401,18 @@ class JSONIndexManager:
 
                 if os.path.exists(index_path):
                     # Verify the cached index matches the expected project
-                    with open(index_path, 'r', encoding='utf-8') as f:
+                    with open(index_path, "r", encoding="utf-8") as f:
                         index_data = json.load(f)
-                        cached_project = index_data.get('metadata', {}).get('project_path')
+                        cached_project = index_data.get("metadata", {}).get("project_path")
 
                     if cached_project == expected_project_path:
                         self.temp_dir = temp_dir
                         self.index_path = index_path
                         return self.load_index()
                     else:
-                        logger.warning(f"Cached index project mismatch: {cached_project} != {expected_project_path}")
+                        logger.warning(
+                            f"Cached index project mismatch: {cached_project} != {expected_project_path}"
+                        )
 
             return False
 
@@ -437,22 +444,22 @@ class JSONIndexManager:
         special = ".^$+{}[]|()"
         while i < len(pattern):
             c = pattern[i]
-            if c == '*':
-                if i + 1 < len(pattern) and pattern[i + 1] == '*':
+            if c == "*":
+                if i + 1 < len(pattern) and pattern[i + 1] == "*":
                     # '**' -> match across directories
-                    out.append('.*')
+                    out.append(".*")
                     i += 2
                     continue
                 else:
-                    out.append('[^/]*')
-            elif c == '?':
-                out.append('[^/]')
+                    out.append("[^/]*")
+            elif c == "?":
+                out.append("[^/]")
             elif c in special:
-                out.append('\\' + c)
+                out.append("\\" + c)
             else:
                 out.append(c)
             i += 1
-        regex_str = '^' + ''.join(out) + '$'
+        regex_str = "^" + "".join(out) + "$"
         return re.compile(regex_str)
 
 

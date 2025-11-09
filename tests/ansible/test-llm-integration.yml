@@ -1,0 +1,272 @@
+---
+# Code Index MCP - LLM Integration Tests
+# Tests MCP server integration with local Ollama LLMs
+# This is a basic implementation until tosin2013.mcp_audit v1.1.0 adds official LLM test module
+
+- name: Code Index MCP - LLM Integration Tests
+  hosts: localhost
+  connection: local
+  gather_facts: yes
+
+  vars:
+    # LLM Configuration
+    llm_provider: "ollama"
+    llm_model: "codellama:13b-instruct"
+    ollama_base_url: "http://localhost:11434"
+
+    # MCP Server Configuration (from inventory)
+    # mcp_server_url: set in inventory
+    # api_key: set in inventory
+    # transport: set in inventory
+
+  pre_tasks:
+    - name: Display LLM integration test banner
+      ansible.builtin.debug:
+        msg:
+          - "═══════════════════════════════════════════════════════"
+          - "🤖 Code Index MCP - LLM Integration Tests"
+          - "═══════════════════════════════════════════════════════"
+          - "LLM Provider: {{ llm_provider }}"
+          - "LLM Model: {{ llm_model }}"
+          - "MCP Server: {{ mcp_server_url if transport == 'sse' else 'stdio (local)' }}"
+          - "Transport: {{ transport }}"
+          - "Timestamp: {{ ansible_date_time.iso8601 }}"
+          - "═══════════════════════════════════════════════════════"
+
+    - name: Verify Ollama is accessible
+      ansible.builtin.uri:
+        url: "{{ ollama_base_url }}/api/tags"
+        method: GET
+        status_code: 200
+      register: ollama_status
+      failed_when: false
+
+    - name: Check if Ollama is running
+      ansible.builtin.assert:
+        that:
+          - ollama_status.status == 200
+        fail_msg: |
+          ❌ Ollama is not accessible at {{ ollama_base_url }}
+          Please start Ollama: ollama serve
+        success_msg: "✅ Ollama is running"
+
+    - name: Verify codellama model is available
+      ansible.builtin.assert:
+        that:
+          - ollama_status.json.models | selectattr('name', 'match', llm_model) | list | length > 0
+        fail_msg: |
+          ❌ Model {{ llm_model }} not found in Ollama
+          Available models: {{ ollama_status.json.models | map(attribute='name') | list }}
+          Please pull the model: ollama pull {{ llm_model }}
+        success_msg: "✅ Model {{ llm_model }} is available"
+
+  tasks:
+    # =========================================================================
+    # Test 1: Verify MCP Server Responds to LLM (Server Discovery)
+    # =========================================================================
+    - name: "LLM Test 1: Server Discovery via MCP"
+      tosin2013.mcp_audit.mcp_server_info:
+        transport: "{{ transport }}"
+        server_url: "{{ mcp_server_url }}/sse"
+        server_headers:
+          Authorization: "Bearer {{ api_key }}"
+      register: llm_test_server_info
+      when: transport == 'sse'
+
+    - name: "LLM Test 1: Server Discovery via MCP (stdio)"
+      tosin2013.mcp_audit.mcp_server_info:
+        transport: stdio
+        server_command: "{{ mcp_server_command }}"
+        server_args: "{{ mcp_server_args }}"
+      register: llm_test_server_info_stdio
+      when: transport == 'stdio'
+
+    - name: Set server info from active transport
+      ansible.builtin.set_fact:
+        llm_test_server_info: "{{ llm_test_server_info if transport == 'sse' else llm_test_server_info_stdio }}"
+
+    - name: Display server capabilities for LLM
+      ansible.builtin.debug:
+        msg:
+          - "Server Name: {{ llm_test_server_info.server_info.server_name }}"
+          - "Available Tools: {{ llm_test_server_info.server_info.available_tools }}"
+          - "Capabilities: {{ llm_test_server_info.server_info.capabilities | to_nice_json }}"
+
+    # =========================================================================
+    # Test 2: Test Basic Tool Call (Simulate LLM Calling find_files)
+    # =========================================================================
+    - name: "LLM Test 2: Simulate LLM calling find_files tool (SSE)"
+      tosin2013.mcp_audit.mcp_test_tool:
+        transport: "{{ transport }}"
+        server_url: "{{ mcp_server_url }}/sse"
+        server_headers:
+          Authorization: "Bearer {{ api_key }}"
+        tool_name: find_files
+        tool_arguments:
+          pattern: "*.py"
+      register: llm_test_find_files_sse
+      when: transport == 'sse'
+
+    - name: "LLM Test 2: Simulate LLM calling find_files tool (stdio)"
+      tosin2013.mcp_audit.mcp_test_tool:
+        transport: stdio
+        server_command: "{{ mcp_server_command }}"
+        server_args: "{{ mcp_server_args }}"
+        tool_name: find_files
+        tool_arguments:
+          pattern: "*.py"
+      register: llm_test_find_files_stdio
+      when: transport == 'stdio'
+
+    - name: Set find_files result from active transport
+      ansible.builtin.set_fact:
+        llm_test_find_files: "{{ llm_test_find_files_sse if transport == 'sse' else llm_test_find_files_stdio }}"
+
+    - name: Validate find_files tool works
+      ansible.builtin.assert:
+        that:
+          - llm_test_find_files.success
+          - llm_test_find_files.test_passed
+        success_msg: "✅ LLM can call find_files tool successfully"
+        fail_msg: "❌ LLM tool call failed"
+
+    # =========================================================================
+    # Test 3: Test Code Search Tool (Advanced LLM Use Case)
+    # =========================================================================
+    - name: "LLM Test 3: Simulate LLM searching for code (SSE)"
+      tosin2013.mcp_audit.mcp_test_tool:
+        transport: "{{ transport }}"
+        server_url: "{{ mcp_server_url }}/sse"
+        server_headers:
+          Authorization: "Bearer {{ api_key }}"
+        tool_name: search_code_advanced
+        tool_arguments:
+          query: "class.*Service"
+          use_regex: true
+      register: llm_test_search_sse
+      when: transport == 'sse'
+
+    - name: "LLM Test 3: Simulate LLM searching for code (stdio)"
+      tosin2013.mcp_audit.mcp_test_tool:
+        transport: stdio
+        server_command: "{{ mcp_server_command }}"
+        server_args: "{{ mcp_server_args }}"
+        tool_name: search_code_advanced
+        tool_arguments:
+          query: "class.*Service"
+          use_regex: true
+      register: llm_test_search_stdio
+      when: transport == 'stdio'
+
+    - name: Set search result from active transport
+      ansible.builtin.set_fact:
+        llm_test_search: "{{ llm_test_search_sse if transport == 'sse' else llm_test_search_stdio }}"
+
+    - name: Validate code search works
+      ansible.builtin.assert:
+        that:
+          - llm_test_search.success
+        success_msg: "✅ LLM can search code successfully"
+        fail_msg: "❌ LLM code search failed"
+
+    # =========================================================================
+    # Test 4: Optional - Semantic Search (if AlloyDB deployed)
+    # =========================================================================
+    - name: "LLM Test 4: Simulate LLM using semantic search (SSE)"
+      tosin2013.mcp_audit.mcp_test_tool:
+        transport: sse
+        server_url: "{{ mcp_server_url }}/sse"
+        server_headers:
+          Authorization: "Bearer {{ api_key }}"
+        tool_name: semantic_search_code
+        tool_arguments:
+          query: "authentication logic"
+          language: "python"
+          top_k: 5
+      register: llm_test_semantic
+      ignore_errors: yes
+      when:
+        - transport == 'sse'
+        - with_alloydb | default(false)
+
+    - name: Validate semantic search (if available)
+      ansible.builtin.debug:
+        msg: "✅ Semantic search available: {{ llm_test_semantic.success | default(false) }}"
+      when:
+        - transport == 'sse'
+        - with_alloydb | default(false)
+
+    # =========================================================================
+    # Test 5: Actual LLM Interaction (Call Ollama with MCP Context)
+    # =========================================================================
+    - name: "LLM Test 5: Call Ollama with MCP server context"
+      ansible.builtin.uri:
+        url: "{{ ollama_base_url }}/api/generate"
+        method: POST
+        body_format: json
+        body:
+          model: "{{ llm_model }}"
+          prompt: |
+            You are an AI assistant with access to a Code Index MCP server.
+
+            Available MCP Tools:
+            {{ llm_test_server_info.server_info.available_tools | to_nice_json }}
+
+            Task: Explain what the 'find_files' tool does and when it should be used.
+
+            Response:
+          stream: false
+        status_code: 200
+      register: llm_response
+      failed_when: false
+
+    - name: Display LLM response
+      ansible.builtin.debug:
+        msg:
+          - "═══════════════════════════════════════════════════════"
+          - "🤖 LLM Response ({{ llm_model }})"
+          - "═══════════════════════════════════════════════════════"
+          - "{{ llm_response.json.response if llm_response.status == 200 else 'LLM call failed' }}"
+          - "═══════════════════════════════════════════════════════"
+      when: llm_response.status == 200
+
+    - name: Validate LLM responded
+      ansible.builtin.assert:
+        that:
+          - llm_response.status == 200
+          - llm_response.json.response | length > 0
+        success_msg: "✅ LLM successfully processed MCP context"
+        fail_msg: "❌ LLM did not respond correctly"
+
+  post_tasks:
+    - name: Generate LLM integration test summary
+      ansible.builtin.set_fact:
+        llm_test_summary:
+          ollama_available: "{{ ollama_status.status == 200 }}"
+          model: "{{ llm_model }}"
+          mcp_server_accessible: "{{ llm_test_server_info.success }}"
+          tool_calls_work: "{{ llm_test_find_files.success and llm_test_search.success }}"
+          llm_understands_mcp: "{{ llm_response.status == 200 }}"
+
+    - name: Display final LLM integration test results
+      ansible.builtin.debug:
+        msg:
+          - "═══════════════════════════════════════════════════════"
+          - "📊 LLM Integration Test Summary"
+          - "═══════════════════════════════════════════════════════"
+          - "Ollama Available: {{ '✅' if llm_test_summary.ollama_available else '❌' }}"
+          - "Model: {{ llm_test_summary.model }}"
+          - "MCP Server Accessible: {{ '✅' if llm_test_summary.mcp_server_accessible else '❌' }}"
+          - "MCP Tool Calls Work: {{ '✅' if llm_test_summary.tool_calls_work else '❌' }}"
+          - "LLM Understands MCP: {{ '✅' if llm_test_summary.llm_understands_mcp else '❌' }}"
+          - "═══════════════════════════════════════════════════════"
+
+    - name: Assert all LLM integration tests passed
+      ansible.builtin.assert:
+        that:
+          - llm_test_summary.ollama_available
+          - llm_test_summary.mcp_server_accessible
+          - llm_test_summary.tool_calls_work
+          - llm_test_summary.llm_understands_mcp
+        success_msg: "✅ All LLM integration tests PASSED!"
+        fail_msg: "❌ Some LLM integration tests FAILED"

@@ -1,0 +1,38 @@
+[0;32m[2025-10-30 08:27:29][0m ==========================================
+[0;32m[2025-10-30 08:27:29][0m Code Index MCP - Clean Project Test
+[0;32m[2025-10-30 08:27:29][0m ==========================================
+[0;32m[2025-10-30 08:27:29][0m Start time: Thu Oct 30 08:27:29 EDT 2025
+[0;32m[2025-10-30 08:27:29][0m Log file: /Users/tosinakinosho/workspaces/code-index-mcp/deployment/gcp/ansible/test-deployment-20251030-082729.log
+
+[0;32m[2025-10-30 08:27:29][0m === Phase 1: Pre-Flight Checks ===
+[0;34m[2025-10-30 08:27:29] INFO:[0m Checking prerequisites...
+[WARNING]: Deprecation warnings can be disabled by setting `deprecation_warnings=False` in ansible.cfg.
+[DEPRECATION WARNING]: DEFAULT_UNDEFINED_VAR_BEHAVIOR option. Reason: This option is no longer used in the Ansible Core code base.
+Alternatives: There is no alternative at the moment. A different mechanism would have to be implemented in the current code base. This feature will be removed from ansible-core version 2.23.
+
+[0;34m[2025-10-30 08:27:30] INFO:[0m Ansible version: ansible [core 2.19.3]
+Updates are available for some Google Cloud CLI components.  To install them,
+please run:
+  $ gcloud components update
+[0;34m[2025-10-30 08:27:30] INFO:[0m gcloud version: Google Cloud SDK 544.0.0
+[0;34m[2025-10-30 08:27:30] INFO:[0m Docker version: Docker version 28.5.1, build e180ab8
+[0;34m[2025-10-30 08:27:30] INFO:[0m Checking Ansible collections...
+[WARNING]: Deprecation warnings can be disabled by setting `deprecation_warnings=False` in ansible.cfg.
+[DEPRECATION WARNING]: DEFAULT_UNDEFINED_VAR_BEHAVIOR option. Reason: This option is no longer used in the Ansible Core code base.
+Alternatives: There is no alternative at the moment. A different mechanism would have to be implemented in the current code base. This feature will be removed from ansible-core version 2.23.
+
+[WARNING]: Deprecation warnings can be disabled by setting `deprecation_warnings=False` in ansible.cfg.
+[DEPRECATION WARNING]: DEFAULT_UNDEFINED_VAR_BEHAVIOR option. Reason: This option is no longer used in the Ansible Core code base.
+Alternatives: There is no alternative at the moment. A different mechanism would have to be implemented in the current code base. This feature will be removed from ansible-core version 2.23.
+
+[0;32m[2025-10-30 08:27:30][0m ✅ Pre-flight checks passed
+[0;32m[2025-10-30 08:27:30][0m === Phase 2: Project Setup ===
+[0;34m[2025-10-30 08:27:30] INFO:[0m Using GCP project: tosinscloud
+[0;34m[2025-10-30 08:27:30] INFO:[0m Region: us-east1
+[0;34m[2025-10-30 08:27:30] INFO:[0m Checking billing status...
+[0;32m[2025-10-30 08:27:31][0m ✅ Using project: tosinscloud
+[0;34m[2025-10-30 08:27:31] INFO:[0m Creating test inventory...
+[0;32m[2025-10-30 08:27:31][0m ✅ Project setup complete: tosinscloud
+[0;32m[2025-10-30 08:27:31][0m === Phase 3: Dry-Run Test ===
+[0;34m[2025-10-30 08:27:31] INFO:[0m Running Ansible in check mode (no changes)...
+[0;31m[2025-10-30 08:27:37] ERROR:[0m Dry-run test failed. Check /Users/tosinakinosho/workspaces/code-index-mcp/deployment/gcp/ansible/test-deployment-20251030-082729.log for details.

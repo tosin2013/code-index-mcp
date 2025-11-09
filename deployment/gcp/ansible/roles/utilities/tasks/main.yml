@@ -1,0 +1,51 @@
+---
+# Main task orchestration for utilities role
+- name: Include API key generation tasks
+  ansible.builtin.include_tasks: generate_api_key.yml
+  when: operation == 'generate_api_key'
+  tags: [api-key, utilities]
+
+- name: Include database query tasks
+  ansible.builtin.include_tasks: query_database.yml
+  when: operation == 'query_database'
+  tags: [database, query, utilities]
+
+- name: Include schema application tasks
+  ansible.builtin.include_tasks: apply_schema.yml
+  when: operation == 'apply_schema'
+  tags: [database, schema, apply]
+
+- name: Include seed test user tasks
+  ansible.builtin.include_tasks: seed_test_user.yml
+  when: operation == 'seed_test_user'
+  tags: [database, seed, users]
+
+- name: Include schema verification tasks
+  ansible.builtin.include_tasks: verify_schema.yml
+  when: operation == 'verify_schema'
+  tags: [database, schema, verify]
+
+- name: Include connection testing tasks
+  ansible.builtin.include_tasks: test_connection.yml
+  when: operation == 'test_connection'
+  tags: [test, connection]
+
+- name: Include AlloyDB connectivity test tasks
+  ansible.builtin.include_tasks: ../../code-index-mcp/tasks/test_alloydb_connectivity.yml
+  when: operation == 'test_alloydb_connectivity'
+  tags: [test, alloydb, connectivity]
+
+- name: Include AlloyDB peering fix tasks
+  ansible.builtin.include_tasks: ../../code-index-mcp/tasks/fix_alloydb_peering.yml
+  when: operation == 'fix_alloydb_peering'
+  tags: [fix, alloydb, peering]
+
+- name: Include database reset tasks
+  ansible.builtin.include_tasks: reset_database.yml
+  when: operation == 'reset_database'
+  tags: [database, reset]
+
+- name: Include teardown tasks
+  ansible.builtin.include_tasks: teardown.yml
+  when: operation == 'teardown'
+  tags: [teardown, destroy]

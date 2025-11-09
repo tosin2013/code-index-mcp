@@ -72,11 +72,11 @@ func NewErrorResponse(message string, err error) *APIResponse {
 		Success: false,
 		Message: message,
 	}
-	
+
 	if err != nil {
 		resp.Error = err.Error()
 	}
-	
+
 	return resp
 }
 
@@ -116,11 +116,11 @@ func (ve *ValidationErrors) Error() string {
 	if len(ve.Errors) == 0 {
 		return ""
 	}
-	
+
 	if len(ve.Errors) == 1 {
 		return ve.Errors[0].Message
 	}
-	
+
 	return "multiple validation errors"
 }
 
@@ -186,23 +186,23 @@ func (sp *SearchParams) Validate() error {
 	if sp.Page < 1 {
 		sp.Page = 1
 	}
-	
+
 	if sp.PageSize < 1 {
 		sp.PageSize = 20
 	}
-	
+
 	if sp.PageSize > 100 {
 		sp.PageSize = 100
 	}
-	
+
 	if sp.SortBy == "" {
 		sp.SortBy = "created_at"
 	}
-	
+
 	if sp.SortDir != "asc" && sp.SortDir != "desc" {
 		sp.SortDir = "desc"
 	}
-	
+
 	return nil
 }
 

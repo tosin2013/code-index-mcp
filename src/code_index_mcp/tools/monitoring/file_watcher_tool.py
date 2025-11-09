@@ -5,9 +5,10 @@ This tool handles low-level file watching operations without any business logic.
 """
 
 import time
-from typing import Optional, Callable
-from ...utils import ContextHelper
+from typing import Callable, Optional
+
 from ...services.file_watcher_service import FileWatcherService
+from ...utils import ContextHelper
 
 
 class FileWatcherTool:
@@ -21,7 +22,6 @@ class FileWatcherTool:
     def __init__(self, ctx):
         self._ctx = ctx
         self._file_watcher_service: Optional[FileWatcherService] = None
-        
 
     def create_watcher(self) -> FileWatcherService:
         """
@@ -66,8 +66,7 @@ class FileWatcherTool:
         Returns:
             True if monitoring is active, False otherwise
         """
-        return (self._file_watcher_service is not None and
-                self._file_watcher_service.is_active())
+        return self._file_watcher_service is not None and self._file_watcher_service.is_active()
 
     def get_monitoring_status(self) -> dict:
         """
@@ -77,19 +76,18 @@ class FileWatcherTool:
             Dictionary with monitoring status information
         """
         if not self._file_watcher_service:
-            return {
-                'active': False,
-                'available': True,
-                'status': 'not_initialized'
-            }
+            return {"active": False, "available": True, "status": "not_initialized"}
 
         return self._file_watcher_service.get_status()
 
     def store_in_context(self) -> None:
         """Store the file watcher service in the MCP context."""
-        if (self._file_watcher_service and
-            hasattr(self._ctx.request_context.lifespan_context, '__dict__')):
-            self._ctx.request_context.lifespan_context.file_watcher_service = self._file_watcher_service
+        if self._file_watcher_service and hasattr(
+            self._ctx.request_context.lifespan_context, "__dict__"
+        ):
+            self._ctx.request_context.lifespan_context.file_watcher_service = (
+                self._file_watcher_service
+            )
 
     def get_from_context(self) -> Optional[FileWatcherService]:
         """
@@ -98,7 +96,7 @@ class FileWatcherTool:
         Returns:
             FileWatcherService instance or None if not found
         """
-        if hasattr(self._ctx.request_context.lifespan_context, 'file_watcher_service'):
+        if hasattr(self._ctx.request_context.lifespan_context, "file_watcher_service"):
             return self._ctx.request_context.lifespan_context.file_watcher_service
         return None
 
@@ -106,12 +104,11 @@ class FileWatcherTool:
         """Stop any existing file watcher from context."""
         existing_watcher = self.get_from_context()
         if existing_watcher:
-            
+
             existing_watcher.stop_monitoring()
             # Clear reference
-            if hasattr(self._ctx.request_context.lifespan_context, '__dict__'):
+            if hasattr(self._ctx.request_context.lifespan_context, "__dict__"):
                 self._ctx.request_context.lifespan_context.file_watcher_service = None
-            
 
     def record_error(self, error_message: str) -> None:
         """
@@ -121,14 +118,12 @@ class FileWatcherTool:
             error_message: Error message to record
         """
         error_info = {
-            'status': 'failed',
-            'message': f'{error_message}. Auto-refresh disabled. Please use manual refresh.',
-            'timestamp': time.time(),
-            'manual_refresh_required': True
+            "status": "failed",
+            "message": f"{error_message}. Auto-refresh disabled. Please use manual refresh.",
+            "timestamp": time.time(),
+            "manual_refresh_required": True,
         }
 
         # Store error in context for status reporting
-        if hasattr(self._ctx.request_context.lifespan_context, '__dict__'):
+        if hasattr(self._ctx.request_context.lifespan_context, "__dict__"):
             self._ctx.request_context.lifespan_context.file_watcher_error = error_info
-
-        

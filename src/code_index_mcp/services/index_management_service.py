@@ -4,23 +4,24 @@ Index Management Service - Business logic for index lifecycle management.
 This service handles the business logic for index rebuilding, status monitoring,
 and index-related operations using the new JSON-based indexing system.
 """
-import time
+
+import json
 import logging
 import os
-import json
-
-from typing import Dict, Any
+import time
 from dataclasses import dataclass
+from typing import Any, Dict
 
 logger = logging.getLogger(__name__)
 
+from ..indexing import DeepIndexManager, get_index_manager, get_shallow_index_manager
 from .base_service import BaseService
-from ..indexing import get_index_manager, get_shallow_index_manager, DeepIndexManager
 
 
 @dataclass
 class IndexRebuildResult:
     """Business result for index rebuild operations."""
+
     file_count: int
     rebuild_time: float
     status: str
@@ -81,23 +82,23 @@ class IndexManagementService(BaseService):
         # Check if project is set up
         if not self.base_path:
             return {
-                'status': 'not_initialized',
-                'message': 'Project not initialized',
-                'is_rebuilding': False
+                "status": "not_initialized",
+                "message": "Project not initialized",
+                "is_rebuilding": False,
             }
 
         # Get index stats from the new JSON system
         stats = self._index_manager.get_index_stats()
-        
+
         return {
-            'status': 'ready' if stats.get('status') == 'loaded' else 'needs_rebuild',
-            'index_available': stats.get('status') == 'loaded',
-            'is_rebuilding': False,
-            'project_path': self.base_path,
-            'file_count': stats.get('indexed_files', 0),
-            'total_symbols': stats.get('total_symbols', 0),
-            'symbol_types': stats.get('symbol_types', {}),
-            'languages': stats.get('languages', [])
+            "status": "ready" if stats.get("status") == "loaded" else "needs_rebuild",
+            "index_available": stats.get("status") == "loaded",
+            "is_rebuilding": False,
+            "project_path": self.base_path,
+            "file_count": stats.get("indexed_files", 0),
+            "total_symbols": stats.get("total_symbols", 0),
+            "symbol_types": stats.get("symbol_types", {}),
+            "languages": stats.get("languages", []),
         }
 
     def _validate_rebuild_request(self) -> None:
@@ -129,17 +130,16 @@ class IndexManagementService(BaseService):
 
         # Get stats for result
         stats = self._index_manager.get_index_stats()
-        file_count = stats.get('indexed_files', 0)
+        file_count = stats.get("indexed_files", 0)
 
         rebuild_time = time.time() - start_time
 
         return IndexRebuildResult(
             file_count=file_count,
             rebuild_time=rebuild_time,
-            status='success',
-            message=f"Index rebuilt successfully with {file_count} files"
+            status="success",
+            message=f"Index rebuilt successfully with {file_count} files",
         )
-
 
     def _format_rebuild_result(self, result: IndexRebuildResult) -> str:
         """
@@ -177,9 +177,9 @@ class IndexManagementService(BaseService):
         # Try to report count
         count = 0
         try:
-            shallow_path = getattr(self._shallow_manager, 'index_path', None)
+            shallow_path = getattr(self._shallow_manager, "index_path", None)
             if shallow_path and os.path.exists(shallow_path):
-                with open(shallow_path, 'r', encoding='utf-8') as f:
+                with open(shallow_path, "r", encoding="utf-8") as f:
                     data = json.load(f)
                     if isinstance(data, list):
                         count = len(data)

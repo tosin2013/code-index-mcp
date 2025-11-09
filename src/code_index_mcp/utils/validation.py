@@ -5,10 +5,10 @@ This module provides shared validation functions used across services
 to ensure consistent validation behavior and reduce code duplication.
 """
 
+import fnmatch
 import os
 import re
-import fnmatch
-from typing import Optional, List
+from typing import List, Optional
 
 from ..indexing.qualified_names import normalize_file_path
 
@@ -45,9 +45,11 @@ class ValidationHelper:
             return "Base path not set"
 
         # Handle absolute paths (especially Windows paths starting with drive letters)
-        if os.path.isabs(file_path) or (len(file_path) > 1 and file_path[1] == ':'):
-            return (f"Absolute file paths like '{file_path}' are not allowed. "
-                    "Please use paths relative to the project root.")
+        if os.path.isabs(file_path) or (len(file_path) > 1 and file_path[1] == ":"):
+            return (
+                f"Absolute file paths like '{file_path}' are not allowed. "
+                "Please use paths relative to the project root."
+            )
 
         # Normalize the file path
         norm_path = os.path.normpath(file_path)
@@ -110,7 +112,7 @@ class ValidationHelper:
             return "Pattern cannot be empty"
 
         # Check for potentially dangerous patterns
-        if pattern.startswith('/') or pattern.startswith('\\'):
+        if pattern.startswith("/") or pattern.startswith("\\"):
             return "Pattern cannot start with path separator"
 
         # Test if the pattern is valid by trying to compile it
@@ -146,10 +148,10 @@ class ValidationHelper:
 
             # Check for potentially expensive regex patterns (basic ReDoS protection)
             dangerous_patterns = [
-                r'\(\?\=.*\)\+',  # Positive lookahead with quantifier
-                r'\(\?\!.*\)\+',  # Negative lookahead with quantifier
-                r'\(\?\<\=.*\)\+',  # Positive lookbehind with quantifier
-                r'\(\?\<\!.*\)\+',  # Negative lookbehind with quantifier
+                r"\(\?\=.*\)\+",  # Positive lookahead with quantifier
+                r"\(\?\!.*\)\+",  # Negative lookahead with quantifier
+                r"\(\?\<\=.*\)\+",  # Positive lookbehind with quantifier
+                r"\(\?\<\!.*\)\+",  # Negative lookbehind with quantifier
             ]
 
             for dangerous in dangerous_patterns:
@@ -176,7 +178,7 @@ class ValidationHelper:
             if not isinstance(ext, str):
                 return "All extensions must be strings"
 
-            if not ext.startswith('.'):
+            if not ext.startswith("."):
                 return f"Extension '{ext}' must start with a dot"
 
             if len(ext) < 2:
@@ -202,6 +204,6 @@ class ValidationHelper:
         sanitized = normalize_file_path(file_path)
 
         # Remove any leading slashes to ensure relative path
-        sanitized = sanitized.lstrip('/')
+        sanitized = sanitized.lstrip("/")
 
         return sanitized

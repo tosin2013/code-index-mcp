@@ -1,0 +1,212 @@
+---
+# Reset AlloyDB database to clean state
+# Truncates all tables but preserves schema
+
+- name: Display database reset warning
+  ansible.builtin.debug:
+    msg:
+      - "=========================================="
+      - "  ⚠️  DATABASE RESET"
+      - "=========================================="
+      - "Environment: {{ env_name }}"
+      - "Operation: Truncate all tables"
+      - ""
+      - "This will DELETE ALL DATA from:"
+      - "  - code_chunks table"
+      - "  - code_projects table"
+      - "  - git_sync_state table"
+      - "  - users table (except 'system' user)"
+      - ""
+      - "Schema and structure will be PRESERVED"
+      - "=========================================="
+
+- name: Confirm database reset
+  ansible.builtin.pause:
+    prompt: |
+      Type 'RESET' to confirm database reset
+      (Press Ctrl+C to cancel)
+  register: reset_confirm
+  when: not (auto_approve | default(false))
+
+- name: Validate confirmation
+  ansible.builtin.fail:
+    msg: "Database reset cancelled - you must type 'RESET' to confirm"
+  when:
+    - not (auto_approve | default(false))
+    - reset_confirm.user_input != 'RESET'
+
+- name: Check if AlloyDB proxy is available
+  ansible.builtin.stat:
+    path: "{{ alloydb_proxy_path | default('../alloydb-auth-proxy') }}"
+  register: proxy_stat
+
+- name: Get AlloyDB instance connection name
+  ansible.builtin.command:
+    cmd: >
+      gcloud alloydb instances describe primary-instance-{{ env_name }}
+      --cluster=code-index-cluster-{{ env_name }}
+      --region={{ gcp_region }}
+      --format='value(name)'
+  register: instance_name_result
+  changed_when: false
+
+- name: Build connection string
+  ansible.builtin.set_fact:
+    alloydb_connection_name: "projects/{{ gcp_project_id }}/locations/{{ gcp_region }}/clusters/code-index-cluster-{{ env_name }}/instances/primary-instance-{{ env_name }}"
+
+- name: Start AlloyDB proxy in background
+  ansible.builtin.shell: |
+    nohup {{ alloydb_proxy_path | default('../alloydb-auth-proxy') }} \
+      '{{ alloydb_connection_name }}' \
+      --port={{ alloydb_proxy_port | default(5432) }} \
+      > /tmp/alloydb-proxy-reset.log 2>&1 &
+    echo $! > /tmp/alloydb-proxy-reset.pid
+    sleep 3
+  when: proxy_stat.stat.exists
+  register: proxy_start
+  changed_when: true
+
+- name: Get database password from Secret Manager
+  ansible.builtin.command:
+    cmd: >
+      gcloud secrets versions access latest
+      --secret=alloydb-password-{{ env_name }}
+      --project={{ gcp_project_id }}
+  register: db_password_result
+  changed_when: false
+  no_log: true
+
+- name: Set database connection environment
+  ansible.builtin.set_fact:
+    pgpassword: "{{ db_password_result.stdout }}"
+    pghost: "127.0.0.1"
+    pgport: "{{ alloydb_proxy_port | default(5432) }}"
+    pguser: "code_index_admin"
+    pgdatabase: "code_index"
+
+- name: Count records before reset
+  ansible.builtin.shell: |
+    PGPASSWORD='{{ pgpassword }}' psql \
+      -h {{ pghost }} \
+      -p {{ pgport }} \
+      -U {{ pguser }} \
+      -d {{ pgdatabase }} \
+      -t -c "SELECT
+        (SELECT COUNT(*) FROM code_chunks) as chunks,
+        (SELECT COUNT(*) FROM code_projects) as projects,
+        (SELECT COUNT(*) FROM git_sync_state) as git_state,
+        (SELECT COUNT(*) FROM users) as users;"
+  register: count_before
+  changed_when: false
+  no_log: true
+
+- name: Display records before reset
+  ansible.builtin.debug:
+    msg:
+      - "Current record counts:"
+      - "{{ count_before.stdout_lines }}"
+
+- name: Truncate code_chunks table
+  ansible.builtin.shell: |
+    PGPASSWORD='{{ pgpassword }}' psql \
+      -h {{ pghost }} \
+      -p {{ pgport }} \
+      -U {{ pguser }} \
+      -d {{ pgdatabase }} \
+      -c "TRUNCATE TABLE code_chunks CASCADE;"
+  register: truncate_chunks
+  changed_when: true
+  no_log: true
+
+- name: Truncate code_projects table
+  ansible.builtin.shell: |
+    PGPASSWORD='{{ pgpassword }}' psql \
+      -h {{ pghost }} \
+      -p {{ pgport }} \
+      -U {{ pguser }} \
+      -d {{ pgdatabase }} \
+      -c "TRUNCATE TABLE code_projects CASCADE;"
+  register: truncate_projects
+  changed_when: true
+  no_log: true
+
+- name: Truncate git_sync_state table
+  ansible.builtin.shell: |
+    PGPASSWORD='{{ pgpassword }}' psql \
+      -h {{ pghost }} \
+      -p {{ pgport }} \
+      -U {{ pguser }} \
+      -d {{ pgdatabase }} \
+      -c "TRUNCATE TABLE git_sync_state CASCADE;"
+  register: truncate_git
+  changed_when: true
+  no_log: true
+
+- name: Delete non-system users
+  ansible.builtin.shell: |
+    PGPASSWORD='{{ pgpassword }}' psql \
+      -h {{ pghost }} \
+      -p {{ pgport }} \
+      -U {{ pguser }} \
+      -d {{ pgdatabase }} \
+      -c "DELETE FROM users WHERE user_id != 'system';"
+  register: delete_users
+  changed_when: true
+  no_log: true
+
+- name: Count records after reset
+  ansible.builtin.shell: |
+    PGPASSWORD='{{ pgpassword }}' psql \
+      -h {{ pghost }} \
+      -p {{ pgport }} \
+      -U {{ pguser }} \
+      -d {{ pgdatabase }} \
+      -t -c "SELECT
+        (SELECT COUNT(*) FROM code_chunks) as chunks,
+        (SELECT COUNT(*) FROM code_projects) as projects,
+        (SELECT COUNT(*) FROM git_sync_state) as git_state,
+        (SELECT COUNT(*) FROM users) as users;"
+  register: count_after
+  changed_when: false
+  no_log: true
+
+- name: Verify database is empty
+  ansible.builtin.assert:
+    that:
+      - "'0' in count_after.stdout"
+    fail_msg: "Database reset failed - tables not empty"
+    success_msg: "✅ Database successfully reset"
+
+- name: Display records after reset
+  ansible.builtin.debug:
+    msg:
+      - "Record counts after reset:"
+      - "{{ count_after.stdout_lines }}"
+
+- name: Stop AlloyDB proxy
+  ansible.builtin.shell: |
+    if [ -f /tmp/alloydb-proxy-reset.pid ]; then
+      kill $(cat /tmp/alloydb-proxy-reset.pid) 2>/dev/null || true
+      rm /tmp/alloydb-proxy-reset.pid
+    fi
+  when: proxy_start is changed
+  changed_when: true
+
+- name: Display reset summary
+  ansible.builtin.debug:
+    msg:
+      - ""
+      - "=========================================="
+      - "  Database Reset Complete"
+      - "=========================================="
+      - ""
+      - "Before reset:"
+      - "{{ count_before.stdout_lines }}"
+      - ""
+      - "After reset:"
+      - "{{ count_after.stdout_lines }}"
+      - ""
+      - "✅ Database is clean and ready for testing"
+      - "Schema structure preserved"
+      - "Next: Run ingestion tests"
+      - ""

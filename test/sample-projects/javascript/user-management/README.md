@@ -84,7 +84,7 @@ A comprehensive user management system built with Node.js, Express, and MongoDB.
    ```bash
    # Using MongoDB service
    sudo systemctl start mongod
-   
+
    # Or using Docker
    docker run -d -p 27017:27017 --name mongodb mongo:latest
    ```
@@ -93,7 +93,7 @@ A comprehensive user management system built with Node.js, Express, and MongoDB.
    ```bash
    # Development mode
    npm run dev
-   
+
    # Production mode
    npm start
    ```

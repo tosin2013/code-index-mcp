@@ -1,0 +1,125 @@
+---
+# Verify AlloyDB schema via Cloud Run Job
+- name: Display schema verification info
+  ansible.builtin.debug:
+    msg:
+      - "========================================"
+      - "  Verify AlloyDB Schema"
+      - "========================================"
+      - "Project: {{ gcp_project_id }}"
+      - "Environment: {{ env_name }}"
+
+- name: Create verification SQL script
+  ansible.builtin.copy:
+    content: |
+      -- List all tables
+      \echo '==================================='
+      \echo 'Database Tables:'
+      \echo '==================================='
+      \dt
+
+      -- Show code_chunks structure
+      \echo ''
+      \echo '==================================='
+      \echo 'code_chunks Table Structure:'
+      \echo '==================================='
+      \d code_chunks
+
+      -- Show projects structure
+      \echo ''
+      \echo '==================================='
+      \echo 'projects Table Structure:'
+      \echo '==================================='
+      \d projects
+
+      -- Check for data
+      \echo ''
+      \echo '==================================='
+      \echo 'Data Counts:'
+      \echo '==================================='
+      SELECT 'projects' as table_name, COUNT(*) as count FROM projects
+      UNION ALL
+      SELECT 'code_chunks' as table_name, COUNT(*) as count FROM code_chunks;
+
+      -- Check indexes
+      \echo ''
+      \echo '==================================='
+      \echo 'Indexes on code_chunks:'
+      \echo '==================================='
+      SELECT indexname, indexdef
+      FROM pg_indexes
+      WHERE tablename = 'code_chunks';
+
+      -- Check Git provenance columns
+      \echo ''
+      \echo '==================================='
+      \echo 'Git Provenance Columns:'
+      \echo '==================================='
+      SELECT column_name, data_type, is_nullable
+      FROM information_schema.columns
+      WHERE table_name = 'code_chunks'
+      AND column_name IN ('commit_hash', 'branch_name', 'author_name', 'commit_timestamp')
+      ORDER BY column_name;
+    dest: /tmp/verify_schema.sql
+    mode: '0644'
+
+- name: Create Dockerfile for schema verification
+  ansible.builtin.copy:
+    content: |
+      FROM postgres:16-alpine
+      RUN apk add --no-cache postgresql-client
+      COPY verify_schema.sql /verify.sql
+      CMD ["sh", "-c", "psql $POSTGRES_CONNECTION -f /verify.sql"]
+    dest: /tmp/Dockerfile.verify
+    mode: '0644'
+
+- name: Build schema verification image
+  ansible.builtin.shell: |
+    cd /tmp
+    gcloud builds submit \
+      --tag={{ gcp_region }}-docker.pkg.dev/{{ gcp_project_id }}/code-index/schema-verifier:latest \
+      --project={{ gcp_project_id }} \
+      --file=Dockerfile.verify \
+      .
+  register: build_result
+  changed_when: "'SUCCESS' in build_result.stderr or 'DONE' in build_result.stderr"
+
+- name: Run schema verification via Cloud Run Job
+  ansible.builtin.shell: |
+    gcloud run jobs create verify-schema-{{ env_name }}-{{ lookup('pipe', 'date +%s') }} \
+      --image={{ gcp_region }}-docker.pkg.dev/{{ gcp_project_id }}/code-index/schema-verifier:latest \
+      --region={{ gcp_region }} \
+      --project={{ gcp_project_id }} \
+      --vpc-connector={{ vpc_connector_name }} \
+      --vpc-egress=private-ranges-only \
+      --set-secrets=POSTGRES_CONNECTION=alloydb-connection-string-{{ env_name }}:latest \
+      --execute-now \
+      --wait
+  register: verify_result
+  changed_when: true
+
+- name: Display verification results
+  ansible.builtin.debug:
+    msg: "{{ verify_result.stdout_lines }}"
+
+- name: Parse verification job name from output
+  ansible.builtin.set_fact:
+    verify_job_name: "{{ verify_result.stderr | regex_search('verify-schema-[a-z0-9-]+') }}"
+
+- name: Clean up verification job
+  ansible.builtin.command: >
+    gcloud run jobs delete {{ verify_job_name }}
+    --region={{ gcp_region }}
+    --project={{ gcp_project_id }}
+    --quiet
+  when: verify_job_name is defined
+  register: cleanup
+  changed_when: "'Deleted job' in cleanup.stderr"
+  failed_when: false
+
+- name: Display completion message
+  ansible.builtin.debug:
+    msg:
+      - ""
+      - "✅ Schema verification complete!"
+      - ""

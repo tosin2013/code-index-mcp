@@ -25,7 +25,7 @@ class Database {
     try {
       await mongoose.connect(this.mongoURI, this.options);
       logger.info('MongoDB connected successfully');
-      
+
       // Handle connection events
       mongoose.connection.on('error', (err: Error) => {
         logger.error('MongoDB connection error:', err);
@@ -42,7 +42,7 @@ class Database {
       // Handle process termination
       process.on('SIGINT', () => this.gracefulShutdown('SIGINT'));
       process.on('SIGTERM', () => this.gracefulShutdown('SIGTERM'));
-      
+
     } catch (error) {
       logger.error('MongoDB connection failed:', error as Error);
       process.exit(1);

@@ -1,0 +1,103 @@
+---
+# MCP Server Validation - Call MCP tools to test end-to-end functionality
+
+- name: Validate required variables
+  ansible.builtin.assert:
+    that:
+      - mcp_service_url is defined
+      - mcp_service_url | length > 0
+    fail_msg: "mcp_service_url is required for validation"
+    success_msg: "MCP service URL validated: {{ mcp_service_url }}"
+
+- name: Display validation configuration
+  ansible.builtin.debug:
+    msg:
+      - "==================================="
+      - "MCP Server Validation"
+      - "==================================="
+      - "Service URL: {{ mcp_service_url }}"
+      - "Test Repository: {{ test_repo_url | default('https://github.com/octocat/Hello-World') }}"
+      - "Run Ingestion: {{ run_ingestion_test | default(true) }}"
+      - "Run Search: {{ run_search_test | default(true) }}"
+      - "==================================="
+
+- name: Check Python is available
+  ansible.builtin.command: python3 --version
+  register: python_check
+  changed_when: false
+  failed_when: false
+
+- name: Fail if Python not available
+  ansible.builtin.fail:
+    msg: "Python 3 is required for validation"
+  when: python_check.rc != 0
+
+- name: Run MCP validation script
+  ansible.builtin.command: >
+    python3 {{ role_path }}/files/validate_mcp.py
+    {{ mcp_service_url }}
+    {{ '--ingestion' if (run_ingestion_test | default(true)) else '' }}
+    {{ '--search' if (run_search_test | default(true)) else '' }}
+  register: validation_output
+  changed_when: false
+  failed_when: validation_output.rc != 0
+
+- name: Parse validation results
+  ansible.builtin.set_fact:
+    validation_results: "{{ validation_output.stdout | from_json }}"
+
+- name: Display validation summary
+  ansible.builtin.debug:
+    msg:
+      - ""
+      - "==================================="
+      - "✅ MCP Server Validation Complete"
+      - "==================================="
+      - "Timestamp: {{ validation_results.timestamp }}"
+      - "Service URL: {{ validation_results.service_url }}"
+      - ""
+      - "Test Results:"
+      - "  - SSE Endpoint: {{ validation_results.tests.sse_endpoint }}"
+      - "  - Tools List: {{ validation_results.tests.tools_list }}"
+      - "  - Git Ingestion: {{ validation_results.tests.ingestion }}"
+      - "  - Semantic Search: {{ validation_results.tests.semantic_search }}"
+      - ""
+      - "Available Tools: {{ validation_results.available_tools | default([]) | length }}"
+      - "==================================="
+
+- name: Write validation report to file
+  ansible.builtin.copy:
+    content: |
+      # MCP Server Validation Report
+      
+      **Timestamp**: {{ validation_results.timestamp }}
+      **Service URL**: {{ validation_results.service_url }}
+      
+      ## Test Results
+      
+      | Test | Status |
+      |------|--------|
+      | SSE Endpoint | {{ validation_results.tests.sse_endpoint }} |
+      | Tools List | {{ validation_results.tests.tools_list }} |
+      | Git Ingestion | {{ validation_results.tests.ingestion }} |
+      | Semantic Search | {{ validation_results.tests.semantic_search }} |
+      
+      ## Available MCP Tools
+      
+      {% for tool in validation_results.available_tools | default([]) %}
+      - {{ tool }}
+      {% endfor %}
+      
+      ## Raw Results
+      
+      ```json
+      {{ validation_results | to_nice_json }}
+      ```
+    dest: "{{ validation_report_path | default('./mcp-validation-report-' + ansible_date_time.epoch + '.md') }}"
+    mode: '0644'
+  when: write_validation_report | default(true)
+
+- name: Display validation report location
+  ansible.builtin.debug:
+    msg: "Validation report written to: {{ validation_report_path | default('./mcp-validation-report-' + ansible_date_time.epoch + '.md') }}"
+  when: write_validation_report | default(true)

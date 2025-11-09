@@ -1,0 +1,230 @@
+---
+# Test Code Index MCP with documcp repository
+# This tests the MCP server's ability to ingest and search a real codebase
+
+- name: Code Index MCP - documcp Repository Testing
+  hosts: localhost
+  connection: local
+  gather_facts: yes
+
+  vars:
+    # MCP Server Configuration (from inventory)
+    # mcp_server_url: set in inventory
+    # api_key: set in inventory
+
+    # Test Repository
+    test_repo_url: "https://github.com/tosin2013/documcp"
+    test_repo_name: "documcp"
+    test_repo_branch: "main"
+
+  pre_tasks:
+    - name: Display test banner
+      ansible.builtin.debug:
+        msg:
+          - "═══════════════════════════════════════════════════════"
+          - "🔍 Testing Code Index MCP with documcp Repository"
+          - "═══════════════════════════════════════════════════════"
+          - "Repository: {{ test_repo_url }}"
+          - "MCP Server: {{ mcp_server_url }}"
+          - "Transport: {{ transport }}"
+          - "Timestamp: {{ ansible_date_time.iso8601 }}"
+          - "═══════════════════════════════════════════════════════"
+
+  tasks:
+    # =========================================================================
+    # Phase 1: Ingest documcp Repository
+    # =========================================================================
+    - name: "TEST 1: Ingest documcp repository from GitHub"
+      tosin2013.mcp_audit.mcp_test_tool:
+        transport: sse
+        server_url: "{{ mcp_server_url }}/sse"
+        server_headers:
+          Authorization: "Bearer {{ api_key }}"
+        tool_name: ingest_code_from_git
+        tool_arguments:
+          git_url: "{{ test_repo_url }}"
+          project_name: "{{ test_repo_name }}"
+          branch: "{{ test_repo_branch }}"
+      register: ingest_result
+      timeout: 300  # Git operations can take time
+
+    - name: Display ingestion result
+      ansible.builtin.debug:
+        msg:
+          - "Ingestion Status: {{ 'SUCCESS' if ingest_result.success else 'FAILED' }}"
+          - "Result: {{ ingest_result }}"
+
+    - name: Assert ingestion succeeded
+      ansible.builtin.assert:
+        that:
+          - ingest_result.success
+        success_msg: "✅ documcp repository ingested successfully"
+        fail_msg: "❌ Repository ingestion failed"
+
+    # =========================================================================
+    # Phase 2: Test Basic File Discovery
+    # =========================================================================
+    - name: "TEST 2: Find all Python files in documcp"
+      tosin2013.mcp_audit.mcp_test_tool:
+        transport: sse
+        server_url: "{{ mcp_server_url }}/sse"
+        server_headers:
+          Authorization: "Bearer {{ api_key }}"
+        tool_name: find_files
+        tool_arguments:
+          pattern: "*.py"
+      register: find_python_files
+
+    - name: Display Python files found
+      ansible.builtin.debug:
+        msg:
+          - "Python files found: {{ find_python_files.test_result | default('N/A') }}"
+          - "Success: {{ find_python_files.success }}"
+
+    - name: Assert Python files were found
+      ansible.builtin.assert:
+        that:
+          - find_python_files.success
+        success_msg: "✅ Found Python files in documcp"
+        fail_msg: "❌ Failed to find Python files"
+
+    # =========================================================================
+    # Phase 3: Test Code Search
+    # =========================================================================
+    - name: "TEST 3: Search for document processing code"
+      tosin2013.mcp_audit.mcp_test_tool:
+        transport: sse
+        server_url: "{{ mcp_server_url }}/sse"
+        server_headers:
+          Authorization: "Bearer {{ api_key }}"
+        tool_name: search_code_advanced
+        tool_arguments:
+          query: "class.*Document"
+          use_regex: true
+      register: search_document_classes
+
+    - name: Display document class search results
+      ansible.builtin.debug:
+        msg:
+          - "Document classes found: {{ search_document_classes.success }}"
+          - "Result: {{ search_document_classes.test_result | default('N/A') }}"
+
+    # =========================================================================
+    # Phase 4: Test Semantic Search (Natural Language)
+    # =========================================================================
+    - name: "TEST 4: Semantic search for 'document parsing logic'"
+      tosin2013.mcp_audit.mcp_test_tool:
+        transport: sse
+        server_url: "{{ mcp_server_url }}/sse"
+        server_headers:
+          Authorization: "Bearer {{ api_key }}"
+        tool_name: semantic_search_code
+        tool_arguments:
+          query: "document parsing logic"
+          language: "python"
+          top_k: 5
+      register: semantic_search_result
+      when: with_alloydb | default(false)
+
+    - name: Display semantic search results
+      ansible.builtin.debug:
+        msg:
+          - "Semantic search success: {{ semantic_search_result.success | default(false) }}"
+          - "Results: {{ semantic_search_result.test_result | default('Semantic search not available') }}"
+      when: with_alloydb | default(false)
+
+    # =========================================================================
+    # Phase 5: Test Dependency Discovery
+    # =========================================================================
+    - name: "TEST 5: Find dependency files (requirements.txt, pyproject.toml)"
+      tosin2013.mcp_audit.mcp_test_tool:
+        transport: sse
+        server_url: "{{ mcp_server_url }}/sse"
+        server_headers:
+          Authorization: "Bearer {{ api_key }}"
+        tool_name: find_files
+        tool_arguments:
+          pattern: "requirements.txt"
+      register: find_requirements
+
+    - name: Display requirements file search
+      ansible.builtin.debug:
+        msg:
+          - "Requirements file found: {{ find_requirements.success }}"
+          - "Result: {{ find_requirements.test_result | default('N/A') }}"
+
+    - name: "TEST 6: Search for import statements"
+      tosin2013.mcp_audit.mcp_test_tool:
+        transport: sse
+        server_url: "{{ mcp_server_url }}/sse"
+        server_headers:
+          Authorization: "Bearer {{ api_key }}"
+        tool_name: search_code_advanced
+        tool_arguments:
+          query: "^import |^from .* import"
+          use_regex: true
+      register: search_imports
+
+    - name: Display import search results
+      ansible.builtin.debug:
+        msg:
+          - "Import statements found: {{ search_imports.success }}"
+
+    # =========================================================================
+    # Phase 6: Test README/Documentation Discovery
+    # =========================================================================
+    - name: "TEST 7: Find README and documentation files"
+      tosin2013.mcp_audit.mcp_test_tool:
+        transport: sse
+        server_url: "{{ mcp_server_url }}/sse"
+        server_headers:
+          Authorization: "Bearer {{ api_key }}"
+        tool_name: find_files
+        tool_arguments:
+          pattern: "README*"
+      register: find_readme
+
+    - name: Display README search results
+      ansible.builtin.debug:
+        msg:
+          - "README files found: {{ find_readme.success }}"
+          - "Files: {{ find_readme.test_result | default('N/A') }}"
+
+  post_tasks:
+    - name: Generate test summary
+      ansible.builtin.set_fact:
+        test_summary:
+          repository: "{{ test_repo_url }}"
+          ingestion_success: "{{ ingest_result.success }}"
+          python_files_found: "{{ find_python_files.success }}"
+          code_search_works: "{{ search_document_classes.success }}"
+          semantic_search_works: "{{ semantic_search_result.success | default(false) }}"
+          dependencies_found: "{{ find_requirements.success }}"
+          imports_found: "{{ search_imports.success }}"
+          readme_found: "{{ find_readme.success }}"
+
+    - name: Display final test summary
+      ansible.builtin.debug:
+        msg:
+          - "═══════════════════════════════════════════════════════"
+          - "📊 documcp Repository Test Summary"
+          - "═══════════════════════════════════════════════════════"
+          - "Repository: {{ test_summary.repository }}"
+          - ""
+          - "Ingestion: {{ '✅' if test_summary.ingestion_success else '❌' }}"
+          - "Python Files Discovery: {{ '✅' if test_summary.python_files_found else '❌' }}"
+          - "Code Search (Regex): {{ '✅' if test_summary.code_search_works else '❌' }}"
+          - "Semantic Search: {{ '✅' if test_summary.semantic_search_works else '⏭️ N/A' }}"
+          - "Dependencies Discovery: {{ '✅' if test_summary.dependencies_found else '❌' }}"
+          - "Import Statements: {{ '✅' if test_summary.imports_found else '❌' }}"
+          - "README Discovery: {{ '✅' if test_summary.readme_found else '❌' }}"
+          - "═══════════════════════════════════════════════════════"
+
+    - name: Assert all tests passed
+      ansible.builtin.assert:
+        that:
+          - test_summary.ingestion_success
+          - test_summary.python_files_found
+          - test_summary.code_search_works
+        success_msg: "✅ All documcp tests PASSED!"
+        fail_msg: "❌ Some documcp tests FAILED"

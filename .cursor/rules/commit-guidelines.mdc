@@ -1,0 +1,15 @@
+---
+rule_type: auto
+description: "Enforce Conventional Commits and PR guidelines"
+globs: ["**/*"]
+---
+
+Follow Conventional Commits style: `feat`, `fix`, `refactor(scope): summary`.
+Reference issue numbers when relevant in commit messages.
+Keep commit subjects under 72 characters.
+Include in PRs: 1) a concise problem statement, 2) before/after behavior or performance notes, 3) instructions for reproducing test runs.
+Attach updated screenshots or logs when touching developer experience flows in PRs.
+Confirm the file watcher still transitions to "active" in manual smoke tests for PRs.
+Run `uv run pytest` before submitting PRs.
+Run `uv run code-index-mcp` before submitting PRs to verify local mode works.
+Examples of valid commit messages: `feat: add semantic search support`, `fix: resolve file watcher debounce issue`, `refactor(indexing): optimize tree-sitter parsing`.

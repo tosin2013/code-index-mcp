@@ -6,15 +6,17 @@ It provides technical capabilities for finding files based on various patterns.
 """
 
 import fnmatch
-from typing import List, Set
-from pathlib import Path
 
 # FileInfo defined locally for file matching operations
 from dataclasses import dataclass
+from pathlib import Path
+from typing import List, Set
+
 
 @dataclass
 class FileInfo:
     """File information structure."""
+
     relative_path: str
     language: str
 
@@ -106,7 +108,9 @@ class FileMatchingTool:
 
         return matched_files
 
-    def match_by_directory(self, files: List[FileInfo], directory_patterns: List[str]) -> List[FileInfo]:
+    def match_by_directory(
+        self, files: List[FileInfo], directory_patterns: List[str]
+    ) -> List[FileInfo]:
         """
         Match files by directory patterns.
 
@@ -132,7 +136,9 @@ class FileMatchingTool:
 
         return matched_files
 
-    def exclude_patterns(self, files: List[FileInfo], exclude_patterns: List[str]) -> List[FileInfo]:
+    def exclude_patterns(
+        self, files: List[FileInfo], exclude_patterns: List[str]
+    ) -> List[FileInfo]:
         """
         Exclude files matching the given patterns.
 
@@ -152,8 +158,9 @@ class FileMatchingTool:
             should_exclude = False
 
             for exclude_pattern in exclude_patterns:
-                if (fnmatch.fnmatch(file_info.relative_path, exclude_pattern) or
-                    fnmatch.fnmatch(Path(file_info.relative_path).name, exclude_pattern)):
+                if fnmatch.fnmatch(file_info.relative_path, exclude_pattern) or fnmatch.fnmatch(
+                    Path(file_info.relative_path).name, exclude_pattern
+                ):
                     should_exclude = True
                     break
 
@@ -173,6 +180,7 @@ class FileMatchingTool:
         Returns:
             List of FileInfo objects sorted by relevance (most relevant first)
         """
+
         def relevance_score(file_info: FileInfo) -> int:
             """Calculate relevance score for a file."""
             score = 0
@@ -183,11 +191,11 @@ class FileMatchingTool:
                 score += 100
 
             # Filename starts with pattern
-            elif filename.startswith(pattern.replace('*', '')):
+            elif filename.startswith(pattern.replace("*", "")):
                 score += 50
 
             # Pattern appears in filename
-            elif pattern.replace('*', '') in filename:
+            elif pattern.replace("*", "") in filename:
                 score += 25
 
             # Shorter paths are generally more relevant

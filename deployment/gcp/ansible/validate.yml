@@ -1,0 +1,85 @@
+---
+# Validate deployed MCP Server
+# 
+# This playbook tests the deployed MCP server by calling its tools
+# to validate end-to-end functionality including:
+# - SSE endpoint connectivity
+# - MCP tools availability
+# - Git repository ingestion
+# - Semantic search with embeddings
+#
+# Usage:
+#   # Validate dev environment
+#   ansible-playbook validate.yml -i inventory/dev.yml
+#
+#   # Quick validation (skip ingestion)
+#   ansible-playbook validate.yml -i inventory/dev.yml -e "run_ingestion_test=false run_search_test=false"
+#
+#   # Custom test repository
+#   ansible-playbook validate.yml -i inventory/dev.yml -e "test_repo_url=https://github.com/username/repo"
+
+- name: Validate MCP Server Deployment
+  hosts: localhost
+  connection: local
+  gather_facts: yes
+
+  vars:
+    # Service URL from Cloud Run deployment
+    mcp_service_url: "{{ cloudrun_service_url | default('') }}"
+
+  pre_tasks:
+    - name: Display validation information
+      ansible.builtin.debug:
+        msg:
+          - "==================================="
+          - "MCP Server Validation"
+          - "==================================="
+          - "Environment: {{ env_name | default('unknown') }}"
+          - "Service URL: {{ mcp_service_url }}"
+          - "==================================="
+
+    - name: Check if service URL is provided
+      ansible.builtin.fail:
+        msg: |
+          MCP service URL not provided.
+          
+          Please provide it via:
+          1. Inventory variable: cloudrun_service_url
+          2. Command line: -e "mcp_service_url=https://your-service.run.app"
+          3. Run deployment first: ansible-playbook deploy.yml
+      when: mcp_service_url == ""
+
+  roles:
+    - role: mcp-validation
+
+  post_tasks:
+    - name: Display next steps
+      ansible.builtin.debug:
+        msg:
+          - ""
+          - "==================================="
+          - "Validation Complete!"
+          - "==================================="
+          - ""
+          - "Your MCP server is ready to use."
+          - ""
+          - "Add to Claude Desktop config:"
+          - "{{ lookup('env', 'HOME') }}/Library/Application Support/Claude/claude_desktop_config.json"
+          - ""
+          - "{"
+          - "  \"mcpServers\": {"
+          - "    \"code-index-semantic-search\": {"
+          - "      \"url\": \"{{ mcp_service_url }}/sse\","
+          - "      \"transport\": \"sse\""
+          - "    }"
+          - "  }"
+          - "}"
+          - ""
+          - "==================================="
+
+
+
+
+
+
+

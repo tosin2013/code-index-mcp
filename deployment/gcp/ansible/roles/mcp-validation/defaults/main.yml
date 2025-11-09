@@ -1,0 +1,29 @@
+---
+# Default variables for mcp-validation role
+
+# MCP Server URL (must be set by user or inventory)
+mcp_service_url: ""
+
+# Test repository to ingest
+test_repo_url: "https://github.com/octocat/Hello-World"
+
+# Test search query
+test_search_query: "hello world function"
+
+# Test execution flags
+run_ingestion_test: true
+run_search_test: true
+
+# Wait time for embeddings to be generated (seconds)
+embedding_wait_time: 30
+
+# Validation report settings
+write_validation_report: true
+validation_report_path: "./mcp-validation-report-{{ ansible_date_time.epoch }}.md"
+
+
+
+
+
+
+

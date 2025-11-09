@@ -1,0 +1,20 @@
+---
+rule_type: auto
+description: "Enforce agent workflow tips and development practices"
+globs: ["**/*.py"]
+---
+
+Always call `set_project_path` before invoking other MCP tools.
+Prefer `search_code_advanced` with targeted `file_pattern` filters to minimize search noise.
+When editing indexing strategies, run `refresh_index` between changes to confirm cache rebuilds.
+Clean up temporary directories via `clear_settings` if you notice stale metadata.
+Document any new tooling you introduce in `AGENTS.md`.
+Use `uv sync` to install dependencies after cloning.
+Use `uv run code-index-mcp` to launch the MCP server directly.
+Use `uv run python run.py` when you need the local sys.path shim.
+Use `uv run code-index-mcp --help` to list available CLI flags during development.
+Use `uv run python -m code_index_mcp.server` to mirror the published entry point for debugging.
+When adding new language support, update `src/code_index_mcp/indexing/strategies/` and run `refresh_index`.
+When adding new MCP tools, update `src/code_index_mcp/server.py` and the relevant service.
+When fixing security issues, review security section in relevant ADR and update `.gitignore` if needed.
+When updating dependencies, run `uv sync`, test thoroughly, and update `uv.lock`.

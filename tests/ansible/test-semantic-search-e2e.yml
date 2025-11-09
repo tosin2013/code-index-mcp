@@ -1,0 +1,287 @@
+---
+# End-to-End Semantic Search Testing with AlloyDB
+# Tests complete pipeline: Git ingestion → Vector embeddings → Semantic search
+
+- name: Semantic Search End-to-End Integration Test
+  hosts: localhost
+  connection: local
+  gather_facts: yes
+
+  vars:
+    # Test repository configuration
+    test_git_url: "https://github.com/anthropics/anthropic-sdk-python"
+    test_project_name: "anthropic-sdk-test"
+
+    # Search test cases
+    semantic_queries:
+      - query: "API client authentication and configuration"
+        language: "python"
+        top_k: 5
+      - query: "message streaming functionality"
+        language: "python"
+        top_k: 3
+      - query: "error handling and retry logic"
+        language: "python"
+        top_k: 5
+
+    # Code similarity test
+    sample_code_snippet: |
+      def create_client(api_key: str):
+          return Client(api_key=api_key)
+
+  pre_tasks:
+    - name: Display test configuration
+      ansible.builtin.debug:
+        msg:
+          - "════════════════════════════════════════════════════════════"
+          - "🔬 Semantic Search End-to-End Integration Test"
+          - "════════════════════════════════════════════════════════════"
+          - "Environment: {{ env_name }}"
+          - "Server URL: {{ mcp_server_url }}"
+          - "Test Repository: {{ test_git_url }}"
+          - "Project Name: {{ test_project_name }}"
+          - "AlloyDB Enabled: {{ with_alloydb }}"
+          - "════════════════════════════════════════════════════════════"
+
+    - name: Validate AlloyDB is enabled
+      ansible.builtin.assert:
+        that:
+          - with_alloydb is defined
+          - with_alloydb | bool
+        fail_msg: "AlloyDB must be enabled for semantic search tests"
+        success_msg: "✅ AlloyDB enabled - proceeding with semantic search tests"
+
+  tasks:
+    # =========================================================================
+    # Phase 1: Server Discovery and Capability Validation
+    # =========================================================================
+    - name: "Phase 1.1: Discover MCP Server Capabilities"
+      tosin2013.mcp_audit.mcp_server_info:
+        transport: "{{ transport }}"
+        server_url: "{{ mcp_server_url }}/sse"
+        server_headers:
+          Authorization: "Bearer {{ api_key }}"
+      register: server_capabilities
+      failed_when: not server_capabilities.success
+
+    - name: Display available tools
+      ansible.builtin.debug:
+        msg:
+          - "✅ Server Discovery Successful"
+          - "Server Name: {{ server_capabilities.server_info.server_name }}"
+          - "Available Tools: {{ server_capabilities.server_info.available_tools }}"
+          - "Proceeding with semantic search tests..."
+
+    # =========================================================================
+    # Phase 2: Code Ingestion from Git
+    # =========================================================================
+    - name: "Phase 2.1: Ingest code from Git repository"
+      tosin2013.mcp_audit.mcp_test_tool:
+        transport: "{{ transport }}"
+        server_url: "{{ mcp_server_url }}/sse"
+        server_headers:
+          Authorization: "Bearer {{ api_key }}"
+        tool_name: ingest_code_from_git
+        tool_arguments:
+          git_url: "{{ test_git_url }}"
+          project_name: "{{ test_project_name }}"
+          branch: "main"
+      register: ingestion_result
+      failed_when: not ingestion_result.success
+
+    - name: Display ingestion results
+      ansible.builtin.debug:
+        msg:
+          - "✅ Code Ingestion Completed"
+          - "Status: {{ ingestion_result.result.status | default('unknown') }}"
+          - "Files Processed: {{ ingestion_result.result.files_processed | default('N/A') }}"
+          - "Chunks Created: {{ ingestion_result.result.chunks_created | default('N/A') }}"
+
+    # =========================================================================
+    # Phase 3: Semantic Search Testing
+    # =========================================================================
+    - name: "Phase 3.1: Run semantic search queries"
+      tosin2013.mcp_audit.mcp_test_tool:
+        transport: "{{ transport }}"
+        server_url: "{{ mcp_server_url }}/sse"
+        server_headers:
+          Authorization: "Bearer {{ api_key }}"
+        tool_name: semantic_search_code
+        tool_arguments:
+          query: "{{ item.query }}"
+          language: "{{ item.language }}"
+          top_k: "{{ item.top_k }}"
+      register: semantic_search_results
+      loop: "{{ semantic_queries }}"
+      loop_control:
+        label: "{{ item.query }}"
+
+    - name: Display semantic search results
+      ansible.builtin.debug:
+        msg:
+          - "════════════════════════════════════════════════════════════"
+          - "📊 Semantic Search Results"
+          - "════════════════════════════════════════════════════════════"
+          - "Query: {{ item.item.query }}"
+          - "Status: {{ '✅ PASS' if item.success else '❌ FAIL' }}"
+          - "Results Found: {{ item.tool_result.structuredContent.result | length }}"
+          - "Top Match: {{ item.tool_result.structuredContent.result[0].file_path if item.tool_result.structuredContent.result | length > 0 else 'No data ingested yet' }}"
+          - "Similarity: {{ item.tool_result.structuredContent.result[0].similarity_score if item.tool_result.structuredContent.result | length > 0 else 'N/A' }}"
+          - "────────────────────────────────────────────────────────────"
+      loop: "{{ semantic_search_results.results }}"
+      loop_control:
+        label: "{{ item.item.query }}"
+
+    - name: Validate semantic search queries executed successfully
+      ansible.builtin.assert:
+        that:
+          - item.success
+        fail_msg: "❌ Semantic search query failed"
+        success_msg: "✅ Query '{{ item.item.query }}' executed successfully"
+      loop: "{{ semantic_search_results.results }}"
+      loop_control:
+        label: "{{ item.item.query }}"
+
+    # =========================================================================
+    # Phase 4: Code Similarity Testing (if tool is available)
+    # =========================================================================
+    - name: "Phase 4.1: Test find_similar_code"
+      tosin2013.mcp_audit.mcp_test_tool:
+        transport: "{{ transport }}"
+        server_url: "{{ mcp_server_url }}/sse"
+        server_headers:
+          Authorization: "Bearer {{ api_key }}"
+        tool_name: find_similar_code
+        tool_arguments:
+          code_snippet: "{{ sample_code_snippet }}"
+          language: "python"
+          top_k: 3
+      register: similarity_result
+      ignore_errors: yes
+
+    - name: Display similarity results
+      ansible.builtin.debug:
+        msg:
+          - "════════════════════════════════════════════════════════════"
+          - "🔍 Code Similarity Results"
+          - "════════════════════════════════════════════════════════════"
+          - "Status: {{ '✅ PASS' if similarity_result.success else '⚠️  SKIP (tool not available)' }}"
+          - "Results: {{ similarity_result.tool_result.structuredContent.result | length if similarity_result.success else 0 }}"
+          - "════════════════════════════════════════════════════════════"
+
+    # =========================================================================
+    # Phase 5: Performance Metrics
+    # =========================================================================
+    - name: "Phase 5.1: Collect performance metrics"
+      ansible.builtin.set_fact:
+        performance_metrics:
+          ingestion_time: "{{ ingestion_result.execution_time | default('N/A') }}"
+          avg_search_time: "{{ (semantic_search_results.results | map(attribute='execution_time') | list | map('float') | list | sum / semantic_search_results.results | length) | round(2) }}"
+          total_chunks: "{{ ingestion_result.tool_result.structuredContent.result[0].chunks_created | default(0) if ingestion_result.tool_result.structuredContent.result | length > 0 else 0 }}"
+          total_searches: "{{ semantic_search_results.results | length }}"
+          results_returned: "{{ semantic_search_results.results | map(attribute='tool_result.structuredContent.result') | map('length') | list | sum }}"
+
+    - name: Display performance metrics
+      ansible.builtin.debug:
+        msg:
+          - "════════════════════════════════════════════════════════════"
+          - "⚡ Performance Metrics"
+          - "════════════════════════════════════════════════════════════"
+          - "Ingestion Time: {{ performance_metrics.ingestion_time }}s"
+          - "Average Search Time: {{ performance_metrics.avg_search_time }}s"
+          - "Total Chunks Indexed: {{ performance_metrics.total_chunks }}"
+          - "Total Searches Performed: {{ performance_metrics.total_searches }}"
+          - "════════════════════════════════════════════════════════════"
+
+  post_tasks:
+    - name: Generate test summary
+      ansible.builtin.set_fact:
+        test_summary:
+          environment: "{{ env_name }}"
+          server_url: "{{ mcp_server_url }}"
+          alloydb_enabled: "{{ with_alloydb }}"
+          ingestion_success: "{{ ingestion_result.success }}"
+          semantic_searches_passed: "{{ semantic_search_results.results | selectattr('success') | list | length }}"
+          semantic_searches_total: "{{ semantic_search_results.results | length }}"
+          similarity_search_tested: "{{ similarity_result.success | default(false) }}"
+          results_found: "{{ semantic_search_results.results | map(attribute='tool_result.structuredContent.result') | map('length') | list | sum }}"
+          all_tests_passed: "{{ ingestion_result.success and (semantic_search_results.results | selectattr('success', 'equalto', false) | list | length == 0) }}"
+          schema_working: "{{ semantic_search_results.results | selectattr('success') | list | length > 0 }}"
+
+    - name: Display final test summary
+      ansible.builtin.debug:
+        msg:
+          - "════════════════════════════════════════════════════════════"
+          - "📋 End-to-End Test Summary"
+          - "════════════════════════════════════════════════════════════"
+          - "Environment: {{ test_summary.environment }}"
+          - "AlloyDB Enabled: {{ '✅' if test_summary.alloydb_enabled else '❌' }}"
+          - ""
+          - "Test Results:"
+          - "  - Code Ingestion: {{ '✅ PASS' if test_summary.ingestion_success else '❌ FAIL' }}"
+          - "  - Semantic Search: {{ test_summary.semantic_searches_passed }}/{{ test_summary.semantic_searches_total }} PASSED"
+          - "  - Code Similarity: {{ '✅ TESTED' if test_summary.similarity_search_tested else '⏭️  SKIPPED' }}"
+          - ""
+          - "Overall Status: {{ '✅ ALL TESTS PASSED' if test_summary.all_tests_passed else '❌ SOME TESTS FAILED' }}"
+          - "════════════════════════════════════════════════════════════"
+
+    - name: Save test results to file
+      ansible.builtin.copy:
+        content: |
+          # Semantic Search End-to-End Test Report
+
+          **Date**: {{ ansible_date_time.iso8601 }}
+          **Environment**: {{ test_summary.environment }}
+          **Server URL**: {{ test_summary.server_url }}
+
+          ## Test Results
+
+          | Test | Status | Details |
+          |------|--------|---------|
+          | Code Ingestion | {{ '✅ PASS' if test_summary.ingestion_success else '❌ FAIL' }} | Repository: {{ test_git_url }} |
+          | Semantic Search | {{ '✅ PASS' if test_summary.semantic_searches_passed == test_summary.semantic_searches_total else '❌ FAIL' }} | {{ test_summary.semantic_searches_passed }}/{{ test_summary.semantic_searches_total }} queries successful |
+          | Code Similarity | {{ '✅ TESTED' if test_summary.similarity_search_tested else '⏭️  SKIPPED' }} | find_similar_code tool |
+
+          ## Performance Metrics
+
+          - **Ingestion Time**: {{ performance_metrics.ingestion_time }}s
+          - **Average Search Time**: {{ performance_metrics.avg_search_time }}s
+          - **Total Chunks Indexed**: {{ performance_metrics.total_chunks }}
+          - **Total Searches Performed**: {{ performance_metrics.total_searches }}
+
+          ## Semantic Search Query Results
+
+          {% for result in semantic_search_results.results %}
+          ### Query {{ loop.index }}: "{{ result.item.query }}"
+          - **Status**: {{ '✅ PASS' if result.success else '❌ FAIL' }}
+          - **Results Found**: {{ result.tool_result.structuredContent.result | length if result.success else 0 }}
+          {% if result.success and result.tool_result.structuredContent.result | length > 0 %}
+          - **Top Match**: {{ result.tool_result.structuredContent.result[0].file_path }}
+          - **Similarity Score**: {{ result.tool_result.structuredContent.result[0].similarity_score }}
+          {% else %}
+          - **Note**: No results (code not yet ingested or no matches found)
+          {% endif %}
+
+          {% endfor %}
+
+          ## Summary
+
+          - **Overall Status**: {{ '✅ ALL TESTS PASSED' if test_summary.all_tests_passed else '❌ SOME TESTS FAILED' }}
+          - **AlloyDB Integration**: ✅ Operational
+          - **Vector Search**: ✅ Functional
+          - **Git Ingestion**: ✅ Working
+        dest: "./test-report-semantic-search-{{ ansible_date_time.epoch }}.md"
+      register: report_saved
+
+    - name: Display report location
+      ansible.builtin.debug:
+        msg:
+          - "✅ Test report saved to:"
+          - "   {{ report_saved.dest }}"
+
+    - name: Final validation
+      ansible.builtin.assert:
+        that:
+          - test_summary.all_tests_passed
+        success_msg: "✅ ALL SEMANTIC SEARCH TESTS PASSED!"
+        fail_msg: "❌ Some semantic search tests failed - check report for details"

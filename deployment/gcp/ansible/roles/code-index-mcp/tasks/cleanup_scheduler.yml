@@ -1,0 +1,55 @@
+---
+# Automated cleanup scheduler tasks
+
+- name: Check if cleanup scheduler job exists
+  ansible.builtin.command: >
+    gcloud scheduler jobs describe cleanup-inactive-projects-{{ env_name }}
+    --location={{ gcp_region }}
+    --project={{ gcp_project_id }}
+  register: cleanup_job_check
+  changed_when: false
+  failed_when: false
+
+- name: Create cleanup scheduler job
+  ansible.builtin.command: >
+    gcloud scheduler jobs create http cleanup-inactive-projects-{{ env_name }}
+    --location={{ gcp_region }}
+    --schedule="{{ cleanup_schedule }}"
+    --uri="{{ cloudrun_service_url }}/admin/cleanup"
+    --http-method=POST
+    --oidc-service-account-email={{ service_account }}
+    --oidc-token-audience="{{ cloudrun_service_url }}"
+    --headers="Content-Type=application/json"
+    --message-body='{"inactive_days": {{ inactive_project_days }}}'
+    --time-zone="America/New_York"
+    --description="Cleanup inactive projects older than {{ inactive_project_days }} days"
+    --project={{ gcp_project_id }}
+  when: cleanup_job_check.rc != 0
+  register: cleanup_job_create
+  changed_when: cleanup_job_create.rc == 0
+
+- name: Update cleanup scheduler job
+  ansible.builtin.command: >
+    gcloud scheduler jobs update http cleanup-inactive-projects-{{ env_name }}
+    --location={{ gcp_region }}
+    --schedule="{{ cleanup_schedule }}"
+    --uri="{{ cloudrun_service_url }}/admin/cleanup"
+    --http-method=POST
+    --oidc-service-account-email={{ service_account }}
+    --oidc-token-audience="{{ cloudrun_service_url }}"
+    --headers="Content-Type=application/json"
+    --message-body='{"inactive_days": {{ inactive_project_days }}}'
+    --time-zone="America/New_York"
+    --description="Cleanup inactive projects older than {{ inactive_project_days }} days"
+    --project={{ gcp_project_id }}
+  when: cleanup_job_check.rc == 0
+  register: cleanup_job_update
+  changed_when: "'Updated job' in cleanup_job_update.stdout"
+
+- name: Display cleanup scheduler status
+  ansible.builtin.debug:
+    msg:
+      - "✅ Cleanup scheduler configured"
+      - "Schedule: {{ cleanup_schedule }}"
+      - "Inactive threshold: {{ inactive_project_days }} days"
+      - "Status: {{ 'created' if cleanup_job_check.rc != 0 else 'updated' }}"

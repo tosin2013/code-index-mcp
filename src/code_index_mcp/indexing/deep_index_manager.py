@@ -7,7 +7,7 @@ It delegates to the existing JSONIndexManager (symbols + files JSON index).
 
 from __future__ import annotations
 
-from typing import Optional, Dict, Any, List
+from typing import Any, Dict, List, Optional
 
 from .json_index_manager import JSONIndexManager
 
@@ -42,5 +42,3 @@ class DeepIndexManager:
 
     def cleanup(self) -> None:
         self._mgr.cleanup()
-
-

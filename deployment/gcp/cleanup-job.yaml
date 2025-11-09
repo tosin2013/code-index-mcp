@@ -1,0 +1,63 @@
+# Cloud Run Job configuration for automatic cleanup
+# This job is triggered by Cloud Scheduler to clean up idle projects
+#
+# Deploy with:
+#   gcloud run jobs replace cleanup-job.yaml --region=us-east1
+#
+# Manual execution:
+#   gcloud run jobs execute code-index-cleanup-dev --region=us-east1
+#
+# ADR Reference: ADR 0002 - Automatic Resource Cleanup
+
+apiVersion: run.googleapis.com/v1
+kind: Job
+metadata:
+  name: code-index-cleanup-dev
+  labels:
+    app: code-index-mcp
+    component: cleanup
+    environment: dev
+spec:
+  template:
+    metadata:
+      annotations:
+        run.googleapis.com/execution-environment: gen2
+    spec:
+      taskCount: 1
+      template:
+        spec:
+          # Maximum 10 minutes for cleanup
+          timeoutSeconds: 600
+          
+          # Use same service account as main MCP server (default App Engine SA)
+          serviceAccountName: tosinscloud@appspot.gserviceaccount.com
+          
+          maxRetries: 2
+          
+          containers:
+          - name: cleanup
+            # Use the same image as the MCP server
+            image: us-east1-docker.pkg.dev/tosinscloud/code-index-mcp/code-index-mcp-dev:latest
+            
+            # Run the cleanup script
+            command:
+            - python
+            - -m
+            - code_index_mcp.admin.run_cleanup
+            
+            # Cleanup configuration
+            args:
+            - --max-idle-days
+            - "30"
+            - --json  # Output in JSON format for logging
+            
+            # Environment variables
+            env:
+            - name: GCS_BUCKET_NAME
+              value: code-index-projects-tosinscloud
+            
+            # Resource limits
+            resources:
+              limits:
+                cpu: "1"
+                memory: 512Mi

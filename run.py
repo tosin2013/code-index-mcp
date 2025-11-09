@@ -2,11 +2,11 @@
 """
 Development convenience script to run the Code Index MCP server.
 """
-import sys
 import os
+import sys
 
 # Add src directory to path
-src_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'src')
+src_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "src")
 sys.path.insert(0, src_path)
 
 try:

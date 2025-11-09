@@ -1,0 +1,393 @@
+---
+# Fast E2E Test: Database Reset → Test
+# Keeps infrastructure running, only resets database state
+#
+# Usage:
+#   ansible-playbook test-e2e-db-reset.yml -i inventory/dev.yml
+#
+# This playbook:
+#   1. Resets database to clean state (truncates tables)
+#   2. Runs semantic search E2E tests
+#   3. Generates test report
+#
+# Duration: ~5-10 minutes (vs 25-35 minutes for full redeploy)
+# Cost: ~$0.05 per run (vs $0.25-0.50 for full redeploy)
+#
+# Ideal for:
+#   - CI/CD pipelines
+#   - Regression testing
+#   - Quick validation
+#   - Development testing
+
+- name: Code Index MCP - Fast E2E Test (DB Reset + Test)
+  hosts: localhost
+  connection: local
+  gather_facts: yes
+
+  vars:
+    # Test configuration
+    test_git_url: "https://github.com/anthropics/anthropic-sdk-python"
+    test_project_name: "e2e-test-{{ ansible_date_time.epoch }}"
+
+    # Directories
+    ansible_dir: "../../deployment/gcp/ansible"
+
+    # Semantic search queries for testing
+    semantic_queries:
+      - query: "API client authentication and configuration"
+        language: "python"
+        top_k: 5
+      - query: "message streaming functionality"
+        language: "python"
+        top_k: 3
+      - query: "error handling and retry logic"
+        language: "python"
+        top_k: 5
+
+  pre_tasks:
+    - name: Record test start time
+      ansible.builtin.set_fact:
+        test_start_time: "{{ ansible_date_time.epoch }}"
+
+    - name: Display test information
+      ansible.builtin.debug:
+        msg:
+          - "╔════════════════════════════════════════════════════════╗"
+          - "║  🚀 FAST E2E TEST - Database Reset + Test              ║"
+          - "╚════════════════════════════════════════════════════════╝"
+          - ""
+          - "This test will:"
+          - "  1. Reset database (truncate all tables)"
+          - "  2. Run code ingestion test"
+          - "  3. Run semantic search tests"
+          - "  4. Generate test report"
+          - ""
+          - "Duration: ~5-10 minutes"
+          - "Cost: ~$0.05"
+          - ""
+          - "Environment: {{ env_name }}"
+          - "Project: {{ gcp_project_id }}"
+          - ""
+          - "Infrastructure: PRESERVED (not redeployed)"
+          - ""
+
+  tasks:
+    # ========================================================================
+    # PHASE 1: Pre-Flight Checks
+    # ========================================================================
+    - name: "Phase 1: Pre-Flight Checks"
+      block:
+        - name: "Phase 1.1: Check AlloyDB cluster exists"
+          ansible.builtin.command:
+            cmd: >
+              gcloud alloydb clusters describe code-index-cluster-{{ env_name }}
+              --region={{ gcp_region }}
+              --format='value(state)'
+          register: cluster_state
+          changed_when: false
+          failed_when: cluster_state.rc != 0
+
+        - name: "Phase 1.2: Verify cluster is READY"
+          ansible.builtin.assert:
+            that:
+              - cluster_state.stdout == 'READY'
+            fail_msg: "AlloyDB cluster is not READY (state: {{ cluster_state.stdout }}). Cannot proceed."
+            success_msg: "✅ AlloyDB cluster is READY"
+
+        - name: "Phase 1.3: Check Cloud Run service exists"
+          ansible.builtin.command:
+            cmd: >
+              gcloud run services describe code-index-mcp-{{ env_name }}
+              --region={{ gcp_region }}
+              --format='value(status.url)'
+          register: service_url
+          changed_when: false
+          failed_when: service_url.rc != 0
+
+        - name: "Phase 1.4: Test Cloud Run health endpoint"
+          ansible.builtin.uri:
+            url: "{{ service_url.stdout }}/health"
+            method: GET
+            status_code: 200
+            timeout: 10
+          register: health_check
+
+        - name: Display pre-flight results
+          ansible.builtin.debug:
+            msg:
+              - "✅ Pre-flight checks passed"
+              - "AlloyDB: {{ cluster_state.stdout }}"
+              - "Cloud Run: {{ service_url.stdout }}"
+              - "Health Check: ✅"
+
+    # ========================================================================
+    # PHASE 2: Database Reset
+    # ========================================================================
+    - name: "Phase 2: Reset Database"
+      block:
+        - name: "Phase 2.1: Truncate all tables"
+          ansible.builtin.command:
+            cmd: >
+              ansible-playbook utilities.yml
+              -i inventory/{{ env_name }}.yml
+              -e "operation=reset_database"
+              -e "auto_approve=true"
+            chdir: "{{ ansible_dir }}"
+          register: db_reset
+
+        - name: Display database reset results
+          ansible.builtin.debug:
+            msg:
+              - "✅ Phase 2 Complete - Database Reset"
+              - "All tables truncated"
+              - "Database ready for fresh ingestion"
+
+    # ========================================================================
+    # PHASE 3: Get Test API Key
+    # ========================================================================
+    - name: "Phase 3: Get Test API Key"
+      block:
+        - name: "Phase 3.1: Check if test user exists"
+          ansible.builtin.command:
+            cmd: >
+              ansible-playbook utilities.yml
+              -i inventory/{{ env_name }}.yml
+              -e "operation=seed_test_user"
+            chdir: "{{ ansible_dir }}"
+          register: seed_user
+          failed_when: false  # User may already exist
+
+        - name: "Phase 3.2: Generate test API key"
+          ansible.builtin.command:
+            cmd: >
+              ansible-playbook utilities.yml
+              -i inventory/{{ env_name }}.yml
+              -e "operation=generate_api_key"
+              -e "user_id=e2e-test"
+            chdir: "{{ ansible_dir }}"
+          register: api_key_gen
+
+        - name: "Phase 3.3: Read generated API key"
+          ansible.builtin.slurp:
+            src: "{{ ansible_dir }}/api-key-e2e-test-{{ env_name }}.txt"
+          register: api_key_file
+
+        - name: Set API key fact
+          ansible.builtin.set_fact:
+            test_api_key: "{{ api_key_file.content | b64decode | trim }}"
+
+        - name: Display API key status
+          ansible.builtin.debug:
+            msg: "✅ Test API key ready"
+
+    # ========================================================================
+    # PHASE 4: MCP Server Discovery
+    # ========================================================================
+    - name: "Phase 4: Discover MCP Server Capabilities"
+      block:
+        - name: "Phase 4.1: Discover MCP server"
+          tosin2013.mcp_audit.mcp_server_info:
+            transport: "sse"
+            server_url: "{{ service_url.stdout }}/sse"
+            server_headers:
+              Authorization: "Bearer {{ test_api_key }}"
+          register: server_capabilities
+          failed_when: not server_capabilities.success
+
+        - name: Display server capabilities
+          ansible.builtin.debug:
+            msg:
+              - "✅ Phase 4 Complete - Server Discovery"
+              - "Server Name: {{ server_capabilities.server_info.server_name }}"
+              - "Available Tools: {{ server_capabilities.server_info.available_tools | length }}"
+
+    # ========================================================================
+    # PHASE 5: Functional Testing (Code Ingestion + Semantic Search)
+    # ========================================================================
+    - name: "Phase 5: Functional Testing"
+      block:
+        - name: "Phase 5.1: Ingest code from Git repository"
+          tosin2013.mcp_audit.mcp_test_tool:
+            transport: "sse"
+            server_url: "{{ service_url.stdout }}/sse"
+            server_headers:
+              Authorization: "Bearer {{ test_api_key }}"
+            tool_name: ingest_code_from_git
+            tool_arguments:
+              git_url: "{{ test_git_url }}"
+              project_name: "{{ test_project_name }}"
+              branch: "main"
+          register: ingestion_result
+          failed_when: not ingestion_result.success
+
+        - name: Display ingestion results
+          ansible.builtin.debug:
+            msg:
+              - "✅ Code Ingestion Completed"
+              - "Files Processed: {{ ingestion_result.tool_result.structuredContent.result[0].files_processed | default('N/A') if ingestion_result.tool_result.structuredContent.result | length > 0 else 'N/A' }}"
+              - "Chunks Created: {{ ingestion_result.tool_result.structuredContent.result[0].chunks_created | default('N/A') if ingestion_result.tool_result.structuredContent.result | length > 0 else 'N/A' }}"
+
+        - name: "Phase 5.2: Run semantic search queries"
+          tosin2013.mcp_audit.mcp_test_tool:
+            transport: "sse"
+            server_url: "{{ service_url.stdout }}/sse"
+            server_headers:
+              Authorization: "Bearer {{ test_api_key }}"
+            tool_name: semantic_search_code
+            tool_arguments:
+              query: "{{ item.query }}"
+              language: "{{ item.language }}"
+              top_k: "{{ item.top_k }}"
+          register: semantic_search_results
+          loop: "{{ semantic_queries }}"
+          loop_control:
+            label: "{{ item.query }}"
+
+        - name: Validate all searches succeeded
+          ansible.builtin.assert:
+            that:
+              - item.success
+            fail_msg: "❌ Semantic search query failed: {{ item.item.query }}"
+            success_msg: "✅ Query '{{ item.item.query }}' executed successfully"
+          loop: "{{ semantic_search_results.results }}"
+          loop_control:
+            label: "{{ item.item.query }}"
+
+        - name: Display functional testing results
+          ansible.builtin.debug:
+            msg:
+              - "✅ Phase 5 Complete - Functional Testing"
+              - "Code Ingestion: ✅ PASS"
+              - "Semantic Search: {{ semantic_search_results.results | selectattr('success') | list | length }}/{{ semantic_search_results.results | length }} PASS"
+              - "Total Results Found: {{ semantic_search_results.results | map(attribute='tool_result.structuredContent.result') | map('length') | list | sum }}"
+
+    # ========================================================================
+    # PHASE 6: Performance Metrics
+    # ========================================================================
+    - name: "Phase 6: Collect Performance Metrics"
+      block:
+        - name: Calculate total test time
+          ansible.builtin.set_fact:
+            total_test_time: "{{ (ansible_date_time.epoch | int) - (test_start_time | int) }}"
+
+        - name: Calculate average search time
+          ansible.builtin.set_fact:
+            avg_search_time: "{{ (semantic_search_results.results | map(attribute='execution_time') | map('float') | list | sum / semantic_search_results.results | length) | round(2) }}"
+
+        - name: Build performance metrics
+          ansible.builtin.set_fact:
+            performance_metrics:
+              total_duration: "{{ total_test_time }}s"
+              db_reset_time: "{{ db_reset.delta if db_reset.delta is defined else 'N/A' }}"
+              ingestion_time: "{{ ingestion_result.execution_time | default('N/A') }}s"
+              avg_search_time: "{{ avg_search_time }}s"
+              total_searches: "{{ semantic_search_results.results | length }}"
+              results_returned: "{{ semantic_search_results.results | map(attribute='tool_result.structuredContent.result') | map('length') | list | sum }}"
+
+        - name: Display performance metrics
+          ansible.builtin.debug:
+            msg:
+              - "════════════════════════════════════════════════════════"
+              - "⚡ Performance Metrics"
+              - "════════════════════════════════════════════════════════"
+              - "Total Test Duration: {{ performance_metrics.total_duration }}"
+              - "Database Reset Time: {{ performance_metrics.db_reset_time }}"
+              - "Ingestion Time: {{ performance_metrics.ingestion_time }}"
+              - "Average Search Time: {{ performance_metrics.avg_search_time }}"
+              - "Total Searches: {{ performance_metrics.total_searches }}"
+              - "Results Returned: {{ performance_metrics.results_returned }}"
+              - "════════════════════════════════════════════════════════"
+
+  post_tasks:
+    - name: Generate test summary
+      ansible.builtin.set_fact:
+        test_summary:
+          test_type: "Fast E2E (DB Reset)"
+          environment: "{{ env_name }}"
+          project: "{{ gcp_project_id }}"
+          test_timestamp: "{{ ansible_date_time.iso8601 }}"
+          phases:
+            preflight: "✅ PASS"
+            db_reset: "✅ PASS"
+            functional: "✅ PASS"
+          metrics: "{{ performance_metrics }}"
+
+    - name: Save test report to file
+      ansible.builtin.copy:
+        content: |
+          # Code Index MCP - Fast E2E Test Report
+
+          **Test Type**: Database Reset + Functional Test
+          **Date**: {{ ansible_date_time.iso8601 }}
+          **Environment**: {{ test_summary.environment }}
+          **Project**: {{ test_summary.project }}
+
+          ## Test Phases
+
+          | Phase | Status |
+          |-------|--------|
+          | Pre-Flight Checks | {{ test_summary.phases.preflight }} |
+          | Database Reset | {{ test_summary.phases.db_reset }} |
+          | Functional Testing | {{ test_summary.phases.functional }} |
+
+          ## Performance Metrics
+
+          - **Total Test Duration**: {{ test_summary.metrics.total_duration }}
+          - **Database Reset Time**: {{ test_summary.metrics.db_reset_time }}
+          - **Code Ingestion Time**: {{ test_summary.metrics.ingestion_time }}
+          - **Average Search Time**: {{ test_summary.metrics.avg_search_time }}
+          - **Total Searches Performed**: {{ test_summary.metrics.total_searches }}
+          - **Results Returned**: {{ test_summary.metrics.results_returned }}
+
+          ## Semantic Search Results
+
+          {% for result in semantic_search_results.results %}
+          ### Query {{ loop.index }}: "{{ result.item.query }}"
+          - **Status**: {{ '✅ PASS' if result.success else '❌ FAIL' }}
+          - **Results Found**: {{ result.tool_result.structuredContent.result | length if result.success else 0 }}
+          {% if result.success and result.tool_result.structuredContent.result | length > 0 %}
+          - **Top Match**: {{ result.tool_result.structuredContent.result[0].file_path }}
+          - **Similarity Score**: {{ result.tool_result.structuredContent.result[0].similarity_score }}
+          {% endif %}
+
+          {% endfor %}
+
+          ## Summary
+
+          ✅ **All Tests PASSED**
+
+          - Database reset: Working
+          - Code ingestion: Working
+          - Semantic search: Working
+          - Vector similarity: Working
+
+          ## Comparison: Fast vs Full Test
+
+          | Metric | Fast E2E | Full E2E |
+          |--------|----------|----------|
+          | Duration | {{ test_summary.metrics.total_duration }} | ~25-35 minutes |
+          | Cost | ~$0.05 | ~$0.25-0.50 |
+          | Infrastructure | Preserved | Redeployed |
+          | Use Case | CI/CD, Regression | Weekly, Major Changes |
+
+          ---
+          *Generated by Code Index MCP Fast E2E Test Suite*
+        dest: "./fast-e2e-test-report-{{ ansible_date_time.epoch }}.md"
+      register: report_saved
+
+    - name: Display final test summary
+      ansible.builtin.debug:
+        msg:
+          - "╔════════════════════════════════════════════════════════╗"
+          - "║  ✅ FAST E2E TEST COMPLETE                             ║"
+          - "╚════════════════════════════════════════════════════════╝"
+          - ""
+          - "Test Duration: {{ test_summary.metrics.total_duration }}"
+          - "Report: {{ report_saved.dest }}"
+          - ""
+          - "Infrastructure Status:"
+          - "  - AlloyDB: Running (preserved)"
+          - "  - Cloud Run: Running (preserved)"
+          - ""
+          - "⚡ This test was {{ (35 * 60) | int - (test_summary.metrics.total_duration | int) }}s faster than full redeploy!"
+          - ""

@@ -1,0 +1,36 @@
+---
+# Validate Terraform configuration
+
+- name: Display validation information
+  ansible.builtin.debug:
+    msg:
+      - "=========================================="
+      - "  Terraform Validation"
+      - "=========================================="
+      - "Environment: {{ env_name }}"
+      - "=========================================="
+
+- name: Check if Terraform wrapper exists
+  ansible.builtin.stat:
+    path: "{{ terraform_wrapper_script }}"
+  register: wrapper_stat
+
+- name: Fail if wrapper script not found
+  ansible.builtin.fail:
+    msg: "Terraform wrapper script not found at {{ terraform_wrapper_script }}"
+  when: not wrapper_stat.stat.exists
+
+- name: Run Terraform validate via wrapper script
+  ansible.builtin.command:
+    cmd: "{{ terraform_wrapper_script }} validate {{ env_name }}"
+  register: terraform_validate_result
+  changed_when: false
+  failed_when: terraform_validate_result.rc != 0
+
+- name: Display validation output
+  ansible.builtin.debug:
+    var: terraform_validate_result.stdout_lines
+
+- name: Display validation status
+  ansible.builtin.debug:
+    msg: "✅ Terraform configuration is valid"

@@ -29,7 +29,7 @@ class UserService {
 
       // Create new user
       const user = new User(userData);
-      
+
       // Validate user data
       const validationErrors = user.validateUser();
       if (validationErrors.length > 0) {
@@ -37,7 +37,7 @@ class UserService {
       }
 
       await user.save();
-      
+
       logger.info(`User created successfully: ${user.username}`);
       return user.response;
     } catch (error) {
@@ -127,7 +127,7 @@ class UserService {
       }
 
       await user.save();
-      
+
       logger.info(`User updated successfully: ${user.username}`);
       return user.response;
     } catch (error) {
@@ -150,7 +150,7 @@ class UserService {
 
       user.delete();
       await user.save();
-      
+
       logger.info(`User deleted successfully: ${user.username}`);
       return true;
     } catch (error) {
@@ -170,7 +170,7 @@ class UserService {
       if (result.deletedCount === 0) {
         throw new AppError('User not found', 404);
       }
-      
+
       logger.info(`User permanently deleted: ${id}`);
       return true;
     } catch (error) {
@@ -189,7 +189,7 @@ class UserService {
   async getAllUsers(page = 1, limit = 20, filter = {}) {
     try {
       const skip = (page - 1) * limit;
-      
+
       const users = await User.find(filter)
         .sort({ createdAt: -1 })
         .skip(skip)
@@ -254,7 +254,7 @@ class UserService {
   async searchUsers(query, page = 1, limit = 20) {
     try {
       const skip = (page - 1) * limit;
-      
+
       const users = await User.searchUsers(query, {
         skip,
         limit,
@@ -307,7 +307,7 @@ class UserService {
   async authenticateUser(username, password) {
     try {
       const user = await User.findByUsername(username).select('+password');
-      
+
       if (!user || !(await user.checkPassword(password))) {
         // Record failed login attempt if user exists
         if (user) {
@@ -333,7 +333,7 @@ class UserService {
       const token = user.generateToken();
 
       logger.info(`User authenticated successfully: ${user.username}`);
-      
+
       return {
         user: user.response,
         token,

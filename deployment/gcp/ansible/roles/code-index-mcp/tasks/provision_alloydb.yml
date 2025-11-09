@@ -1,0 +1,210 @@
+---
+# Provision AlloyDB using Terraform
+
+- name: Check if Terraform is installed
+  ansible.builtin.command: terraform version
+  register: terraform_check
+  changed_when: false
+  failed_when: false
+
+- name: Fail if Terraform not installed
+  ansible.builtin.fail:
+    msg: |
+      Terraform is not installed. Install it from: https://www.terraform.io/downloads
+      
+      macOS: brew install terraform
+      Linux: https://www.terraform.io/downloads
+  when: terraform_check.rc != 0
+
+- name: Set Terraform directory
+  ansible.builtin.set_fact:
+    terraform_dir: "{{ playbook_dir }}/.."
+
+- name: Check if Terraform state exists
+  ansible.builtin.stat:
+    path: "{{ terraform_dir }}/terraform.tfstate"
+  register: tfstate_check
+
+- name: Display AlloyDB provisioning information
+  ansible.builtin.debug:
+    msg:
+      - "==================================="
+      - "AlloyDB Provisioning"
+      - "==================================="
+      - "Project: {{ gcp_project_id }}"
+      - "Region: {{ gcp_region }}"
+      - "Environment: {{ env_name }}"
+      - "Terraform state: {{ 'exists' if tfstate_check.stat.exists else 'new deployment' }}"
+      - ""
+      - "Estimated cost: ~$179-185/month"
+      - "  - AlloyDB (2 vCPU, 16 GB): ~$164/month"
+      - "  - Storage (10 GB): ~$2/month"
+      - "  - Backups: ~$1/month"
+      - "  - VPC Connector: ~$7/month"
+      - "  - Network: ~$5/month"
+      - "==================================="
+
+- name: Check if .terraform directory exists
+  ansible.builtin.stat:
+    path: "{{ terraform_dir }}/.terraform"
+  register: terraform_init_check
+
+- name: Initialize Terraform
+  ansible.builtin.command:
+    cmd: terraform init
+    chdir: "{{ terraform_dir }}"
+  register: terraform_init
+  changed_when: "'Terraform has been successfully initialized' in terraform_init.stdout"
+  when: not terraform_init_check.stat.exists
+
+- name: Plan Terraform changes
+  ansible.builtin.command:
+    cmd: >
+      terraform plan
+      -var="project_id={{ gcp_project_id }}"
+      -var="region={{ gcp_region }}"
+      -var="environment={{ env_name }}"
+      -out=/tmp/tfplan
+    chdir: "{{ terraform_dir }}"
+  register: terraform_plan
+  changed_when: false
+
+- name: Display Terraform plan summary
+  ansible.builtin.debug:
+    msg: "{{ terraform_plan.stdout_lines[-20:] }}"  # Last 20 lines
+
+- name: Check if changes are needed
+  ansible.builtin.set_fact:
+    terraform_changes_needed: "{{ 'No changes' not in terraform_plan.stdout }}"
+
+- name: Display Terraform status
+  ansible.builtin.debug:
+    msg: "{{ 'Terraform changes detected - will apply' if terraform_changes_needed else 'No Terraform changes needed - AlloyDB already provisioned' }}"
+
+- name: Apply Terraform configuration
+  ansible.builtin.command:
+    cmd: >
+      terraform apply /tmp/tfplan
+    chdir: "{{ terraform_dir }}"
+  register: terraform_apply
+  changed_when: "'Apply complete!' in terraform_apply.stdout"
+  async: 1800  # 30 minutes timeout for AlloyDB provisioning
+  poll: 10
+  when: terraform_changes_needed | bool
+
+- name: Get Terraform outputs
+  ansible.builtin.command:
+    cmd: terraform output -json
+    chdir: "{{ terraform_dir }}"
+  register: terraform_outputs
+  changed_when: false
+
+- name: Parse Terraform outputs
+  ansible.builtin.set_fact:
+    alloydb_cluster: "{{ (terraform_outputs.stdout | from_json).cluster_name.value }}"
+    alloydb_instance: "{{ (terraform_outputs.stdout | from_json).primary_instance_name.value }}"
+    alloydb_ip: "{{ (terraform_outputs.stdout | from_json).primary_instance_ip.value }}"
+    alloydb_password_secret: "{{ (terraform_outputs.stdout | from_json).database_password_secret.value }}"
+    vpc_connector: "{{ (terraform_outputs.stdout | from_json).vpc_connector_name.value }}"
+
+- name: Display AlloyDB provisioning results
+  ansible.builtin.debug:
+    msg:
+      - "✅ AlloyDB provisioned successfully"
+      - "Cluster: {{ alloydb_cluster }}"
+      - "Instance: {{ alloydb_instance }}"
+      - "VPC Connector: {{ vpc_connector }}"
+      - "Password Secret: {{ alloydb_password_secret }}"
+
+- name: Wait for AlloyDB instance to be ready
+  ansible.builtin.command: >
+    gcloud alloydb instances describe {{ alloydb_instance.split('/')[-1] }}
+    --cluster={{ alloydb_cluster.split('/')[-1] }}
+    --region={{ gcp_region }}
+    --project={{ gcp_project_id }}
+    --format="value(state)"
+  register: alloydb_state
+  until: alloydb_state.stdout == "READY"
+  retries: 30
+  delay: 20
+  changed_when: false
+
+- name: Confirm AlloyDB is ready
+  ansible.builtin.debug:
+    msg: "✅ AlloyDB instance is READY and accepting connections"
+
+# Fix VPC peering to enable connectivity from VPC connector to AlloyDB
+- name: Get AlloyDB network name
+  ansible.builtin.command: >
+    gcloud alloydb clusters describe {{ alloydb_cluster.split('/')[-1] }}
+    --region={{ gcp_region }}
+    --project={{ gcp_project_id }}
+    --format="value(network)"
+  register: alloydb_network_full
+  changed_when: false
+
+- name: Extract network name from full path
+  ansible.builtin.set_fact:
+    alloydb_network_name: "{{ alloydb_network_full.stdout.split('/')[-1] }}"
+
+- name: Update VPC peering to export custom routes
+  ansible.builtin.command: >
+    gcloud compute networks peerings update servicenetworking-googleapis-com
+    --network={{ alloydb_network_name }}
+    --export-custom-routes
+    --import-custom-routes
+    --project={{ gcp_project_id }}
+  register: peering_update
+  changed_when: "'Updated' in peering_update.stderr"
+  failed_when: false
+
+- name: Display peering configuration result
+  ansible.builtin.debug:
+    msg: "✅ VPC peering configured to export/import custom routes for AlloyDB connectivity"
+
+# Create/update connection string secret
+- name: Get AlloyDB password from secret
+  ansible.builtin.command: >
+    gcloud secrets versions access latest
+    --secret=alloydb-password-{{ env_name }}
+  register: alloydb_password
+  changed_when: false
+  no_log: true
+
+- name: Build connection string
+  ansible.builtin.set_fact:
+    connection_string: "postgresql://code_index_admin:{{ alloydb_password.stdout }}@{{ alloydb_ip }}:5432/postgres"
+  no_log: true
+
+- name: Check if connection string secret exists
+  ansible.builtin.command: >
+    gcloud secrets describe alloydb-connection-string
+    --project={{ gcp_project_id }}
+  register: connection_secret_check
+  failed_when: false
+  changed_when: false
+
+- name: Create connection string secret if it doesn't exist
+  ansible.builtin.shell: >
+    printf '%s' '{{ connection_string }}' |
+    gcloud secrets create alloydb-connection-string
+    --data-file=-
+    --project={{ gcp_project_id }}
+  when: connection_secret_check.rc != 0
+  changed_when: true
+  no_log: true
+
+- name: Update connection string secret version
+  ansible.builtin.shell: >
+    printf '%s' '{{ connection_string }}' |
+    gcloud secrets versions add alloydb-connection-string
+    --data-file=-
+    --project={{ gcp_project_id }}
+  when: connection_secret_check.rc == 0
+  changed_when: true
+  no_log: true
+
+- name: Display connection string secret status
+  ansible.builtin.debug:
+    msg: "✅ AlloyDB connection string secret created/updated: alloydb-connection-string"
+

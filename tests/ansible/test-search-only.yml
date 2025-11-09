@@ -1,0 +1,49 @@
+---
+# Test semantic search only
+- name: Test Semantic Search
+  hosts: localhost
+  connection: local
+  gather_facts: yes
+
+  tasks:
+    - name: Test semantic search with debugging
+      tosin2013.mcp_audit.mcp_test_tool:
+        transport: "{{ transport }}"
+        server_url: "{{ mcp_server_url }}/sse"
+        server_headers:
+          Authorization: "Bearer {{ api_key }}"
+        tool_name: semantic_search_code
+        tool_arguments:
+          query: "API client authentication"
+          language: "python"
+          top_k: 5
+        timeout: 30
+      register: search_result
+
+    - name: Display full search response
+      ansible.builtin.debug:
+        msg:
+          - "════════════════════════════════════════════════════════════"
+          - "🔍 Semantic Search Test"
+          - "════════════════════════════════════════════════════════════"
+          - "Success: {{ search_result.success }}"
+          - "Tool Result:"
+          - "{{ search_result.tool_result | to_nice_json }}"
+          - "════════════════════════════════════════════════════════════"
+
+    - name: Check search logs
+      ansible.builtin.shell: |
+        gcloud logging read "resource.type=cloud_run_revision \
+          AND resource.labels.service_name=code-index-mcp-dev \
+          AND (textPayload:\"semantic_search\" OR textPayload:\"SEARCH\") \
+          AND timestamp>=\"$(date -u -v-5M '+%Y-%m-%dT%H:%M:%SZ')\"" \
+          --project=tosinscloud \
+          --limit=50 \
+          --format="value(timestamp,textPayload)"
+      register: search_logs
+      ignore_errors: yes
+
+    - name: Display search logs
+      ansible.builtin.debug:
+        msg: "{{ search_logs.stdout_lines }}"
+      when: search_logs.stdout_lines is defined

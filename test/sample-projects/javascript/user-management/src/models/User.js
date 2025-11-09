@@ -148,13 +148,13 @@ userSchema.methods.checkPassword = async function(candidatePassword) {
 // Instance method to generate JWT token
 userSchema.methods.generateToken = function() {
   return jwt.sign(
-    { 
+    {
       id: this.id,
       username: this.username,
-      role: this.role 
+      role: this.role
     },
     process.env.JWT_SECRET || 'fallback-secret',
-    { 
+    {
       expiresIn: process.env.JWT_EXPIRES_IN || '24h',
       issuer: 'user-management-system'
     }

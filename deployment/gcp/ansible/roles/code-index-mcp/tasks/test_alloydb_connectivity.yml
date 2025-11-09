@@ -1,0 +1,182 @@
+---
+# AlloyDB Connectivity Testing
+# This task validates that Cloud Run can connect to AlloyDB through VPC connector
+
+- name: "Connectivity Test: Get AlloyDB connection details"
+  ansible.builtin.command: >
+    gcloud alloydb clusters describe code-index-cluster-{{ env_name }}
+    --region={{ gcp_region }}
+    --format=json
+  register: alloydb_cluster_info
+  changed_when: false
+
+- name: "Connectivity Test: Parse AlloyDB IP and network"
+  ansible.builtin.set_fact:
+    alloydb_network: "{{ (alloydb_cluster_info.stdout | from_json).network }}"
+    alloydb_status: "{{ (alloydb_cluster_info.stdout | from_json).state }}"
+
+- name: "Connectivity Test: Verify AlloyDB cluster is READY"
+  ansible.builtin.assert:
+    that:
+      - alloydb_status == "READY"
+    fail_msg: "AlloyDB cluster is not READY. Current state: {{ alloydb_status }}"
+    success_msg: "✅ AlloyDB cluster is READY"
+
+- name: "Connectivity Test: Get AlloyDB instance details"
+  ansible.builtin.command: >
+    gcloud alloydb instances list
+    --cluster=code-index-cluster-{{ env_name }}
+    --region={{ gcp_region }}
+    --format=json
+  register: alloydb_instances_info
+  changed_when: false
+
+- name: "Connectivity Test: Parse primary instance IP"
+  ansible.builtin.set_fact:
+    alloydb_ip: "{{ (alloydb_instances_info.stdout | from_json)[0].ipAddress }}"
+    alloydb_instance_status: "{{ (alloydb_instances_info.stdout | from_json)[0].state }}"
+
+- name: "Connectivity Test: Verify AlloyDB instance is READY"
+  ansible.builtin.assert:
+    that:
+      - alloydb_instance_status == "READY"
+    fail_msg: "AlloyDB instance is not READY. Current state: {{ alloydb_instance_status }}"
+    success_msg: "✅ AlloyDB instance is READY (IP: {{ alloydb_ip }})"
+
+- name: "Connectivity Test: Get VPC connector details"
+  ansible.builtin.command: >
+    gcloud compute networks vpc-access connectors describe alloydb-connector
+    --region={{ gcp_region }}
+    --format=json
+  register: vpc_connector_info
+  changed_when: false
+
+- name: "Connectivity Test: Parse VPC connector network"
+  ansible.builtin.set_fact:
+    vpc_connector_network: "{{ (vpc_connector_info.stdout | from_json).network }}"
+    vpc_connector_status: "{{ (vpc_connector_info.stdout | from_json).state }}"
+    vpc_connector_subnet: "{{ (vpc_connector_info.stdout | from_json).ipCidrRange }}"
+
+- name: "Connectivity Test: Verify VPC connector is READY"
+  ansible.builtin.assert:
+    that:
+      - vpc_connector_status == "READY"
+    fail_msg: "VPC connector is not READY. Current state: {{ vpc_connector_status }}"
+    success_msg: "✅ VPC connector is READY (subnet: {{ vpc_connector_subnet }})"
+
+- name: "Connectivity Test: Verify networks match"
+  ansible.builtin.assert:
+    that:
+      - "'code-index-alloydb-network-' + env_name in vpc_connector_network"
+      - "'code-index-alloydb-network-' + env_name in alloydb_network"
+    fail_msg: |
+      Network mismatch!
+      VPC Connector network: {{ vpc_connector_network }}
+      AlloyDB network: {{ alloydb_network }}
+    success_msg: "✅ VPC connector and AlloyDB are on the same network"
+
+- name: "Connectivity Test: Check VPC peering configuration"
+  ansible.builtin.command: >
+    gcloud compute networks describe code-index-alloydb-network-{{ env_name }}
+    --format=json
+  register: vpc_peering_info
+  changed_when: false
+
+- name: "Connectivity Test: Parse network details"
+  ansible.builtin.set_fact:
+    network_info: "{{ vpc_peering_info.stdout | from_json }}"
+
+- name: "Connectivity Test: Find servicenetworking peering"
+  ansible.builtin.set_fact:
+    servicenetworking_peering: "{{ network_info.peerings | selectattr('name', 'equalto', 'servicenetworking-googleapis-com') | first | default({}) }}"
+  when: network_info.peerings is defined and network_info.peerings | length > 0
+
+- name: "Connectivity Test: Check if peering exports custom routes"
+  ansible.builtin.set_fact:
+    peering_exports_routes: "{{ servicenetworking_peering.exportCustomRoutes | default(false) }}"
+
+- name: "Connectivity Test: Check firewall rules for AlloyDB access"
+  ansible.builtin.command: >
+    gcloud compute firewall-rules list
+    --filter="network:code-index-alloydb-network-{{ env_name }} AND direction:INGRESS"
+    --format=json
+  register: firewall_rules_info
+  changed_when: false
+
+- name: "Connectivity Test: Parse firewall rules"
+  ansible.builtin.set_fact:
+    firewall_rules: "{{ firewall_rules_info.stdout | from_json }}"
+
+- name: "Connectivity Test: Check for PostgreSQL firewall rule"
+  ansible.builtin.set_fact:
+    has_alloydb_firewall: >-
+      {{
+        firewall_rules
+        | selectattr('allowed', 'defined')
+        | map(attribute='allowed')
+        | flatten
+        | selectattr('IPProtocol', 'equalto', 'tcp')
+        | selectattr('ports', 'defined')
+        | map(attribute='ports')
+        | flatten
+        | select('search', '5432')
+        | list
+        | length > 0
+      }}
+
+- name: "Connectivity Test: Display connectivity summary"
+  ansible.builtin.debug:
+    msg:
+      - "═══════════════════════════════════════════════════════"
+      - "🔍 AlloyDB Connectivity Test Summary"
+      - "═══════════════════════════════════════════════════════"
+      - "AlloyDB Cluster: {{ 'READY ✅' if alloydb_status == 'READY' else 'NOT READY ❌' }}"
+      - "AlloyDB Instance: {{ 'READY ✅' if alloydb_instance_status == 'READY' else 'NOT READY ❌' }}"
+      - "AlloyDB IP: {{ alloydb_ip }}"
+      - "VPC Connector: {{ 'READY ✅' if vpc_connector_status == 'READY' else 'NOT READY ❌' }}"
+      - "VPC Connector Subnet: {{ vpc_connector_subnet }}"
+      - "Network Match: {{ 'YES ✅' if (alloydb_network in vpc_connector_network) else 'NO ❌' }}"
+      - "VPC Peering Exports Routes: {{ 'YES ✅' if (peering_exports_routes | default(false)) else 'NO ⚠️' }}"
+      - "Firewall Allows PostgreSQL: {{ 'YES ✅' if has_alloydb_firewall else 'NO ⚠️' }}"
+      - "═══════════════════════════════════════════════════════"
+
+- name: "Connectivity Test: Warn if peering doesn't export routes"
+  ansible.builtin.debug:
+    msg:
+      - "⚠️  WARNING: VPC peering does not export custom routes"
+      - "This may prevent VPC connector from reaching AlloyDB"
+      - "Run: gcloud compute networks peerings update servicenetworking-googleapis-com \\"
+      - "       --network=code-index-alloydb-network-{{ env_name }} \\"
+      - "       --export-custom-routes \\"
+      - "       --import-custom-routes"
+  when: not (peering_exports_routes | default(false))
+
+- name: "Connectivity Test: Test actual database connection from Cloud Run"
+  ansible.builtin.uri:
+    url: "{{ cloudrun_service_url }}/health"
+    method: GET
+    status_code: [200, 503]
+    timeout: 30
+  register: health_check
+  ignore_errors: yes
+  when: cloudrun_service_url is defined
+
+- name: "Connectivity Test: Display health check result"
+  ansible.builtin.debug:
+    msg:
+      - "Health Check: {{ 'PASS ✅' if health_check.status == 200 else 'FAIL ❌' }}"
+      - "Response: {{ health_check.json | default('No response') }}"
+  when: health_check is defined
+
+- name: "Connectivity Test: Final assertion"
+  ansible.builtin.assert:
+    that:
+      - alloydb_status == "READY"
+      - alloydb_instance_status == "READY"
+      - vpc_connector_status == "READY"
+      - "'code-index-alloydb-network-' + env_name in vpc_connector_network"
+      - "'code-index-alloydb-network-' + env_name in alloydb_network"
+    fail_msg: |
+      ❌ AlloyDB connectivity tests FAILED
+      Please review the connectivity summary above and fix networking issues.
+    success_msg: "✅ AlloyDB connectivity tests PASSED"

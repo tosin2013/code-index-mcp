@@ -1,0 +1,192 @@
+---
+# Claude Desktop Integration Readiness Test
+# Validates MCP server is ready for Claude Desktop without requiring manual setup
+
+- name: Claude Desktop MCP Integration Readiness
+  hosts: localhost
+  connection: local
+  gather_facts: yes
+
+  vars:
+    # Test configuration
+    test_repo_path: "/tmp/claude-desktop-test-repo"
+
+  pre_tasks:
+    - name: Display test configuration
+      ansible.builtin.debug:
+        msg:
+          - "═══════════════════════════════════════════════════════"
+          - "🖥️  Claude Desktop Integration Readiness Test"
+          - "═══════════════════════════════════════════════════════"
+          - "Server URL: {{ mcp_server_url }}"
+          - "Transport: {{ transport }}"
+          - "Environment: {{ env_name }}"
+          - "Testing Mode: Automated (simulates Claude Desktop workflow)"
+          - "═══════════════════════════════════════════════════════"
+
+    - name: Validate required variables
+      ansible.builtin.assert:
+        that:
+          - mcp_server_url is defined
+          - mcp_server_url | length > 0
+        fail_msg: "Missing required variable: mcp_server_url"
+        success_msg: "✅ Configuration validated"
+
+  tasks:
+    # =========================================================================
+    # Phase 1: Server Discovery (Claude Desktop's First Step)
+    # =========================================================================
+    - name: "Phase 1: Discover MCP Server Capabilities"
+      tosin2013.mcp_audit.mcp_server_info:
+        transport: "{{ transport }}"
+        server_url: "{{ mcp_server_url }}/sse"
+        server_headers:
+          Authorization: "Bearer {{ api_key }}"
+      register: server_capabilities
+      failed_when: not server_capabilities.success
+
+    - name: Display available tools
+      ansible.builtin.debug:
+        msg:
+          - "✅ Server Discovery Successful"
+          - "Server Name: {{ server_capabilities.server_info.server_name }}"
+          - "Available Tools Count: {{ server_capabilities.server_info.available_tools }}"
+          - "Capabilities: {{ server_capabilities.server_info.capabilities }}"
+
+    # =========================================================================
+    # Phase 2: Tool Usage Simulation (Typical Claude Desktop Workflow)
+    # =========================================================================
+    - name: "Phase 2.1: Set Project Path (First Command)"
+      tosin2013.mcp_audit.mcp_test_tool:
+        transport: "{{ transport }}"
+        server_url: "{{ mcp_server_url }}/sse"
+        server_headers:
+          Authorization: "Bearer {{ api_key }}"
+        tool_name: set_project_path
+        tool_arguments:
+          path: "{{ test_repo_path }}"
+      register: set_project_result
+      ignore_errors: yes
+
+    - name: "Phase 2.2: Find Files (Common Operation)"
+      tosin2013.mcp_audit.mcp_test_tool:
+        transport: "{{ transport }}"
+        server_url: "{{ mcp_server_url }}/sse"
+        server_headers:
+          Authorization: "Bearer {{ api_key }}"
+        tool_name: find_files
+        tool_arguments:
+          pattern: "*.py"
+      register: find_files_result
+
+    - name: "Phase 2.3: Search Code (Advanced Operation)"
+      tosin2013.mcp_audit.mcp_test_tool:
+        transport: "{{ transport }}"
+        server_url: "{{ mcp_server_url }}/sse"
+        server_headers:
+          Authorization: "Bearer {{ api_key }}"
+        tool_name: search_code_advanced
+        tool_arguments:
+          query: "def "
+          use_regex: false
+      register: search_code_result
+
+    - name: "Phase 2.4: Get Settings (Configuration Check)"
+      tosin2013.mcp_audit.mcp_test_tool:
+        transport: "{{ transport }}"
+        server_url: "{{ mcp_server_url }}/sse"
+        server_headers:
+          Authorization: "Bearer {{ api_key }}"
+        tool_name: get_settings_info
+        tool_arguments: {}
+      register: settings_result
+
+    - name: Display tool execution results
+      ansible.builtin.debug:
+        msg:
+          - "═══════════════════════════════════════════════════════"
+          - "📊 Tool Execution Results (Claude Desktop Workflow)"
+          - "═══════════════════════════════════════════════════════"
+          - "set_project_path: {{ '✅ PASS' if set_project_result.success else '⚠️  SKIP' }}"
+          - "find_files: {{ '✅ PASS' if find_files_result.success else '❌ FAIL' }}"
+          - "search_code_advanced: {{ '✅ PASS' if search_code_result.success else '❌ FAIL' }}"
+          - "get_settings_info: {{ '✅ PASS' if settings_result.success else '❌ FAIL' }}"
+          - "═══════════════════════════════════════════════════════"
+
+    # =========================================================================
+    # Phase 3: Validate All Critical Operations Work
+    # =========================================================================
+    - name: Validate critical tools work correctly
+      ansible.builtin.assert:
+        that:
+          - find_files_result.success
+          - search_code_result.success
+          - settings_result.success
+        success_msg: "✅ All critical MCP tools working correctly"
+        fail_msg: "❌ Some critical tools failed"
+
+  post_tasks:
+    - name: Generate Claude Desktop integration summary
+      ansible.builtin.set_fact:
+        claude_desktop_readiness:
+          server_accessible: "{{ server_capabilities.success }}"
+          tools_count: "{{ server_capabilities.server_info.available_tools }}"
+          set_project_path_works: "{{ set_project_result.success | default(false) }}"
+          find_files_works: "{{ find_files_result.success }}"
+          search_code_works: "{{ search_code_result.success }}"
+          settings_works: "{{ settings_result.success }}"
+          all_critical_passed: "{{ find_files_result.success and search_code_result.success and settings_result.success }}"
+
+    - name: Display Claude Desktop readiness summary
+      ansible.builtin.debug:
+        msg:
+          - "═══════════════════════════════════════════════════════"
+          - "🖥️  Claude Desktop Readiness Summary"
+          - "═══════════════════════════════════════════════════════"
+          - "Server Accessible: {{ '✅' if claude_desktop_readiness.server_accessible else '❌' }}"
+          - "Tools Available: {{ claude_desktop_readiness.tools_count }}"
+          - "Core Tools Working: {{ '✅' if claude_desktop_readiness.all_critical_passed else '❌' }}"
+          - ""
+          - "Tool Status:"
+          - "  - set_project_path: {{ '✅' if claude_desktop_readiness.set_project_path_works else '⚠️  (optional)' }}"
+          - "  - find_files: {{ '✅' if claude_desktop_readiness.find_files_works else '❌' }}"
+          - "  - search_code_advanced: {{ '✅' if claude_desktop_readiness.search_code_works else '❌' }}"
+          - "  - get_settings_info: {{ '✅' if claude_desktop_readiness.settings_works else '❌' }}"
+          - "═══════════════════════════════════════════════════════"
+          - ""
+          - "📋 Next Steps:"
+          - "1. Copy config to: ~/Library/Application Support/Claude/claude_desktop_config.json"
+          - "2. Restart Claude Desktop"
+          - "3. Test tools in Claude Desktop chat"
+          - "═══════════════════════════════════════════════════════"
+
+    - name: Save Claude Desktop config
+      ansible.builtin.copy:
+        content: |
+          {
+            "mcpServers": {
+              "code-index-semantic-search": {
+                "url": "{{ mcp_server_url }}/sse",
+                "transport": "sse"
+              }
+            }
+          }
+        dest: "./claude-desktop-config-{{ env_name }}.json"
+      register: config_saved
+
+    - name: Display config file location
+      ansible.builtin.debug:
+        msg:
+          - "✅ Claude Desktop config saved to:"
+          - "   {{ config_saved.dest }}"
+          - ""
+          - "To use with Claude Desktop:"
+          - "  cp {{ config_saved.dest }} ~/Library/Application\\ Support/Claude/claude_desktop_config.json"
+
+    - name: Final readiness assertion
+      ansible.builtin.assert:
+        that:
+          - claude_desktop_readiness.server_accessible
+          - claude_desktop_readiness.all_critical_passed
+        success_msg: "✅ MCP Server is READY for Claude Desktop!"
+        fail_msg: "❌ MCP Server has issues that need to be resolved before Claude Desktop use"

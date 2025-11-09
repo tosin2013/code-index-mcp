@@ -1,0 +1,45 @@
+---
+# Production Environment Inventory
+
+all:
+  hosts:
+    localhost:
+      ansible_connection: local
+      ansible_python_interpreter: "{{ ansible_playbook_python }}"
+
+  vars:
+    # Environment
+    env_name: "prod"
+
+    # GCP Configuration
+    gcp_project_id: "tosinscloud"
+    gcp_region: "us-east1"
+
+    # Cloud Run Configuration (production sizing)
+    cloudrun_cpu: "4"
+    cloudrun_memory: "4Gi"
+    cloudrun_min_instances: 1  # Keep warm
+    cloudrun_max_instances: 20
+    cloudrun_concurrency: 100
+
+    # AlloyDB Configuration
+    with_alloydb: true
+    vpc_connector_name: "alloydb-connector"
+
+    # Production-specific settings
+    allow_unauthenticated: false  # Require authentication
+    enable_auto_cleanup: true
+    cleanup_schedule: "0 2 * * *"  # 2 AM daily
+    inactive_project_days: 90
+    log_level: "INFO"
+
+    # Build Configuration
+    use_cloud_build: true
+    build_machine_type: "E2_HIGHCPU_8"
+
+    # Storage
+    bucket_lifecycle_days: 365  # Keep data longer in prod
+
+    # Monitoring
+    enable_tracing: true
+    enable_profiling: false

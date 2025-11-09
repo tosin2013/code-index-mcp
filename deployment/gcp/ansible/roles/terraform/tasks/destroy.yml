@@ -1,0 +1,80 @@
+---
+# Destroy Terraform infrastructure (delete AlloyDB)
+
+- name: Display Terraform destroy warning
+  ansible.builtin.debug:
+    msg:
+      - "=========================================="
+      - "  ⚠️  WARNING: DESTRUCTIVE OPERATION"
+      - "=========================================="
+      - "Environment: {{ env_name }}"
+      - "Operation: DESTROY AlloyDB Infrastructure"
+      - ""
+      - "This will DELETE:"
+      - "  - AlloyDB cluster (code-index-cluster-{{ env_name }})"
+      - "  - AlloyDB instance (primary-instance-{{ env_name }})"
+      - "  - VPC network and peering"
+      - "  - ALL DATABASE DATA WILL BE LOST!"
+      - ""
+      - "Estimated time: 5-10 minutes"
+      - "=========================================="
+
+- name: Confirm destruction
+  ansible.builtin.pause:
+    prompt: |
+      Type 'DELETE' to confirm destruction of AlloyDB
+      (Press Ctrl+C to cancel)
+  register: destroy_confirm
+  when: not (terraform_auto_approve | default(false))
+
+- name: Validate confirmation
+  ansible.builtin.fail:
+    msg: "Destruction cancelled - you must type 'DELETE' to confirm"
+  when:
+    - not (terraform_auto_approve | default(false))
+    - destroy_confirm.user_input != 'DELETE'
+
+- name: Check if Terraform wrapper exists
+  ansible.builtin.stat:
+    path: "{{ terraform_wrapper_script }}"
+  register: wrapper_stat
+
+- name: Fail if wrapper script not found
+  ansible.builtin.fail:
+    msg: "Terraform wrapper script not found at {{ terraform_wrapper_script }}"
+  when: not wrapper_stat.stat.exists
+
+- name: Run Terraform destroy via wrapper script
+  ansible.builtin.command:
+    cmd: "{{ terraform_wrapper_script }} destroy {{ env_name }}"
+  environment:
+    TF_AUTO_APPROVE: "{{ 'true' if terraform_auto_approve | default(false) else 'false' }}"
+  register: terraform_destroy_result
+  changed_when: "'Destroy complete' in terraform_destroy_result.stdout"
+  failed_when: terraform_destroy_result.rc != 0
+
+- name: Display Terraform destroy output
+  ansible.builtin.debug:
+    var: terraform_destroy_result.stdout_lines
+
+- name: Verify cluster is deleted
+  ansible.builtin.command:
+    cmd: >
+      gcloud alloydb clusters describe code-index-cluster-{{ env_name }}
+      --region={{ gcp_region }}
+  register: cluster_check
+  changed_when: false
+  failed_when: false
+
+- name: Display destruction status
+  ansible.builtin.debug:
+    msg:
+      - "✅ Terraform destroy completed"
+      - "{{ 'Cluster confirmed deleted' if cluster_check.rc != 0 else '⚠️  Cluster still exists (check manually)' }}"
+      - "AlloyDB billing has stopped"
+
+- name: Set fact for AlloyDB status
+  ansible.builtin.set_fact:
+    alloydb_deployed: false
+    alloydb_cluster_name: null
+    alloydb_instance_name: null

@@ -79,7 +79,7 @@ CREATE INDEX idx_code_chunks_commit_hash ON code_chunks(commit_hash);
 CREATE INDEX idx_code_chunks_branch ON code_chunks(branch_name);
 
 -- Vector similarity index (HNSW for fast approximate nearest neighbor)
-CREATE INDEX idx_code_chunks_embedding ON code_chunks 
+CREATE INDEX idx_code_chunks_embedding ON code_chunks
 USING hnsw (embedding vector_cosine_ops)
 WITH (m = 16, ef_construction = 64);
 
@@ -133,7 +133,7 @@ LANGUAGE SQL
 AS $$
     -- Stub: Returns empty results for local development
     -- Production uses full vector similarity search
-    SELECT 
+    SELECT
         cc.chunk_id,
         cc.file_path,
         cc.chunk_name,
@@ -145,7 +145,7 @@ $$;
 
 -- Utility view for chunk statistics
 CREATE OR REPLACE VIEW chunk_stats AS
-SELECT 
+SELECT
     p.project_name,
     p.user_id,
     COUNT(*) as total_chunks,

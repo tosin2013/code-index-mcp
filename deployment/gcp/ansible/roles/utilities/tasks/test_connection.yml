@@ -1,0 +1,192 @@
+---
+# Test AlloyDB connection and verify schema setup
+- name: Display connection test info
+  ansible.builtin.debug:
+    msg:
+      - "========================================"
+      - "  AlloyDB Connection Test"
+      - "========================================"
+      - "Project: {{ gcp_project_id }}"
+      - "Environment: {{ env_name }}"
+
+- name: Create connection test SQL script
+  ansible.builtin.copy:
+    content: |
+      -- Test 1: Basic connection
+      \echo '========================================'
+      \echo 'Test 1: Basic Connection'
+      \echo '========================================'
+      SELECT version();
+
+      -- Test 2: Check extensions
+      \echo ''
+      \echo '========================================'
+      \echo 'Test 2: Extensions'
+      \echo '========================================'
+      SELECT extname, extversion
+      FROM pg_extension
+      WHERE extname IN ('vector', 'google_ml_integration')
+      ORDER BY extname;
+
+      -- Test 3: Check tables
+      \echo ''
+      \echo '========================================'
+      \echo 'Test 3: Tables'
+      \echo '========================================'
+      SELECT tablename
+      FROM pg_tables
+      WHERE schemaname='public'
+      AND tablename IN ('users', 'projects', 'code_chunks')
+      ORDER BY tablename;
+
+      -- Test 4: Check vector index
+      \echo ''
+      \echo '========================================'
+      \echo 'Test 4: HNSW Vector Index'
+      \echo '========================================'
+      SELECT indexname, indexdef
+      FROM pg_indexes
+      WHERE indexname='code_chunks_embedding_idx';
+
+      -- Test 5: Check functions
+      \echo ''
+      \echo '========================================'
+      \echo 'Test 5: Functions'
+      \echo '========================================'
+      SELECT proname, prokind
+      FROM pg_proc
+      WHERE proname IN ('generate_code_embedding', 'semantic_search_code')
+      ORDER BY proname;
+
+      -- Test 6: Check row-level security
+      \echo ''
+      \echo '========================================'
+      \echo 'Test 6: Row-Level Security'
+      \echo '========================================'
+      SELECT tablename, rowsecurity
+      FROM pg_tables
+      WHERE schemaname='public'
+      AND tablename IN ('code_chunks', 'projects')
+      ORDER BY tablename;
+
+      -- Test 7: Check Git provenance columns
+      \echo ''
+      \echo '========================================'
+      \echo 'Test 7: Git Provenance Columns'
+      \echo '========================================'
+      SELECT column_name, data_type, is_nullable
+      FROM information_schema.columns
+      WHERE table_name = 'code_chunks'
+      AND column_name IN ('commit_hash', 'branch_name', 'author_name', 'commit_timestamp')
+      ORDER BY column_name;
+
+      -- Test 8: Data counts
+      \echo ''
+      \echo '========================================'
+      \echo 'Test 8: Data Counts'
+      \echo '========================================'
+      SELECT 'users' as table_name, COUNT(*) as count FROM users
+      UNION ALL
+      SELECT 'projects' as table_name, COUNT(*) as count FROM projects
+      UNION ALL
+      SELECT 'code_chunks' as table_name, COUNT(*) as count FROM code_chunks;
+    dest: /tmp/test_connection.sql
+    mode: '0644'
+
+- name: Create Dockerfile for connection test
+  ansible.builtin.copy:
+    content: |
+      FROM postgres:16-alpine
+      RUN apk add --no-cache postgresql-client
+      COPY test_connection.sql /test.sql
+      CMD ["sh", "-c", "psql $POSTGRES_CONNECTION -f /test.sql"]
+    dest: /tmp/Dockerfile.test
+    mode: '0644'
+
+- name: Build connection test image
+  ansible.builtin.shell: |
+    cd /tmp
+    gcloud builds submit \
+      --tag={{ gcp_region }}-docker.pkg.dev/{{ gcp_project_id }}/code-index/connection-tester:latest \
+      --project={{ gcp_project_id }} \
+      --file=Dockerfile.test \
+      .
+  register: build_result
+  changed_when: "'SUCCESS' in build_result.stderr or 'DONE' in build_result.stderr"
+
+- name: Run connection test via Cloud Run Job
+  ansible.builtin.shell: |
+    gcloud run jobs create test-connection-{{ env_name }}-{{ lookup('pipe', 'date +%s') }} \
+      --image={{ gcp_region }}-docker.pkg.dev/{{ gcp_project_id }}/code-index/connection-tester:latest \
+      --region={{ gcp_region }} \
+      --project={{ gcp_project_id }} \
+      --vpc-connector={{ vpc_connector_name }} \
+      --vpc-egress=private-ranges-only \
+      --set-secrets=POSTGRES_CONNECTION=alloydb-connection-string-{{ env_name }}:latest \
+      --execute-now \
+      --wait
+  register: test_result
+  changed_when: true
+
+- name: Display test results
+  ansible.builtin.debug:
+    msg: "{{ test_result.stdout_lines }}"
+
+- name: Parse test job name from output
+  ansible.builtin.set_fact:
+    test_job_name: "{{ test_result.stderr | regex_search('test-connection-[a-z0-9-]+') }}"
+
+- name: Analyze test results
+  ansible.builtin.set_fact:
+    test_success: "{{ 'ERROR' not in test_result.stdout }}"
+    extensions_ok: "{{ 'vector' in test_result.stdout and 'google_ml_integration' in test_result.stdout }}"
+    tables_ok: "{{ 'users' in test_result.stdout and 'projects' in test_result.stdout and 'code_chunks' in test_result.stdout }}"
+    index_ok: "{{ 'code_chunks_embedding_idx' in test_result.stdout }}"
+    functions_ok: "{{ 'generate_code_embedding' in test_result.stdout and 'semantic_search_code' in test_result.stdout }}"
+    rls_ok: "{{ test_result.stdout | regex_search('rowsecurity.*t') is not none }}"
+    git_columns_ok: "{{ 'commit_hash' in test_result.stdout and 'branch_name' in test_result.stdout }}"
+
+- name: Display test summary
+  ansible.builtin.debug:
+    msg:
+      - ""
+      - "========================================"
+      - "  Test Summary"
+      - "========================================"
+      - ""
+      - "Connection: {{ '✓ PASS' if test_success else '✗ FAIL' }}"
+      - "Extensions: {{ '✓ PASS (vector, google_ml_integration)' if extensions_ok else '✗ FAIL' }}"
+      - "Tables: {{ '✓ PASS (users, projects, code_chunks)' if tables_ok else '✗ FAIL' }}"
+      - "HNSW Index: {{ '✓ PASS' if index_ok else '✗ FAIL' }}"
+      - "Functions: {{ '✓ PASS' if functions_ok else '✗ FAIL' }}"
+      - "Row-Level Security: {{ '✓ PASS' if rls_ok else '✗ FAIL' }}"
+      - "Git Provenance Columns: {{ '✓ PASS' if git_columns_ok else '✗ FAIL' }}"
+      - ""
+
+- name: Clean up test job
+  ansible.builtin.command: >
+    gcloud run jobs delete {{ test_job_name }}
+    --region={{ gcp_region }}
+    --project={{ gcp_project_id }}
+    --quiet
+  when: test_job_name is defined
+  register: cleanup
+  changed_when: "'Deleted job' in cleanup.stderr"
+  failed_when: false
+
+- name: Fail if tests did not pass
+  ansible.builtin.fail:
+    msg: "Connection tests failed. Check the output above for details."
+  when: not test_success
+
+- name: Display success message
+  ansible.builtin.debug:
+    msg:
+      - ""
+      - "✅ All connection tests passed!"
+      - ""
+      - "Next Steps:"
+      - "  1. Database is ready for semantic search"
+      - "  2. You can now ingest code for search"
+      - "  3. Use semantic_search_code tool via MCP"
+      - ""

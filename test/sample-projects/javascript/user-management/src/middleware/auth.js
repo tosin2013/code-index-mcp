@@ -11,8 +11,8 @@ const auth = async (req, res, next) => {
   try {
     // Get token from header
     const authHeader = req.header('Authorization');
-    const token = authHeader && authHeader.startsWith('Bearer ') 
-      ? authHeader.substring(7) 
+    const token = authHeader && authHeader.startsWith('Bearer ')
+      ? authHeader.substring(7)
       : null;
 
     if (!token) {
@@ -21,7 +21,7 @@ const auth = async (req, res, next) => {
 
     // Verify token
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback-secret');
-    
+
     // Get user from database
     const user = await User.findOne({ id: decoded.id });
     if (!user) {
@@ -132,8 +132,8 @@ const userOrAdmin = authorize(['user', 'admin']);
 const optionalAuth = async (req, res, next) => {
   try {
     const authHeader = req.header('Authorization');
-    const token = authHeader && authHeader.startsWith('Bearer ') 
-      ? authHeader.substring(7) 
+    const token = authHeader && authHeader.startsWith('Bearer ')
+      ? authHeader.substring(7)
       : null;
 
     if (!token) {
@@ -142,11 +142,11 @@ const optionalAuth = async (req, res, next) => {
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback-secret');
     const user = await User.findOne({ id: decoded.id });
-    
+
     if (user && user.isActive) {
       req.user = user;
     }
-    
+
     next();
   } catch (error) {
     // Don't fail on optional auth, just continue without user

@@ -1,0 +1,30 @@
+# Ansible
+*.retry
+ansible.log
+deployment-summary-*.md
+/tmp
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+venv/
+ENV/
+
+# Sensitive files
+*.vault
+*.key
+*.pem
+secrets.yml
+
+# Temporary files
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Ansible facts cache
+/ansible_facts/

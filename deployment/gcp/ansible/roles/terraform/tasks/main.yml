@@ -1,0 +1,6 @@
+---
+# Terraform role - Manage AlloyDB infrastructure via Terraform
+
+- name: Include operation-specific tasks
+  ansible.builtin.include_tasks: "{{ terraform_operation }}.yml"
+  when: terraform_operation is defined

@@ -9,6 +9,7 @@ Usage:
 """
 
 import os
+
 from .base_service import BaseService
 
 
@@ -42,21 +43,20 @@ class FileService(BaseService):
 
         try:
             # Try UTF-8 first (most common)
-            with open(full_path, 'r', encoding='utf-8') as f:
+            with open(full_path, "r", encoding="utf-8") as f:
                 return f.read()
         except UnicodeDecodeError:
             # Try other encodings if UTF-8 fails
-            encodings = ['utf-8-sig', 'latin-1', 'cp1252', 'iso-8859-1']
+            encodings = ["utf-8-sig", "latin-1", "cp1252", "iso-8859-1"]
             for encoding in encodings:
                 try:
-                    with open(full_path, 'r', encoding=encoding) as f:
+                    with open(full_path, "r", encoding=encoding) as f:
                         return f.read()
                 except UnicodeDecodeError:
                     continue
 
             raise ValueError(
-                f"Could not decode file {file_path}. File may have "
-                f"unsupported encoding."
+                f"Could not decode file {file_path}. File may have " f"unsupported encoding."
             ) from None
         except (FileNotFoundError, PermissionError, OSError) as e:
             raise FileNotFoundError(f"Error reading file: {e}") from e

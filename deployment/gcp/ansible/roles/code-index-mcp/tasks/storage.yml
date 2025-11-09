@@ -1,0 +1,95 @@
+---
+# Storage setup tasks - GCS buckets
+
+- name: Check if project storage bucket exists
+  ansible.builtin.command: >
+    gsutil ls -b gs://{{ storage_bucket }}
+  register: project_bucket_check
+  changed_when: false
+  failed_when: false
+
+- name: Create project storage bucket
+  ansible.builtin.command: >
+    gsutil mb -p {{ gcp_project_id }}
+    -l {{ bucket_location }}
+    -c STANDARD
+    gs://{{ storage_bucket }}
+  when: project_bucket_check.rc != 0
+  register: project_bucket_create
+  changed_when: project_bucket_create.rc == 0
+
+- name: Set lifecycle policy on project bucket
+  ansible.builtin.copy:
+    content: |
+      {
+        "lifecycle": {
+          "rule": [
+            {
+              "action": {"type": "Delete"},
+              "condition": {
+                "age": {{ bucket_lifecycle_days }},
+                "matchesPrefix": ["temp/", "inactive/"]
+              }
+            }
+          ]
+        }
+      }
+    dest: "/tmp/lifecycle-{{ storage_bucket }}.json"
+  register: lifecycle_policy
+
+- name: Apply lifecycle policy to project bucket
+  ansible.builtin.command: >
+    gsutil lifecycle set /tmp/lifecycle-{{ storage_bucket }}.json
+    gs://{{ storage_bucket }}
+  when: lifecycle_policy is changed
+
+- name: Check if git storage bucket exists
+  ansible.builtin.command: >
+    gsutil ls -b gs://{{ git_bucket }}
+  register: git_bucket_check
+  changed_when: false
+  failed_when: false
+
+- name: Create git storage bucket
+  ansible.builtin.command: >
+    gsutil mb -p {{ gcp_project_id }}
+    -l {{ bucket_location }}
+    -c STANDARD
+    gs://{{ git_bucket }}
+  when: git_bucket_check.rc != 0
+  register: git_bucket_create
+  changed_when: git_bucket_create.rc == 0
+
+- name: Set lifecycle policy on git bucket
+  ansible.builtin.copy:
+    content: |
+      {
+        "lifecycle": {
+          "rule": [
+            {
+              "action": {"type": "Delete"},
+              "condition": {
+                "age": {{ bucket_lifecycle_days }},
+                "matchesPrefix": ["temp/"]
+              }
+            }
+          ]
+        }
+      }
+    dest: "/tmp/lifecycle-{{ git_bucket }}.json"
+  register: git_lifecycle_policy
+
+- name: Apply lifecycle policy to git bucket
+  ansible.builtin.command: >
+    gsutil lifecycle set /tmp/lifecycle-{{ git_bucket }}.json
+    gs://{{ git_bucket }}
+  when: git_lifecycle_policy is changed
+
+- name: Clean up temporary lifecycle files
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "/tmp/lifecycle-{{ storage_bucket }}.json"
+    - "/tmp/lifecycle-{{ git_bucket }}.json"
+  when: lifecycle_policy is changed or git_lifecycle_policy is changed

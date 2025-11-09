@@ -1,0 +1,254 @@
+---
+# Test Code Index MCP Server - Cloud HTTP/SSE Mode
+# This playbook tests the MCP server deployed to cloud via HTTP/SSE transport
+
+- name: Test Code Index MCP Server - Cloud HTTP/SSE Mode
+  hosts: localhost
+  connection: local
+  gather_facts: yes
+
+  vars:
+    # These are loaded from inventory, but can be overridden
+    # mcp_server_url: set in inventory/gcp-dev.yml
+    # api_key: set in inventory/gcp-dev.yml
+
+  pre_tasks:
+    - name: Validate required environment variables
+      ansible.builtin.assert:
+        that:
+          - mcp_server_url is defined
+          - mcp_server_url | length > 0
+          - api_key is defined
+          - api_key | length > 0
+        fail_msg: |
+          Missing required variables:
+          - mcp_server_url: {{ mcp_server_url | default('NOT SET') }}
+          - api_key: {{ 'SET' if api_key is defined else 'NOT SET' }}
+
+          Set these in inventory file or environment:
+          export CLOUDRUN_SERVICE_URL="https://your-service.run.app"
+          export MCP_API_KEY_DEV="ci_your_api_key"
+
+    - name: Display test configuration
+      ansible.builtin.debug:
+        msg:
+          - "═══════════════════════════════════════"
+          - "🌐 Cloud HTTP/SSE Test Configuration"
+          - "═══════════════════════════════════════"
+          - "Server URL: {{ mcp_server_url }}"
+          - "Transport: {{ transport }}"
+          - "Environment: {{ env_name | default('unknown') }}"
+          - "API Key: {{ 'SET (' + api_key[:10] + '...)' if api_key is defined else 'NOT SET' }}"
+          - "═══════════════════════════════════════"
+
+  tasks:
+    # Phase 1: Server Discovery
+    - name: Get server information via SSE
+      tosin2013.mcp_audit.mcp_server_info:
+        transport: sse
+        server_url: "{{ mcp_server_url }}/sse"
+        server_headers:
+          Authorization: "Bearer {{ api_key }}"
+      register: server_info
+      tags: [server_info, smoke]
+
+    - name: Display server capabilities
+      ansible.builtin.debug:
+        var: server_info
+      when: verbose_output | default(false)
+      tags: [server_info]
+
+    - name: Validate server basic info
+      ansible.builtin.assert:
+        that:
+          - server_info.success
+          - server_info.server_info.server_name is defined
+          - server_info.server_info.capabilities is defined
+          - server_info.server_info.available_tools is defined
+          - server_info.server_info.available_tools | int > 0
+        success_msg: "✅ Server info validation passed"
+        fail_msg: "❌ Server info validation failed"
+      tags: [server_info, smoke]
+
+    # Phase 2: Tool Testing - Metadata Tools (work in both local and cloud)
+    - name: Test set_project_path tool
+      tosin2013.mcp_audit.mcp_test_tool:
+        transport: sse
+        server_url: "{{ mcp_server_url }}/sse"
+        server_headers:
+          Authorization: "Bearer {{ api_key }}"
+        tool_name: set_project_path
+        tool_arguments:
+          path: "/tmp/cloud-test-project"
+      register: set_path_result
+      tags: [tools, metadata]
+
+    - name: Validate set_project_path response
+      ansible.builtin.assert:
+        that:
+          - set_path_result.success
+          - set_path_result.test_passed
+        success_msg: "✅ set_project_path tool passed"
+        fail_msg: "❌ set_project_path tool failed"
+      tags: [tools, metadata]
+
+    - name: Test find_files tool
+      tosin2013.mcp_audit.mcp_test_tool:
+        transport: sse
+        server_url: "{{ mcp_server_url }}/sse"
+        server_headers:
+          Authorization: "Bearer {{ api_key }}"
+        tool_name: find_files
+        tool_arguments:
+          pattern: "*.py"
+      register: find_files_result
+      tags: [tools, metadata, smoke]
+
+    - name: Test search_code_advanced tool
+      tosin2013.mcp_audit.mcp_test_tool:
+        transport: sse
+        server_url: "{{ mcp_server_url }}/sse"
+        server_headers:
+          Authorization: "Bearer {{ api_key }}"
+        tool_name: search_code_advanced
+        tool_arguments:
+          query: "def.*main"
+          use_regex: true
+      register: search_result
+      tags: [tools, metadata]
+
+    # Phase 3: Cloud-Specific Tools (semantic search, git ingestion)
+    - name: Test semantic_search_code tool (cloud-only, requires AlloyDB)
+      tosin2013.mcp_audit.mcp_test_tool:
+        transport: sse
+        server_url: "{{ mcp_server_url }}/sse"
+        server_headers:
+          Authorization: "Bearer {{ api_key }}"
+        tool_name: semantic_search_code
+        tool_arguments:
+          query: "authentication logic"
+          language: "python"
+          top_k: 10
+      register: semantic_search
+      ignore_errors: yes  # AlloyDB may not be deployed yet
+      tags: [tools, semantic, cloud_only]
+      when: with_alloydb | default(false)
+
+    - name: Display semantic search results
+      ansible.builtin.debug:
+        msg:
+          - "Semantic Search Status: {{ 'SUCCESS' if semantic_search.success else 'FAILED/NOT AVAILABLE' }}"
+          - "Note: semantic_search_code requires AlloyDB deployment"
+      when: with_alloydb | default(false)
+      tags: [tools, semantic, cloud_only]
+
+    - name: Test ingest_code_from_git tool (cloud-only)
+      tosin2013.mcp_audit.mcp_test_tool:
+        transport: sse
+        server_url: "{{ mcp_server_url }}/sse"
+        server_headers:
+          Authorization: "Bearer {{ api_key }}"
+        tool_name: ingest_code_from_git
+        tool_arguments:
+          git_url: "https://github.com/anthropics/anthropic-sdk-python"
+          project_name: "anthropic-sdk-cloud-test"
+          branch: "main"
+      register: git_ingest
+      ignore_errors: yes  # May fail if already ingested or quota limits
+      tags: [tools, ingestion, cloud_only]
+      when: test_git_ingestion | default(true)
+
+    - name: Display git ingestion results
+      ansible.builtin.debug:
+        msg:
+          - "Git Ingestion Status: {{ 'SUCCESS' if git_ingest.success else 'FAILED' }}"
+          - "Chunks Ingested: {{ git_ingest.tool_result.chunks_ingested | default(0) }}"
+      when:
+        - test_git_ingestion | default(true)
+        - git_ingest is defined
+      tags: [tools, ingestion, cloud_only]
+
+    # Phase 4: Resource Testing
+    - name: Test file resource retrieval
+      tosin2013.mcp_audit.mcp_test_resource:
+        transport: sse
+        server_url: "{{ mcp_server_url }}/sse"
+        server_headers:
+          Authorization: "Bearer {{ api_key }}"
+        resource_uri: "file:///tmp/cloud-test-project/README.md"
+      register: resource_result
+      ignore_errors: yes  # File may not exist
+      tags: [resources]
+
+    - name: Display resource result
+      ansible.builtin.debug:
+        var: resource_result
+      when:
+        - resource_result is defined
+        - verbose_output | default(false)
+      tags: [resources]
+
+  post_tasks:
+    - name: Generate test summary
+      ansible.builtin.set_fact:
+        test_summary:
+          total_tests: 7
+          passed_tests: "{{ [server_info.success, set_path_result.success, find_files_result.success, search_result.success] | select | list | length }}"
+          semantic_search_available: "{{ semantic_search.success | default(false) }}"
+          git_ingestion_tested: "{{ git_ingest is defined and git_ingest.success | default(false) }}"
+          timestamp: "{{ ansible_date_time.iso8601 }}"
+          environment: "{{ env_name | default('cloud') }}"
+          server_url: "{{ mcp_server_url }}"
+
+    - name: Display test summary
+      ansible.builtin.debug:
+        msg:
+          - "═══════════════════════════════════════"
+          - "📊 Test Summary - Cloud HTTP/SSE Mode"
+          - "═══════════════════════════════════════"
+          - "Server: {{ test_summary.server_url }}"
+          - "Environment: {{ test_summary.environment }}"
+          - "Total Tests: {{ test_summary.total_tests }}"
+          - "Passed: {{ test_summary.passed_tests }}"
+          - "Semantic Search: {{ 'AVAILABLE' if test_summary.semantic_search_available else 'NOT AVAILABLE' }}"
+          - "Git Ingestion: {{ 'TESTED' if test_summary.git_ingestion_tested else 'SKIPPED' }}"
+          - "Timestamp: {{ test_summary.timestamp }}"
+          - "═══════════════════════════════════════"
+
+    - name: Save test report
+      ansible.builtin.copy:
+        content: |
+          # Cloud HTTP/SSE Test Report
+
+          **Date**: {{ ansible_date_time.iso8601 }}
+          **Environment**: {{ env_name | default('cloud') }}
+          **Server URL**: {{ mcp_server_url }}
+
+          ## Test Results
+
+          | Test | Status |
+          |------|--------|
+          | Server Info | {{ '✅ PASS' if server_info.success else '❌ FAIL' }} |
+          | set_project_path | {{ '✅ PASS' if set_path_result.success else '❌ FAIL' }} |
+          | find_files | {{ '✅ PASS' if find_files_result.success else '❌ FAIL' }} |
+          | search_code_advanced | {{ '✅ PASS' if search_result.success else '❌ FAIL' }} |
+          | semantic_search_code | {{ '✅ PASS' if semantic_search.success | default(false) else '⏭️ SKIPPED/NOT AVAILABLE' }} |
+          | ingest_code_from_git | {{ '✅ PASS' if git_ingest.success | default(false) else '⏭️ SKIPPED/NOT AVAILABLE' }} |
+
+          ## Summary
+
+          - **Total Tests**: {{ test_summary.total_tests }}
+          - **Passed**: {{ test_summary.passed_tests }}
+          - **Semantic Search**: {{ 'Available' if test_summary.semantic_search_available else 'Not Available (AlloyDB not deployed)' }}
+          - **Git Ingestion**: {{ 'Tested Successfully' if test_summary.git_ingestion_tested else 'Skipped or Failed' }}
+        dest: "./test-report-cloud-{{ env_name | default('unknown') }}-{{ ansible_date_time.epoch }}.md"
+      tags: [reporting]
+
+    - name: Final status check
+      ansible.builtin.assert:
+        that:
+          - server_info.success
+          - set_path_result.success
+          - find_files_result.success
+        success_msg: "✅ All critical cloud tests passed!"
+        fail_msg: "❌ Some cloud tests failed. Review the output above."

@@ -1,0 +1,79 @@
+---
+# Docker image build tasks
+
+- name: Get project root directory
+  ansible.builtin.set_fact:
+    project_root: "{{ playbook_dir }}/../../.."
+
+- name: Check if Dockerfile exists
+  ansible.builtin.stat:
+    path: "{{ project_root }}/Dockerfile"
+  register: dockerfile_check
+  check_mode: no  # Always check file existence, even in check mode
+
+- name: Fail if Dockerfile not found
+  ansible.builtin.fail:
+    msg: "Dockerfile not found at {{ project_root }}/Dockerfile"
+  when: 
+    - not dockerfile_check.stat.exists
+    - not ansible_check_mode  # Don't fail in check mode if file exists
+
+- name: Build and push image using Cloud Build
+  block:
+    - name: Submit build to Cloud Build
+      ansible.builtin.command: >
+        gcloud builds submit {{ project_root }}
+        --tag={{ full_image_path }}
+        --timeout={{ build_timeout }}
+        --machine-type={{ build_machine_type }}
+        --project={{ gcp_project_id }}
+        --region={{ gcp_region }}
+      register: cloud_build_result
+      changed_when: cloud_build_result.rc == 0
+
+    - name: Extract build ID from output
+      ansible.builtin.set_fact:
+        build_id: "{{ cloud_build_result.stdout | default('') | regex_search('build ([a-f0-9-]+)', '\\1') | first | default('check-mode-build-id') }}"
+      when: 
+        - cloud_build_result.rc is defined
+        - cloud_build_result.rc == 0
+
+    - name: Display build information
+      ansible.builtin.debug:
+        msg:
+          - "Cloud Build submitted successfully"
+          - "Build ID: {{ build_id | default('N/A') }}"
+          - "Image: {{ full_image_path }}"
+
+  when: use_cloud_build | bool
+
+- name: Build and push image using local Docker
+  block:
+    - name: Build Docker image locally
+      community.docker.docker_image:
+        build:
+          path: "{{ project_root }}"
+          pull: yes
+        name: "{{ full_image_path }}"
+        source: build
+        force_source: yes
+        push: yes
+      register: local_build_result
+
+    - name: Display local build information
+      ansible.builtin.debug:
+        msg:
+          - "Docker image built and pushed"
+          - "Image: {{ full_image_path }}"
+
+  when: not use_cloud_build | bool
+
+- name: Verify image exists in registry
+  ansible.builtin.command: >
+    gcloud artifacts docker images describe {{ full_image_path }}
+    --project={{ gcp_project_id }}
+  register: image_verify
+  changed_when: false
+  retries: 3
+  delay: 5
+  until: image_verify.rc == 0

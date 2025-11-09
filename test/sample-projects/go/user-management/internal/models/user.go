@@ -44,10 +44,10 @@ type User struct {
 	CreatedAt    time.Time  `json:"created_at"`
 	UpdatedAt    time.Time  `json:"updated_at"`
 	DeletedAt    gorm.DeletedAt `json:"-" gorm:"index"`
-	
+
 	// Permissions is a JSON field containing user permissions
 	Permissions []string `json:"permissions" gorm:"type:json"`
-	
+
 	// Metadata for additional user information
 	Metadata map[string]interface{} `json:"metadata" gorm:"type:json"`
 }
@@ -84,15 +84,15 @@ func (u *User) BeforeCreate(tx *gorm.DB) error {
 	if u.ID == uuid.Nil {
 		u.ID = uuid.New()
 	}
-	
+
 	if u.Permissions == nil {
 		u.Permissions = []string{}
 	}
-	
+
 	if u.Metadata == nil {
 		u.Metadata = make(map[string]interface{})
 	}
-	
+
 	return nil
 }
 
@@ -101,12 +101,12 @@ func (u *User) SetPassword(password string) error {
 	if len(password) < 8 {
 		return errors.New("password must be at least 8 characters long")
 	}
-	
+
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		return err
 	}
-	
+
 	u.PasswordHash = string(hash)
 	return nil
 }
@@ -164,15 +164,15 @@ func (u *User) Login() error {
 	if !u.IsActive() {
 		return errors.New("user is not active")
 	}
-	
+
 	if u.IsLocked() {
 		return errors.New("user is locked")
 	}
-	
+
 	now := time.Now()
 	u.LastLogin = &now
 	u.LoginAttempts = 0
-	
+
 	return nil
 }
 
@@ -236,11 +236,11 @@ func (u *User) FromRequest(req *UserRequest) error {
 	u.Age = req.Age
 	u.Role = req.Role
 	u.Metadata = req.Metadata
-	
+
 	if req.Password != "" {
 		return u.SetPassword(req.Password)
 	}
-	
+
 	return nil
 }
 
@@ -254,24 +254,24 @@ func (u *User) Validate() error {
 	if len(u.Username) < 3 || len(u.Username) > 20 {
 		return errors.New("username must be between 3 and 20 characters")
 	}
-	
+
 	if len(u.Name) == 0 || len(u.Name) > 100 {
 		return errors.New("name must be between 1 and 100 characters")
 	}
-	
+
 	if u.Age < 0 || u.Age > 150 {
 		return errors.New("age must be between 0 and 150")
 	}
-	
+
 	if u.Role != RoleAdmin && u.Role != RoleUser && u.Role != RoleGuest {
 		return errors.New("invalid role")
 	}
-	
-	if u.Status != StatusActive && u.Status != StatusInactive && 
+
+	if u.Status != StatusActive && u.Status != StatusInactive &&
 	   u.Status != StatusSuspended && u.Status != StatusDeleted {
 		return errors.New("invalid status")
 	}
-	
+
 	return nil
 }
 

@@ -1,0 +1,101 @@
+---
+# Main tasks for code-index-mcp role
+
+- name: Validate required variables
+  ansible.builtin.assert:
+    that:
+      - gcp_project_id is defined
+      - gcp_project_id | length > 0
+      - env_name is defined
+      - env_name in ['dev', 'staging', 'prod', 'test']
+    fail_msg: "Required variables not set. Set gcp_project_id and env_name."
+    success_msg: "Configuration validated for {{ env_name }} environment"
+
+- name: Display deployment configuration
+  ansible.builtin.debug:
+    msg:
+      - "Deploying Code Index MCP Server"
+      - "Project: {{ gcp_project_id }}"
+      - "Environment: {{ env_name }}"
+      - "Region: {{ gcp_region }}"
+      - "Service: {{ service_name }}"
+      - "AlloyDB: {{ 'enabled' if with_alloydb else 'disabled' }}"
+
+- name: Include prerequisite tasks
+  ansible.builtin.include_tasks: prerequisites.yml
+  tags:
+    - prerequisites
+    - always
+
+- name: Include AlloyDB provisioning tasks (if AlloyDB enabled)
+  ansible.builtin.include_tasks: provision_alloydb.yml
+  when: with_alloydb | bool
+  tags:
+    - alloydb
+    - database
+    - provision
+
+- name: Include schema application tasks (if AlloyDB enabled)
+  ansible.builtin.include_tasks: apply_schema.yml
+  when: with_alloydb | bool
+  tags:
+    - schema
+    - database
+
+- name: Include storage setup tasks
+  ansible.builtin.include_tasks: storage.yml
+  tags:
+    - storage
+    - setup
+
+- name: Include service account tasks
+  ansible.builtin.include_tasks: service_account.yml
+  tags:
+    - iam
+    - setup
+
+- name: Include webhook secret tasks
+  ansible.builtin.include_tasks: webhook_secrets.yml
+  tags:
+    - secrets
+    - setup
+
+- name: Include Docker image build tasks
+  ansible.builtin.include_tasks: build_image.yml
+  tags:
+    - build
+    - deploy
+
+- name: Include Cloud Run deployment tasks
+  ansible.builtin.include_tasks: deploy_cloudrun.yml
+  tags:
+    - deploy
+    - cloudrun
+
+- name: Include cleanup scheduler tasks
+  ansible.builtin.include_tasks: cleanup_scheduler.yml
+  when: enable_auto_cleanup | bool
+  tags:
+    - cleanup
+    - scheduler
+
+- name: Display deployment summary
+  ansible.builtin.debug:
+    msg:
+      - "==================================="
+      - "✅ Deployment Complete!"
+      - "==================================="
+      - "Service URL: {{ cloudrun_service_url }}"
+      - "SSE Endpoint: {{ cloudrun_service_url }}/sse"
+      - ""
+      - "Claude Desktop Config:"
+      - "{"
+      - "  \"mcpServers\": {"
+      - "    \"code-index-semantic-search\": {"
+      - "      \"url\": \"{{ cloudrun_service_url }}/sse\","
+      - "      \"transport\": \"sse\""
+      - "    }"
+      - "  }"
+      - "}"
+      - "==================================="
+  when: cloudrun_service_url is defined

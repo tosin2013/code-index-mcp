@@ -1,0 +1,16 @@
+---
+rule_type: auto
+description: "Enforce security and credential management practices"
+globs: ["**/*"]
+---
+
+CRITICAL: Never commit credentials, API keys, or secrets to git.
+Never hardcode credentials in source code or config files.
+Verify that `.gitignore` excludes: `*.key`, `*.pem`, `*.p12`, `*.pfx`, `gcloud-*.json`, `service-account-*.json`, `aws-credentials.json`, `.env`, `.env.*` (except `.env.example`), `secrets/`, `.aws/`, `.gcloud/`, `.azure/`, `terraform.tfstate`, `terraform.tfstate.backup`.
+Use cloud-native secret management: Google Cloud Secret Manager, AWS Secrets Manager, or OpenShift Sealed Secrets.
+Use Workload Identity or IAM roles instead of service account keys.
+Store API keys in secret managers and inject as environment variables.
+Always use deployment scripts in `deployment/{gcp,aws,openshift}/` for deployments.
+Review security sections in relevant ADRs before making changes.
+Test with least-privilege IAM policies first.
+Enable cloud provider security scanning (Cloud Security Command Center, AWS Security Hub, etc.).

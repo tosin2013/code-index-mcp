@@ -5,8 +5,8 @@ This tool handles low-level project configuration operations without any busines
 """
 
 import os
-from typing import Dict, Any, Optional
 from pathlib import Path
+from typing import Any, Dict, Optional
 
 from ...project_settings import ProjectSettings
 
@@ -110,14 +110,15 @@ class ProjectConfigTool:
 
         # Check if JSON index exists and is fresh
         from ...indexing import get_index_manager
+
         index_manager = get_index_manager()
-        
+
         # Set project path if available
         if self._settings.base_path:
             index_manager.set_project_path(self._settings.base_path)
             stats = index_manager.get_index_stats()
-            return stats.get('status') == 'loaded'
-        
+            return stats.get("status") == "loaded"
+
         return False
 
     def cleanup_legacy_files(self) -> None:
@@ -147,9 +148,9 @@ class ProjectConfigTool:
 
         search_tool = self._settings.get_preferred_search_tool()
         return {
-            'available': search_tool is not None,
-            'name': search_tool.name if search_tool else None,
-            'description': "Advanced search enabled" if search_tool else "Basic search available"
+            "available": search_tool is not None,
+            "name": search_tool.name if search_tool else None,
+            "description": "Advanced search enabled" if search_tool else "Basic search available",
         }
 
     def get_file_watcher_config(self) -> Dict[str, Any]:
@@ -178,13 +179,13 @@ class ProjectConfigTool:
             Default configuration dictionary
         """
         from ...utils import FileFilter
-        
+
         file_filter = FileFilter()
         return {
             "base_path": project_path,
             "supported_extensions": list(file_filter.supported_extensions),
             "last_indexed": None,
-            "file_watcher": self.get_file_watcher_config() if self._settings else {}
+            "file_watcher": self.get_file_watcher_config() if self._settings else {},
         }
 
     def validate_project_path(self, path: str) -> Optional[str]:
@@ -256,9 +257,9 @@ class ProjectConfigTool:
             Basic directory structure dictionary
         """
         from ...utils import FileFilter
-        
+
         file_filter = FileFilter()
-        
+
         def build_tree(path: str, max_depth: int = 3, current_depth: int = 0) -> Dict[str, Any]:
             """Build directory tree with limited depth using centralized filtering."""
             if current_depth >= max_depth:
@@ -272,19 +273,23 @@ class ProjectConfigTool:
                     if item.is_dir():
                         # Use centralized directory filtering
                         if not file_filter.should_exclude_directory(item.name):
-                            items.append({
-                                "name": item.name,
-                                "type": "directory",
-                                "children": build_tree(str(item), max_depth, current_depth + 1)
-                            })
+                            items.append(
+                                {
+                                    "name": item.name,
+                                    "type": "directory",
+                                    "children": build_tree(str(item), max_depth, current_depth + 1),
+                                }
+                            )
                     else:
                         # Use centralized file filtering
                         if not file_filter.should_exclude_file(item):
-                            items.append({
-                                "name": item.name,
-                                "type": "file",
-                                "size": item.stat().st_size if item.exists() else 0
-                            })
+                            items.append(
+                                {
+                                    "name": item.name,
+                                    "type": "file",
+                                    "size": item.stat().st_size if item.exists() else 0,
+                                }
+                            )
 
                 return {"type": "directory", "children": items}
 
@@ -297,12 +302,9 @@ class ProjectConfigTool:
                 "name": root_name,
                 "path": project_path,
                 "type": "directory",
-                "children": build_tree(project_path)["children"]
+                "children": build_tree(project_path)["children"],
             }
             return structure
 
         except Exception as e:
-            return {
-                "error": f"Failed to build project structure: {e}",
-                "path": project_path
-            }
+            return {"error": f"Failed to build project structure: {e}", "path": project_path}

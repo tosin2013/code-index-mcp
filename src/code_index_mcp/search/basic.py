@@ -1,6 +1,7 @@
 """
 Basic, pure-Python search strategy.
 """
+
 import fnmatch
 import os
 import re
@@ -8,6 +9,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from .base import SearchStrategy, create_word_boundary_pattern, is_safe_regex_pattern
+
 
 class BasicSearchStrategy(SearchStrategy):
     """
@@ -21,7 +23,7 @@ class BasicSearchStrategy(SearchStrategy):
     @property
     def name(self) -> str:
         """The name of the search tool."""
-        return 'basic'
+        return "basic"
 
     def is_available(self) -> bool:
         """This basic strategy is always available."""
@@ -31,11 +33,11 @@ class BasicSearchStrategy(SearchStrategy):
         """Check if filename matches the glob pattern."""
         if not pattern:
             return True
-        
+
         # Handle simple cases efficiently
-        if pattern.startswith('*') and not any(c in pattern[1:] for c in '*?[]{}'):
+        if pattern.startswith("*") and not any(c in pattern[1:] for c in "*?[]{}"):
             return filename.endswith(pattern[1:])
-        
+
         # Use fnmatch for more complex patterns
         return fnmatch.fnmatch(filename, pattern)
 
@@ -48,7 +50,7 @@ class BasicSearchStrategy(SearchStrategy):
         file_pattern: Optional[str] = None,
         fuzzy: bool = False,
         regex: bool = False,
-        max_line_length: Optional[int] = None
+        max_line_length: Optional[int] = None,
     ) -> Dict[str, List[Tuple[int, str]]]:
         """
         Execute a basic, line-by-line search.
@@ -65,9 +67,9 @@ class BasicSearchStrategy(SearchStrategy):
             max_line_length: Optional. Limit the length of lines when context_lines is used
         """
         results: Dict[str, List[Tuple[int, str]]] = {}
-        
+
         flags = 0 if case_sensitive else re.IGNORECASE
-        
+
         try:
             if regex:
                 # Use regex mode - check for safety first
@@ -84,7 +86,7 @@ class BasicSearchStrategy(SearchStrategy):
         except re.error as e:
             raise ValueError(f"Invalid regex pattern: {pattern}, error: {e}")
 
-        file_filter = getattr(self, 'file_filter', None)
+        file_filter = getattr(self, "file_filter", None)
         base = Path(base_path)
 
         for root, dirs, files in os.walk(base_path):
@@ -103,12 +105,12 @@ class BasicSearchStrategy(SearchStrategy):
                 rel_path = os.path.relpath(file_path, base_path)
 
                 try:
-                    with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                    with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
                         for line_num, line in enumerate(f, 1):
                             if search_regex.search(line):
-                                content = line.rstrip('\n')
+                                content = line.rstrip("\n")
                                 if max_line_length and len(content) > max_line_length:
-                                    content = content[:max_line_length] + '... (truncated)'
+                                    content = content[:max_line_length] + "... (truncated)"
 
                                 if rel_path not in results:
                                     results[rel_path] = []
@@ -117,5 +119,5 @@ class BasicSearchStrategy(SearchStrategy):
                     continue
                 except Exception:
                     continue
-        
+
         return results

@@ -1,0 +1,126 @@
+---
+# Generate API key for Code Index MCP user
+- name: Display API key generation info
+  ansible.builtin.debug:
+    msg:
+      - "========================================"
+      - "  Generate API Key"
+      - "========================================"
+      - "Project: {{ gcp_project_id }}"
+      - "User ID: {{ user_id }}"
+      - "Environment: {{ env_name }}"
+
+- name: Generate secure random API key
+  ansible.builtin.set_fact:
+    api_key: "ci_{{ lookup('community.general.random_string', length=64, special=false) }}"
+    secret_name: "code-index-api-key-{{ user_id }}-{{ env_name }}"
+
+- name: Display generated key info (partial for security)
+  ansible.builtin.debug:
+    msg:
+      - "Generated API key: {{ api_key[:10] }}... (hidden for security)"
+      - "Secret name: {{ secret_name }}"
+
+- name: Check if secret already exists
+  ansible.builtin.command: >
+    gcloud secrets describe {{ secret_name }}
+    --project={{ gcp_project_id }}
+  register: secret_exists
+  failed_when: false
+  changed_when: false
+
+- name: Create secret in Secret Manager (new secret)
+  ansible.builtin.shell: |
+    echo -n "{{ api_key }}" | gcloud secrets create {{ secret_name }} \
+      --project={{ gcp_project_id }} \
+      --data-file=- \
+      --labels=service=code-index-mcp,user_id={{ user_id }},environment={{ env_name }} \
+      --replication-policy=automatic
+  when: secret_exists.rc != 0
+  register: secret_create
+  changed_when: "'Created secret' in secret_create.stderr"
+
+- name: Create new version of existing secret
+  ansible.builtin.shell: |
+    echo -n "{{ api_key }}" | gcloud secrets versions add {{ secret_name }} \
+      --project={{ gcp_project_id }} \
+      --data-file=-
+  when: secret_exists.rc == 0
+  register: secret_version
+  changed_when: "'Created version' in secret_version.stderr"
+
+- name: Get Cloud Run service account
+  ansible.builtin.command: >
+    gcloud iam service-accounts list
+    --project={{ gcp_project_id }}
+    --filter="email:code-index-mcp-sa@{{ gcp_project_id }}.iam.gserviceaccount.com"
+    --format="value(email)"
+  register: service_account_result
+  changed_when: false
+
+- name: Grant service account access to secret
+  ansible.builtin.command: >
+    gcloud secrets add-iam-policy-binding {{ secret_name }}
+    --project={{ gcp_project_id }}
+    --member=serviceAccount:{{ service_account_result.stdout }}
+    --role=roles/secretmanager.secretAccessor
+    --quiet
+  when: service_account_result.stdout | length > 0
+  register: iam_grant
+  changed_when: "'Updated IAM policy' in iam_grant.stderr or 'bindings' in iam_grant.stdout"
+
+- name: Display success message and API key
+  ansible.builtin.debug:
+    msg:
+      - "========================================"
+      - "  API Key Generated Successfully!"
+      - "========================================"
+      - ""
+      - "IMPORTANT: Save this API key securely!"
+      - "It will not be shown again."
+      - ""
+      - "API Key:"
+      - "  {{ api_key }}"
+      - ""
+      - "Usage in Claude Desktop:"
+      - '  {'
+      - '    "mcpServers": {'
+      - '      "code-index-semantic-search": {'
+      - '        "url": "https://code-index-mcp-{{ env_name }}-*.run.app/sse",'
+      - '        "transport": "sse",'
+      - '        "headers": {'
+      - '          "X-API-Key": "{{ api_key }}"'
+      - '        }'
+      - '      }'
+      - '    }'
+      - '  }'
+      - ""
+      - "Usage with curl:"
+      - '  curl -H "X-API-Key: {{ api_key }}" https://code-index-mcp-{{ env_name }}-*.run.app/sse'
+      - ""
+      - "To revoke this key: gcloud secrets delete {{ secret_name }} --project={{ gcp_project_id }}"
+
+- name: Save API key to file (optional)
+  ansible.builtin.copy:
+    content: |
+      API_KEY={{ api_key }}
+      SECRET_NAME={{ secret_name }}
+      USER_ID={{ user_id }}
+      ENVIRONMENT={{ env_name }}
+      PROJECT_ID={{ gcp_project_id }}
+
+      # Claude Desktop Configuration
+      {
+        "mcpServers": {
+          "code-index-semantic-search": {
+            "url": "https://code-index-mcp-{{ env_name }}-*.run.app/sse",
+            "transport": "sse",
+            "headers": {
+              "X-API-Key": "{{ api_key }}"
+            }
+          }
+        }
+      }
+    dest: "{{ playbook_dir }}/api-key-{{ user_id }}-{{ env_name }}.txt"
+    mode: '0600'
+  when: save_to_file | default(true)

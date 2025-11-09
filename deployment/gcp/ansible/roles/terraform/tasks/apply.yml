@@ -1,0 +1,61 @@
+---
+# Apply Terraform infrastructure (create/update AlloyDB)
+
+- name: Display Terraform apply information
+  ansible.builtin.debug:
+    msg:
+      - "=========================================="
+      - "  Terraform Apply - AlloyDB"
+      - "=========================================="
+      - "Environment: {{ env_name }}"
+      - "Operation: Create/Update Infrastructure"
+      - "Estimated time: 15-20 minutes"
+      - "Cost: ~$180-200/month when running"
+      - "=========================================="
+
+- name: Check if Terraform wrapper exists
+  ansible.builtin.stat:
+    path: "{{ terraform_wrapper_script }}"
+  register: wrapper_stat
+
+- name: Fail if wrapper script not found
+  ansible.builtin.fail:
+    msg: "Terraform wrapper script not found at {{ terraform_wrapper_script }}"
+  when: not wrapper_stat.stat.exists
+
+- name: Run Terraform apply via wrapper script
+  ansible.builtin.command:
+    cmd: "{{ terraform_wrapper_script }} apply {{ env_name }}"
+  environment:
+    TF_AUTO_APPROVE: "{{ 'true' if terraform_auto_approve | default(true) else 'false' }}"
+    TF_TIMEOUT: "{{ terraform_timeout | default(1800) }}"
+  register: terraform_apply_result
+  changed_when: "'Apply complete' in terraform_apply_result.stdout"
+  failed_when: terraform_apply_result.rc != 0
+
+- name: Display Terraform apply output
+  ansible.builtin.debug:
+    var: terraform_apply_result.stdout_lines
+
+- name: Get AlloyDB cluster status
+  ansible.builtin.command:
+    cmd: >
+      gcloud alloydb clusters describe code-index-cluster-{{ env_name }}
+      --region={{ gcp_region }}
+      --format='value(state)'
+  register: cluster_state
+  changed_when: false
+  failed_when: false
+
+- name: Display cluster status
+  ansible.builtin.debug:
+    msg:
+      - "✅ Terraform apply completed"
+      - "Cluster state: {{ cluster_state.stdout if cluster_state.rc == 0 else 'Unknown' }}"
+      - "{{ 'Cluster is READY for use' if cluster_state.stdout == 'READY' else 'Cluster may still be provisioning' }}"
+
+- name: Set fact for AlloyDB connection info
+  ansible.builtin.set_fact:
+    alloydb_deployed: true
+    alloydb_cluster_name: "code-index-cluster-{{ env_name }}"
+    alloydb_instance_name: "primary-instance-{{ env_name }}"

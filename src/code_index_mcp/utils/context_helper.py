@@ -7,6 +7,7 @@ operations that services need to perform with the context.
 
 import os
 from typing import Optional
+
 from mcp.server.fastmcp import Context
 
 from ..project_settings import ProjectSettings
@@ -77,7 +78,7 @@ class ContextHelper:
             The UnifiedIndexManager instance, or None if not available
         """
         try:
-            return getattr(self.ctx.request_context.lifespan_context, 'index_manager', None)
+            return getattr(self.ctx.request_context.lifespan_context, "index_manager", None)
         except AttributeError:
             return None
 
@@ -99,8 +100,10 @@ class ContextHelper:
             Error message string if base path is invalid, None if valid
         """
         if not self.base_path:
-            return ("Project path not set. Please use set_project_path to set a "
-                    "project directory first.")
+            return (
+                "Project path not set. Please use set_project_path to set a "
+                "project directory first."
+            )
 
         if not os.path.exists(self.base_path):
             return f"Project path does not exist: {self.base_path}"
@@ -155,7 +158,7 @@ class ContextHelper:
                 self.index_manager.clear_index()
         except AttributeError:
             pass
-    
+
     def update_index_manager(self, index_manager) -> None:
         """
         Update the index manager in the context.

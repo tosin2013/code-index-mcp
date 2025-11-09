@@ -1,0 +1,145 @@
+---
+# Ansible Playbook: Deploy Code Index MCP to Google Cloud Run
+#
+# Usage:
+#   ansible-playbook deploy.yml -i inventory/dev.yml
+#   ansible-playbook deploy.yml -i inventory/prod.yml
+#   ansible-playbook deploy.yml -i inventory/dev.yml --tags build,deploy
+#   ansible-playbook deploy.yml -i inventory/dev.yml --skip-tags schema
+
+- name: Deploy Code Index MCP Server to Google Cloud Run
+  hosts: localhost
+  connection: local
+  gather_facts: yes
+
+  pre_tasks:
+    - name: Display deployment information
+      ansible.builtin.debug:
+        msg:
+          - "==================================="
+          - "Code Index MCP Deployment"
+          - "==================================="
+          - "Project: {{ gcp_project_id }}"
+          - "Environment: {{ env_name }}"
+          - "Region: {{ gcp_region }}"
+          - "Service: {{ service_name }}"
+          - "AlloyDB: {{ 'enabled' if with_alloydb else 'disabled' }}"
+          - "==================================="
+    
+    - name: Prompt for deployment confirmation
+      ansible.builtin.pause:
+        prompt: "Proceed with deployment to {{ env_name }} in project {{ gcp_project_id }}? (yes/no)"
+      register: deployment_prompt
+      when: confirm_deployment is not defined or confirm_deployment == ''
+    
+    - name: Set confirmation from prompt
+      ansible.builtin.set_fact:
+        confirm_deployment: "{{ deployment_prompt.user_input | default('no') }}"
+      when: deployment_prompt is not skipped
+    
+    - name: Validate deployment confirmation
+      ansible.builtin.fail:
+        msg: "Deployment cancelled by user"
+      when: confirm_deployment | default('no') != 'yes'
+
+  roles:
+    - role: code-index-mcp
+
+  post_tasks:
+    - name: Display Claude Desktop configuration
+      ansible.builtin.debug:
+        msg:
+          - ""
+          - "==================================="
+          - "✅ Deployment Complete!"
+          - "==================================="
+          - ""
+          - "Add this to Claude Desktop config:"
+          - "~/Library/Application Support/Claude/claude_desktop_config.json"
+          - ""
+          - "{"
+          - "  \"mcpServers\": {"
+          - "    \"code-index-semantic-search\": {"
+          - "      \"url\": \"{{ cloudrun_service_url }}/sse\","
+          - "      \"transport\": \"sse\""
+          - "    }"
+          - "  }"
+          - "}"
+          - ""
+          - "==================================="
+      when: cloudrun_service_url is defined
+
+    - name: Run post-deployment validation
+      ansible.builtin.include_role:
+        name: mcp-validation
+      vars:
+        mcp_service_url: "{{ cloudrun_service_url }}"
+      when: 
+        - run_validation | default(false)
+        - cloudrun_service_url is defined
+
+    - name: Create deployment summary file
+      ansible.builtin.copy:
+        content: |
+          # Code Index MCP Deployment Summary
+
+          **Deployment Date**: {{ ansible_date_time.iso8601 }}
+          **Environment**: {{ env_name }}
+          **Project**: {{ gcp_project_id }}
+          **Region**: {{ gcp_region }}
+
+          ## Service Details
+
+          - **Service Name**: {{ service_name }}
+          - **Service URL**: {{ cloudrun_service_url }}
+          - **SSE Endpoint**: {{ cloudrun_service_url }}/sse
+          - **Image**: {{ full_image_path }}
+
+          ## Configuration
+
+          - **CPU**: {{ cloudrun_cpu }}
+          - **Memory**: {{ cloudrun_memory }}
+          - **Min Instances**: {{ cloudrun_min_instances }}
+          - **Max Instances**: {{ cloudrun_max_instances }}
+          - **AlloyDB**: {{ 'enabled' if with_alloydb else 'disabled' }}
+
+          ## Claude Desktop Config
+
+          ```json
+          {
+            "mcpServers": {
+              "code-index-semantic-search": {
+                "url": "{{ cloudrun_service_url }}/sse",
+                "transport": "sse"
+              }
+            }
+          }
+          ```
+
+          ## Resources Created
+
+          - Cloud Run service: {{ service_name }}
+          - Service account: {{ service_account }}
+          - Storage buckets: {{ storage_bucket }}, {{ git_bucket }}
+          - Artifact Registry: {{ image_registry }}
+          {% if with_alloydb %}
+          - AlloyDB schema applied
+          - VPC connector: {{ vpc_connector_name }}
+          {% endif %}
+          {% if enable_auto_cleanup %}
+          - Cleanup scheduler: cleanup-inactive-projects-{{ env_name }}
+          {% endif %}
+
+          ## Next Steps
+
+          1. Configure Claude Desktop with the config above
+          2. Restart Claude Desktop
+          3. Test semantic search tools:
+             - `semantic_search_code()`
+             - `find_similar_code()`
+             - `ingest_code_for_search()` or `ingest_code_from_git()`
+
+          ---
+          *Deployed with Ansible - code-index-mcp role*
+        dest: "./deployment-summary-{{ env_name }}-{{ ansible_date_time.epoch }}.md"
+      when: cloudrun_service_url is defined

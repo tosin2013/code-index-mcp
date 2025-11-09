@@ -1,0 +1,17 @@
+---
+# Default variables for Terraform role
+
+# Terraform wrapper script location
+terraform_wrapper_script: "{{ playbook_dir }}/../../terraform-alloydb.sh"
+
+# Terraform operation (apply, destroy, validate)
+terraform_operation: "apply"
+
+# Auto-approve Terraform changes (set to false for manual approval)
+terraform_auto_approve: true
+
+# Terraform timeout in seconds (default: 30 minutes)
+terraform_timeout: 1800
+
+# GCP region for AlloyDB
+gcp_region: "us-east1"

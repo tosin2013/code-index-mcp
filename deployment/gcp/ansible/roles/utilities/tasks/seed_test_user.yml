@@ -1,0 +1,110 @@
+---
+# Seed test user in AlloyDB for testing ingestion
+- name: Display seed user info
+  ansible.builtin.debug:
+    msg:
+      - "========================================"
+      - "  Seed Test User in AlloyDB"
+      - "========================================"
+      - "Project: {{ gcp_project_id }}"
+      - "Environment: {{ env_name }}"
+
+- name: Create seed user SQL script
+  ansible.builtin.copy:
+    content: |
+      -- Create test user if not exists
+      INSERT INTO users (user_id, email, api_key_hash, is_active, created_at, updated_at)
+      VALUES (
+        '00000000-0000-0000-0000-000000000001',
+        'test@example.com',
+        'test_api_key_hash',
+        true,
+        NOW(),
+        NOW()
+      )
+      ON CONFLICT (user_id) DO NOTHING;
+
+      -- Display users table
+      SELECT user_id, email, is_active FROM users;
+    dest: /tmp/seed_user.sql
+    mode: '0644'
+
+- name: Create Cloud Build config for seed user job
+  ansible.builtin.copy:
+    content: |
+      steps:
+      - name: 'gcr.io/cloud-builders/docker'
+        args:
+          - 'build'
+          - '-t'
+          - '{{ gcp_region }}-docker.pkg.dev/{{ gcp_project_id }}/code-index/seed-user:latest'
+          - '-f'
+          - 'Dockerfile.seed-user'
+          - '.'
+      images:
+      - '{{ gcp_region }}-docker.pkg.dev/{{ gcp_project_id }}/code-index/seed-user:latest'
+    dest: /tmp/cloudbuild-seed-user.yaml
+    mode: '0644'
+
+- name: Create Dockerfile for seed user job
+  ansible.builtin.copy:
+    content: |
+      FROM postgres:16-alpine
+      RUN apk add --no-cache postgresql-client
+      COPY seed_user.sql /seed.sql
+      CMD ["sh", "-c", "psql $POSTGRES_CONNECTION -f /seed.sql"]
+    dest: /tmp/Dockerfile.seed-user
+    mode: '0644'
+
+- name: Build seed user image
+  ansible.builtin.shell: |
+    cd /tmp
+    gcloud builds submit \
+      --config=cloudbuild-seed-user.yaml \
+      --project={{ gcp_project_id }} \
+      .
+  register: build_result
+  changed_when: "'SUCCESS' in build_result.stderr or 'DONE' in build_result.stderr"
+
+- name: Run seed user job
+  ansible.builtin.shell: |
+    gcloud run jobs create seed-user-{{ env_name }}-{{ lookup('pipe', 'date +%s') }} \
+      --image={{ gcp_region }}-docker.pkg.dev/{{ gcp_project_id }}/code-index/seed-user:latest \
+      --region={{ gcp_region }} \
+      --project={{ gcp_project_id }} \
+      --vpc-connector={{ vpc_connector_name }} \
+      --vpc-egress=private-ranges-only \
+      --set-secrets=POSTGRES_CONNECTION=alloydb-connection-string:latest \
+      --execute-now \
+      --wait
+  register: seed_result
+  changed_when: true
+
+- name: Display seed results
+  ansible.builtin.debug:
+    msg: "{{ seed_result.stdout_lines }}"
+
+- name: Parse seed job name from output
+  ansible.builtin.set_fact:
+    seed_job_name: "{{ seed_result.stderr | regex_search('seed-user-[a-z0-9-]+') }}"
+
+- name: Clean up seed job
+  ansible.builtin.command: >
+    gcloud run jobs delete {{ seed_job_name }}
+    --region={{ gcp_region }}
+    --project={{ gcp_project_id }}
+    --quiet
+  when: seed_job_name is defined
+  register: cleanup
+  changed_when: "'Deleted job' in cleanup.stderr"
+  failed_when: false
+
+- name: Display completion message
+  ansible.builtin.debug:
+    msg:
+      - ""
+      - "✅ Test user seeded successfully!"
+      - "User ID: 00000000-0000-0000-0000-000000000001"
+      - "Username: test-user"
+      - "Email: test@example.com"
+      - ""

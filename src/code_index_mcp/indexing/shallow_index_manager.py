@@ -12,13 +12,13 @@ import hashlib
 import json
 import logging
 import os
+import re
 import tempfile
 import threading
 from typing import List, Optional
-import re
 
+from ..constants import INDEX_FILE_SHALLOW, SETTINGS_DIR
 from .json_index_builder import JSONIndexBuilder
-from ..constants import SETTINGS_DIR, INDEX_FILE_SHALLOW
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +65,7 @@ class ShallowIndexManager:
                 return False
             try:
                 file_list = self.index_builder.build_shallow_file_list()
-                with open(self.index_path, 'w', encoding='utf-8') as f:
+                with open(self.index_path, "w", encoding="utf-8") as f:
                     json.dump(file_list, f, ensure_ascii=False)
                 self._file_list = file_list
                 logger.info(f"Built shallow index with {len(file_list)} files")
@@ -80,15 +80,15 @@ class ShallowIndexManager:
             try:
                 if not self.index_path or not os.path.exists(self.index_path):
                     return False
-                with open(self.index_path, 'r', encoding='utf-8') as f:
+                with open(self.index_path, "r", encoding="utf-8") as f:
                     data = json.load(f)
                 if isinstance(data, list):
                     # Normalize slashes/prefix
                     normalized: List[str] = []
                     for p in data:
                         if isinstance(p, str):
-                            q = p.replace('\\\\', '/').replace('\\', '/')
-                            if q.startswith('./'):
+                            q = p.replace("\\\\", "/").replace("\\", "/")
+                            if q.startswith("./"):
                                 q = q[2:]
                             normalized.append(q)
                     self._file_list = normalized
@@ -106,7 +106,7 @@ class ShallowIndexManager:
         with self._lock:
             if not isinstance(pattern, str):
                 return []
-            norm = (pattern.strip() or "*").replace('\\\\','/').replace('\\','/')
+            norm = (pattern.strip() or "*").replace("\\\\", "/").replace("\\", "/")
             regex = self._compile_glob_regex(norm)
             files = self._file_list or []
             if norm == "*":
@@ -120,21 +120,21 @@ class ShallowIndexManager:
         special = ".^$+{}[]|()"
         while i < len(pattern):
             c = pattern[i]
-            if c == '*':
-                if i + 1 < len(pattern) and pattern[i + 1] == '*':
-                    out.append('.*')
+            if c == "*":
+                if i + 1 < len(pattern) and pattern[i + 1] == "*":
+                    out.append(".*")
                     i += 2
                     continue
                 else:
-                    out.append('[^/]*')
-            elif c == '?':
-                out.append('[^/]')
+                    out.append("[^/]*")
+            elif c == "?":
+                out.append("[^/]")
             elif c in special:
-                out.append('\\' + c)
+                out.append("\\" + c)
             else:
                 out.append(c)
             i += 1
-        return re.compile('^' + ''.join(out) + '$')
+        return re.compile("^" + "".join(out) + "$")
 
     def cleanup(self) -> None:
         with self._lock:
@@ -151,5 +151,3 @@ _shallow_manager = ShallowIndexManager()
 
 def get_shallow_index_manager() -> ShallowIndexManager:
     return _shallow_manager
-
-

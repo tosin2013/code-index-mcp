@@ -6,7 +6,7 @@ This tool handles low-level settings operations without any business logic.
 
 import os
 import tempfile
-from typing import Dict, Any
+from typing import Any, Dict
 
 from ...constants import SETTINGS_DIR
 
@@ -49,15 +49,11 @@ class SettingsTool:
                 "exists": os.path.exists(temp_dir),
                 "is_directory": os.path.isdir(temp_dir),
                 "existed_before": existed_before,
-                "created": not existed_before
+                "created": not existed_before,
             }
 
         except (OSError, IOError) as e:
-            return {
-                "temp_directory": temp_dir,
-                "exists": False,
-                "error": str(e)
-            }
+            return {"temp_directory": temp_dir, "exists": False, "error": str(e)}
 
     def check_temp_directory(self) -> Dict[str, Any]:
         """
@@ -72,7 +68,7 @@ class SettingsTool:
             "temp_directory": temp_dir,
             "temp_root": tempfile.gettempdir(),
             "exists": os.path.exists(temp_dir),
-            "is_directory": os.path.isdir(temp_dir) if os.path.exists(temp_dir) else False
+            "is_directory": os.path.isdir(temp_dir) if os.path.exists(temp_dir) else False,
         }
 
         # If the directory exists, list its contents
@@ -89,7 +85,7 @@ class SettingsTool:
                         subdir_info = {
                             "name": item,
                             "path": item_path,
-                            "contents": os.listdir(item_path) if os.path.exists(item_path) else []
+                            "contents": os.listdir(item_path) if os.path.exists(item_path) else [],
                         }
                         result["subdirectories"].append(subdir_info)
 
@@ -97,4 +93,3 @@ class SettingsTool:
                 result["error"] = str(e)
 
         return result
-

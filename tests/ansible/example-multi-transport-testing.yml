@@ -1,0 +1,142 @@
+---
+# Example: Multi-Transport MCP Server Testing
+# This playbook demonstrates the best practice for testing MCP servers
+# that support both stdio and SSE/HTTP transports
+
+- name: Multi-Transport MCP Server Testing Example
+  hosts: localhost
+  connection: local
+  gather_facts: yes
+
+  vars:
+    # Set this to 'stdio' or 'sse' depending on test target
+    transport: sse
+    
+    # SSE configuration (for cloud deployments)
+    mcp_server_url: "https://your-server.run.app"
+    api_key: "your_api_key"
+    
+    # stdio configuration (for local testing)
+    mcp_server_command: "python"
+    mcp_server_args: ["-m", "your_mcp_server"]
+
+  tasks:
+    # ========================================================================
+    # CORRECT PATTERN: Use distinct variable names for each transport
+    # ========================================================================
+    
+    - name: "Test 1: Server Discovery (SSE)"
+      tosin2013.mcp_audit.mcp_server_info:
+        transport: sse
+        server_url: "{{ mcp_server_url }}/sse"
+        server_headers:
+          Authorization: "Bearer {{ api_key }}"
+      register: server_info_sse  # ✅ Unique name
+      when: transport == 'sse'
+    
+    - name: "Test 1: Server Discovery (stdio)"
+      tosin2013.mcp_audit.mcp_server_info:
+        transport: stdio
+        server_command: "{{ mcp_server_command }}"
+        server_args: "{{ mcp_server_args }}"
+      register: server_info_stdio  # ✅ Unique name
+      when: transport == 'stdio'
+    
+    # Merge results from whichever transport was used
+    - name: Select active test result
+      ansible.builtin.set_fact:
+        server_info: "{{ server_info_sse if transport == 'sse' else server_info_stdio }}"
+    
+    # Now you can safely access server_info.success
+    - name: Display test result
+      ansible.builtin.debug:
+        msg:
+          - "Transport: {{ transport }}"
+          - "Test passed: {{ server_info.success }}"
+          - "Server name: {{ server_info.server_info.server_name | default('unknown') }}"
+          - "Available tools: {{ server_info.server_info.available_tools | default(0) }}"
+    
+    # Validate the test passed
+    - name: Assert server info retrieved successfully
+      ansible.builtin.assert:
+        that:
+          - server_info.success
+          - server_info.server_info.available_tools | int > 0
+        success_msg: "✅ Server discovery test PASSED"
+        fail_msg: "❌ Server discovery test FAILED"
+    
+    # ========================================================================
+    # Test 2: Tool Testing (same pattern)
+    # ========================================================================
+    
+    - name: "Test 2: Test set_project_path (SSE)"
+      tosin2013.mcp_audit.mcp_test_tool:
+        transport: sse
+        server_url: "{{ mcp_server_url }}/sse"
+        server_headers:
+          Authorization: "Bearer {{ api_key }}"
+        tool_name: set_project_path
+        tool_arguments:
+          path: "/tmp/test-project"
+      register: test_tool_sse  # ✅ Unique name
+      when: transport == 'sse'
+    
+    - name: "Test 2: Test set_project_path (stdio)"
+      tosin2013.mcp_audit.mcp_test_tool:
+        transport: stdio
+        server_command: "{{ mcp_server_command }}"
+        server_args: "{{ mcp_server_args }}"
+        tool_name: set_project_path
+        tool_arguments:
+          path: "/tmp/test-project"
+      register: test_tool_stdio  # ✅ Unique name
+      when: transport == 'stdio'
+    
+    - name: Select active tool test result
+      ansible.builtin.set_fact:
+        test_tool: "{{ test_tool_sse if transport == 'sse' else test_tool_stdio }}"
+    
+    - name: Display tool test result
+      ansible.builtin.debug:
+        msg:
+          - "Tool test passed: {{ test_tool.success }}"
+          - "Test passed: {{ test_tool.test_passed }}"
+    
+    # ========================================================================
+    # Summary
+    # ========================================================================
+    
+    - name: Display test summary
+      ansible.builtin.debug:
+        msg:
+          - "═══════════════════════════════════════"
+          - "Multi-Transport Testing Complete"
+          - "═══════════════════════════════════════"
+          - "Transport: {{ transport }}"
+          - "Server Discovery: {{ 'PASS' if server_info.success else 'FAIL' }}"
+          - "Tool Testing: {{ 'PASS' if test_tool.success else 'FAIL' }}"
+          - "═══════════════════════════════════════"
+
+# ============================================================================
+# KEY TAKEAWAYS:
+# ============================================================================
+# 
+# 1. Use DISTINCT variable names when testing multiple transports:
+#    - server_info_sse / server_info_stdio
+#    - test_tool_sse / test_tool_stdio
+#
+# 2. Merge results after conditional execution:
+#    - set_fact: server_info: "{{ sse if ... else stdio }}"
+#
+# 3. Then access the merged variable safely:
+#    - server_info.success (works correctly!)
+#
+# 4. Why this matters:
+#    - Skipped tasks still register variables as {skipped: true}
+#    - This overwrites successful results from the active transport
+#    - Using distinct names prevents this overwriting
+#
+# 5. Alternative (if you only test one transport per playbook run):
+#    - Just use one task without 'when:' conditionals
+#    - Much simpler, but less flexible
+# ============================================================================

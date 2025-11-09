@@ -128,6 +128,10 @@
   changed_when: false
   failed_when: false
 
+- name: Check for error messages in logs
+  ansible.builtin.set_fact:
+    schema_has_errors: "{{ schema_job_logs.stdout is search('❌ SCHEMA APPLICATION FAILED') or schema_job_logs.stdout is search('❌ VERIFICATION FAILED') or schema_job_logs.stdout is search('Container called exit\\(1\\)') }}"
+
 - name: Get schema job exit code
   ansible.builtin.shell: >
     gcloud logging read
@@ -138,7 +142,7 @@
     --format="value(textPayload)"
     --freshness=5m
     --project={{ gcp_project_id }} |
-    grep -oP 'exit\(\K\d+' || echo "0"
+    grep -oP 'exit\(\K\d+' || echo "unknown"
   register: schema_job_exit_code
   changed_when: false
 
@@ -149,18 +153,23 @@
       - "{{ schema_job_logs.stdout_lines | default([]) }}"
       - ""
       - "Job Exit Code: {{ schema_job_exit_code.stdout }}"
+      - "Has Errors: {{ schema_has_errors }}"
 
 - name: Fail if schema job failed
   ansible.builtin.fail:
     msg: |
-      ❌ Schema application job FAILED with exit code {{ schema_job_exit_code.stdout }}
+      ❌ Schema application job FAILED
+
+      Exit code: {{ schema_job_exit_code.stdout }}
+      Error detected in logs: {{ schema_has_errors }}
 
       Check logs above for details. Common issues:
       - Database connectivity problems (VPC/firewall)
       - Invalid connection string
       - Missing pgvector extension
       - SQL syntax errors in schema file
-  when: schema_job_exit_code.stdout != "0"
+      - Column references in SQL functions
+  when: schema_has_errors or (schema_job_exit_code.stdout != "0" and schema_job_exit_code.stdout != "unknown")
 
 # Commented out to preserve job for log inspection
 # - name: Cleanup schema job

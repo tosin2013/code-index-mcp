@@ -4,15 +4,97 @@
 
 ## Table of Contents
 
-1. [Prerequisites](#prerequisites)
-2. [Security Setup (Pre-commit Hooks)](#security-setup-pre-commit-hooks)
-3. [Initial Deployment](#initial-deployment)
-4. [Verification](#verification)
-5. [Using the Deployment](#using-the-deployment)
-6. [Cleanup/Teardown](#cleanupteardown)
-7. [Redeployment (Proving Repeatability)](#redeployment-proving-repeatability)
-8. [Cost Management](#cost-management)
-9. [Troubleshooting](#troubleshooting)
+1. [Quick Start (Automated Deployment)](#quick-start-automated-deployment)
+2. [Prerequisites](#prerequisites)
+3. [Security Setup (Pre-commit Hooks)](#security-setup-pre-commit-hooks)
+4. [Initial Deployment](#initial-deployment)
+5. [Verification](#verification)
+6. [Using the Deployment](#using-the-deployment)
+7. [Cleanup/Teardown](#cleanupteardown)
+8. [Redeployment (Proving Repeatability)](#redeployment-proving-repeatability)
+9. [Cost Management](#cost-management)
+10. [Troubleshooting](#troubleshooting)
+
+---
+
+## Quick Start (Automated Deployment)
+
+**NEW**: We now provide a fully automated end-to-end deployment script that handles the entire deployment lifecycle!
+
+### One-Command Deployment
+
+```bash
+# Navigate to the deployment directory
+cd deployment/gcp
+
+# Run the automated deployment script
+./deploy-lifecycle.sh --user-email your@email.com
+```
+
+That's it! The script will:
+- ✅ Check all prerequisites (gcloud, ansible, terraform, etc.)
+- ✅ Verify GCP authentication and project setup
+- ✅ Set up pre-commit hooks for security
+- ✅ Deploy the complete infrastructure (AlloyDB, Cloud Run, Storage)
+- ✅ Verify deployment health
+- ✅ Generate your API key
+- ✅ Provide Claude Desktop configuration
+
+**Deployment time**: ~30-40 minutes (fully automated)
+
+### Script Options
+
+```bash
+./deploy-lifecycle.sh [OPTIONS]
+
+Options:
+  --environment ENV    Deployment environment (dev/staging/prod) [default: dev]
+  --project-id ID      GCP project ID [uses gcloud config if not specified]
+  --region REGION      GCP region [default: us-east1]
+  --user-email EMAIL   Email for API key generation [required]
+  --skip-hooks         Skip pre-commit hooks setup
+  --auto-approve       Skip confirmation prompts (use with caution)
+  --help               Show detailed help
+```
+
+### Examples
+
+```bash
+# Basic deployment to dev environment
+./deploy-lifecycle.sh --user-email admin@example.com
+
+# Deploy to staging with specific project
+./deploy-lifecycle.sh \
+  --environment staging \
+  --project-id my-gcp-project \
+  --user-email admin@example.com
+
+# Fully automated (no prompts) - CI/CD use case
+./deploy-lifecycle.sh \
+  --user-email ci@example.com \
+  --auto-approve
+```
+
+### What the Script Does
+
+The automated script executes all steps from this guide:
+
+1. **Prerequisites Check**: Verifies all required tools are installed
+2. **GCP Configuration**: Validates authentication and project setup
+3. **Security Setup**: Installs and tests pre-commit hooks
+4. **Infrastructure Deployment**: Runs Ansible playbook to deploy:
+   - AlloyDB cluster and instance
+   - Cloud Run service
+   - VPC connector
+   - Storage buckets
+   - Secrets and IAM
+5. **Verification**: Health checks on all deployed resources
+6. **API Key Generation**: Creates and securely stores API key
+7. **Configuration Output**: Provides ready-to-use Claude Desktop config
+
+### Manual Deployment
+
+If you prefer to understand each step or customize the deployment, continue reading the detailed manual deployment sections below.
 
 ---
 

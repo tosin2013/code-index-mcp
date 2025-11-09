@@ -9,7 +9,7 @@ pub const Config = struct {
     name: []const u8,
     version: u32,
     debug: bool,
-    
+
     pub fn init(name: []const u8, version: u32) Config {
         return Config{
             .name = name,
@@ -17,7 +17,7 @@ pub const Config = struct {
             .debug = false,
         };
     }
-    
+
     pub fn setDebug(self: *Config, debug: bool) void {
         self.debug = debug;
     }
@@ -28,7 +28,7 @@ pub const ErrorType = enum {
     InvalidInput,
     OutOfMemory,
     NetworkError,
-    
+
     pub fn toString(self: ErrorType) []const u8 {
         return switch (self) {
             .None => "No error",
@@ -81,7 +81,7 @@ pub fn parseNumber(input: []const u8) !i32 {
     if (input.len == 0) {
         return error.InvalidInput;
     }
-    
+
     return std.fmt.parseInt(i32, input, 10) catch |err| switch (err) {
         error.InvalidCharacter => error.InvalidInput,
         error.Overflow => error.OutOfMemory,
@@ -105,7 +105,7 @@ test "config initialization" {
     try std.testing.expectEqualStrings("test-app", config.name);
     try std.testing.expectEqual(@as(u32, 1), config.version);
     try std.testing.expectEqual(false, config.debug);
-    
+
     config.setDebug(true);
     try std.testing.expectEqual(true, config.debug);
 }
@@ -118,7 +118,7 @@ test "error type handling" {
 test "number parsing" {
     const result = try parseNumber("42");
     try std.testing.expectEqual(@as(i32, 42), result);
-    
+
     // Test error case
     const invalid_result = parseNumber("");
     try std.testing.expectError(error.InvalidInput, invalid_result);
@@ -127,9 +127,9 @@ test "number parsing" {
 test "generic swap function" {
     var a: i32 = 10;
     var b: i32 = 20;
-    
+
     swap(i32, &a, &b);
-    
+
     try std.testing.expectEqual(@as(i32, 20), a);
     try std.testing.expectEqual(@as(i32, 10), b);
 }

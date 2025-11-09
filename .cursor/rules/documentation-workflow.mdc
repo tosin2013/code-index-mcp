@@ -1,0 +1,24 @@
+---
+rule_type: auto
+description: "Enforce documentation and ADR management workflow"
+globs: ["docs/**/*.md", "*.md"]
+---
+
+Create a new ADR when adding new deployment targets (e.g., Azure, Heroku).
+Create a new ADR when changing transport protocols or server architecture.
+Create a new ADR when making major refactoring decisions.
+Create a new ADR when adding significant new features (e.g., RAG, embeddings).
+Create a new ADR when changing security models or authentication.
+Update existing ADRs when implementation reveals better approaches.
+Update existing ADRs when cost structures change significantly.
+Update existing ADRs when technology choices are superseded.
+Update existing ADRs when status changes (Proposed → Implemented → Deprecated).
+After creating an ADR, update `docs/adrs/README.md` (add to table and timeline).
+After creating an ADR, update `CLAUDE.md` if it affects development workflow.
+After creating an ADR, update `docs/DEPLOYMENT.md` if it's deployment-related.
+When making significant changes, update `CLAUDE.md` if it affects development workflow.
+When making significant changes, create or update ADRs for architectural decisions.
+When making significant changes, update `docs/DEPLOYMENT.md` for deployment-related changes.
+When making significant changes, update `README.md` if user-facing features change.
+When making significant changes, update `AGENTS.md` for repository guidelines.
+Use the ADR template with sections: Status, Date, Decision Maker, Related to, Context, Decision, Consequences, Related ADRs.

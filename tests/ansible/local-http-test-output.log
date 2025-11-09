@@ -1,0 +1,60 @@
+[WARNING]: Deprecation warnings can be disabled by setting `deprecation_warnings=False` in ansible.cfg.
+[DEPRECATION WARNING]: community.general.yaml has been deprecated. The plugin has been superseded by the option `result_format=yaml` in callback plugin ansible.builtin.default from ansible-core 2.13 onwards. This feature will be removed from collection 'community.general' version 12.0.0.
+
+PLAY [Test Code Index MCP Server - Cloud HTTP/SSE Mode] ************************
+
+TASK [Gathering Facts] *********************************************************
+[WARNING]: Host 'localhost' is using the discovered Python interpreter at '/opt/homebrew/bin/python3.13', but future installation of another Python interpreter could cause a different interpreter to be discovered. See https://docs.ansible.com/ansible-core/2.19/reference_appendices/interpreter_discovery.html for more information.
+ok: [localhost]
+
+TASK [Validate required environment variables] *********************************
+ok: [localhost] => changed=false 
+  msg: All assertions passed
+
+TASK [Display test configuration] **********************************************
+[ERROR]: Task failed: Finalization of task args for 'ansible.builtin.debug' failed: Error while resolving value for 'msg': 'transport' is undefined
+
+Task failed.
+Origin: /Users/tosinakinosho/workspaces/code-index-mcp/tests/ansible/test-cloud.yml:32:7
+
+30           export MCP_API_KEY_DEV="ci_your_api_key"
+31
+32     - name: Display test configuration
+         ^ column 7
+
+<<< caused by >>>
+
+Finalization of task args for 'ansible.builtin.debug' failed.
+Origin: /Users/tosinakinosho/workspaces/code-index-mcp/tests/ansible/test-cloud.yml:33:7
+
+31
+32     - name: Display test configuration
+33       ansible.builtin.debug:
+         ^ column 7
+
+<<< caused by >>>
+
+Error while resolving value for 'msg'.
+Origin: /Users/tosinakinosho/workspaces/code-index-mcp/tests/ansible/test-cloud.yml:35:11
+
+33       ansible.builtin.debug:
+34         msg:
+35           - "═══════════════════════════════════════"
+             ^ column 11
+
+<<< caused by >>>
+
+'transport' is undefined
+Origin: /Users/tosinakinosho/workspaces/code-index-mcp/tests/ansible/test-cloud.yml:39:13
+
+37           - "═══════════════════════════════════════"
+38           - "Server URL: {{ mcp_server_url }}"
+39           - "Transport: {{ transport }}"
+               ^ column 13
+
+fatal: [localhost]: FAILED! => 
+  msg: 'Task failed: Finalization of task args for ''ansible.builtin.debug'' failed: Error while resolving value for ''msg'': ''transport'' is undefined'
+
+PLAY RECAP *********************************************************************
+localhost                  : ok=2    changed=0    unreachable=0    failed=1    skipped=0    rescued=0    ignored=0   
+

@@ -39,7 +39,7 @@ const transports = [
       winston.format.simple()
     ),
   }),
-  
+
   // File transport for errors
   new winston.transports.File({
     filename: 'logs/error.log',
@@ -49,7 +49,7 @@ const transports = [
       winston.format.json()
     ),
   }),
-  
+
   // File transport for all logs
   new winston.transports.File({
     filename: 'logs/combined.log',

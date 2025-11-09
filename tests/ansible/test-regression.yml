@@ -1,0 +1,360 @@
+---
+# Code Index MCP - Full Regression Test Suite
+# This playbook runs comprehensive tests across all MCP functionality
+# Use this before promoting deployments to production
+
+- name: Code Index MCP - Full Regression Test Suite
+  hosts: localhost
+  connection: local
+  gather_facts: yes
+
+  vars:
+    # Server connection (loaded from inventory)
+    # mcp_server_url: set in inventory
+    # api_key: set in inventory
+    # transport: set in inventory
+
+    # Test configuration
+    fail_on_error: true
+    generate_detailed_report: true
+
+  pre_tasks:
+    - name: Display regression test banner
+      ansible.builtin.debug:
+        msg:
+          - "═══════════════════════════════════════════════════════"
+          - "🔍 Code Index MCP - Full Regression Test Suite"
+          - "═══════════════════════════════════════════════════════"
+          - "Environment: {{ env_name | default('unknown') }}"
+          - "Transport: {{ transport }}"
+          - "Server: {{ mcp_server_url if transport == 'sse' else 'stdio (local)' }}"
+          - "Timestamp: {{ ansible_date_time.iso8601 }}"
+          - "═══════════════════════════════════════════════════════"
+
+    - name: Initialize test tracking
+      ansible.builtin.set_fact:
+        test_results: []
+        tests_passed: 0
+        tests_failed: 0
+        tests_skipped: 0
+
+  tasks:
+    # =========================================================================
+    # Phase 1: Server Discovery and Validation
+    # =========================================================================
+    - name: "TEST 1: Server Discovery - Get server information"
+      tosin2013.mcp_audit.mcp_server_info:
+        transport: "{{ transport }}"
+        server_url: "{{ mcp_server_url }}/sse"
+        server_headers:
+          Authorization: "Bearer {{ api_key }}"
+      register: test_server_info_sse
+      when: transport == 'sse'
+      tags: [phase1, server_info]
+
+    - name: "TEST 1: Server Discovery - Get server information (stdio)"
+      tosin2013.mcp_audit.mcp_server_info:
+        transport: stdio
+        server_command: "{{ mcp_server_command }}"
+        server_args: "{{ mcp_server_args }}"
+      register: test_server_info_stdio
+      when: transport == 'stdio'
+      tags: [phase1, server_info]
+
+    - name: Set test_server_info from active transport
+      ansible.builtin.set_fact:
+        test_server_info: "{{ test_server_info_sse if transport == 'sse' else test_server_info_stdio }}"
+
+    - name: Record Test 1 result
+      ansible.builtin.set_fact:
+        test_results: "{{ test_results + [{'test': 'Server Discovery', 'status': 'PASS' if (test_server_info.success | default(false)) else 'FAIL', 'duration_ms': 0}] }}"
+        tests_passed: "{{ tests_passed + 1 if (test_server_info.success | default(false)) else tests_passed }}"
+        tests_failed: "{{ tests_failed + 1 if not (test_server_info.success | default(false)) else tests_failed }}"
+
+    # =========================================================================
+    # Phase 2: Core Metadata Tools
+    # =========================================================================
+    - name: "TEST 2: set_project_path tool"
+      tosin2013.mcp_audit.mcp_test_tool:
+        transport: "{{ transport }}"
+        server_url: "{{ mcp_server_url }}/sse"
+        server_headers:
+          Authorization: "Bearer {{ api_key }}"
+        tool_name: set_project_path
+        tool_arguments:
+          path: "/tmp/regression-test-project"
+      register: test_set_path_sse
+      when: transport == 'sse'
+      tags: [phase2, metadata_tools]
+
+    - name: "TEST 2: set_project_path tool (stdio)"
+      tosin2013.mcp_audit.mcp_test_tool:
+        transport: stdio
+        server_command: "{{ mcp_server_command }}"
+        server_args: "{{ mcp_server_args }}"
+        tool_name: set_project_path
+        tool_arguments:
+          path: "/tmp/regression-test-project"
+      register: test_set_path_sse
+      when: transport == 'stdio'
+      tags: [phase2, metadata_tools]
+
+    - name: Record Test 2 result
+      ansible.builtin.set_fact:
+        test_results: "{{ test_results + [{'test': 'set_project_path', 'status': 'PASS' if test_set_path.success | default(false) else 'FAIL', 'duration_ms': 0}] }}"
+        tests_passed: "{{ tests_passed + 1 if test_set_path.success | default(false) else tests_passed }}"
+        tests_failed: "{{ tests_failed + 1 if not test_set_path.success | default(false) else tests_failed }}"
+
+    - name: "TEST 3: refresh_index tool"
+      tosin2013.mcp_audit.mcp_test_tool:
+        transport: "{{ transport }}"
+        server_url: "{{ mcp_server_url }}/sse"
+        server_headers:
+          Authorization: "Bearer {{ api_key }}"
+        tool_name: refresh_index
+        tool_arguments: {}
+      register: test_refresh
+      when: transport == 'sse'
+      tags: [phase2, metadata_tools]
+
+    - name: "TEST 3: refresh_index tool (stdio)"
+      tosin2013.mcp_audit.mcp_test_tool:
+        transport: stdio
+        server_command: "{{ mcp_server_command }}"
+        server_args: "{{ mcp_server_args }}"
+        tool_name: refresh_index
+        tool_arguments: {}
+      register: test_refresh
+      when: transport == 'stdio'
+      tags: [phase2, metadata_tools]
+
+    - name: Record Test 3 result
+      ansible.builtin.set_fact:
+        test_results: "{{ test_results + [{'test': 'refresh_index', 'status': 'PASS' if test_refresh.success | default(false) else 'FAIL', 'duration_ms': 0}] }}"
+        tests_passed: "{{ tests_passed + 1 if test_refresh.success | default(false) else tests_passed }}"
+        tests_failed: "{{ tests_failed + 1 if not test_refresh.success | default(false) else tests_failed }}"
+
+    - name: "TEST 4: find_files tool - Python files"
+      tosin2013.mcp_audit.mcp_test_tool:
+        transport: "{{ transport }}"
+        server_url: "{{ mcp_server_url }}/sse"
+        server_headers:
+          Authorization: "Bearer {{ api_key }}"
+        tool_name: find_files
+        tool_arguments:
+          pattern: "*.py"
+      register: test_find_py
+      when: transport == 'sse'
+      tags: [phase2, metadata_tools]
+
+    - name: "TEST 4: find_files tool - Python files (stdio)"
+      tosin2013.mcp_audit.mcp_test_tool:
+        transport: stdio
+        server_command: "{{ mcp_server_command }}"
+        server_args: "{{ mcp_server_args }}"
+        tool_name: find_files
+        tool_arguments:
+          pattern: "*.py"
+      register: test_find_py
+      when: transport == 'stdio'
+      tags: [phase2, metadata_tools]
+
+    - name: Record Test 4 result
+      ansible.builtin.set_fact:
+        test_results: "{{ test_results + [{'test': 'find_files (*.py)', 'status': 'PASS' if test_find_py.success | default(false) else 'FAIL', 'duration_ms': 0}] }}"
+        tests_passed: "{{ tests_passed + 1 if test_find_py.success | default(false) else tests_passed }}"
+        tests_failed: "{{ tests_failed + 1 if not test_find_py.success | default(false) else tests_failed }}"
+
+    - name: "TEST 5: search_code_advanced - Regex search"
+      tosin2013.mcp_audit.mcp_test_tool:
+        transport: "{{ transport }}"
+        server_url: "{{ mcp_server_url }}/sse"
+        server_headers:
+          Authorization: "Bearer {{ api_key }}"
+        tool_name: search_code_advanced
+        tool_arguments:
+          query: "class.*Service"
+          use_regex: true
+      register: test_search_regex
+      when: transport == 'sse'
+      tags: [phase2, metadata_tools]
+
+    - name: "TEST 5: search_code_advanced - Regex search (stdio)"
+      tosin2013.mcp_audit.mcp_test_tool:
+        transport: stdio
+        server_command: "{{ mcp_server_command }}"
+        server_args: "{{ mcp_server_args }}"
+        tool_name: search_code_advanced
+        tool_arguments:
+          query: "class.*Service"
+          use_regex: true
+      register: test_search_regex
+      when: transport == 'stdio'
+      tags: [phase2, metadata_tools]
+
+    - name: Record Test 5 result
+      ansible.builtin.set_fact:
+        test_results: "{{ test_results + [{'test': 'search_code_advanced (regex)', 'status': 'PASS' if test_search_regex.success | default(false) else 'FAIL', 'duration_ms': 0}] }}"
+        tests_passed: "{{ tests_passed + 1 if test_search_regex.success | default(false) else tests_passed }}"
+        tests_failed: "{{ tests_failed + 1 if not test_search_regex.success | default(false) else tests_failed }}"
+
+    # =========================================================================
+    # Phase 3: Cloud-Specific Tools (skip if stdio or AlloyDB not deployed)
+    # =========================================================================
+    - name: "TEST 6: semantic_search_code - Natural language search"
+      tosin2013.mcp_audit.mcp_test_tool:
+        transport: sse
+        server_url: "{{ mcp_server_url }}/sse"
+        server_headers:
+          Authorization: "Bearer {{ api_key }}"
+        tool_name: semantic_search_code
+        tool_arguments:
+          query: "function that handles user authentication"
+          language: "python"
+          top_k: 5
+      register: test_semantic
+      ignore_errors: yes
+      when:
+        - transport == 'sse'
+        - with_alloydb | default(false)
+      tags: [phase3, semantic_search, cloud_only]
+
+    - name: Record Test 6 result
+      ansible.builtin.set_fact:
+        test_results: "{{ test_results + [{'test': 'semantic_search_code', 'status': 'PASS' if test_semantic.success | default(false) else 'SKIPPED', 'duration_ms': 0}] }}"
+        tests_passed: "{{ tests_passed + 1 if test_semantic.success | default(false) else tests_passed }}"
+        tests_skipped: "{{ tests_skipped + 1 if not (test_semantic.success | default(false)) else tests_skipped }}"
+      when:
+        - transport == 'sse'
+        - with_alloydb | default(false)
+
+    - name: "TEST 7: find_similar_code - Code similarity search"
+      tosin2013.mcp_audit.mcp_test_tool:
+        transport: sse
+        server_url: "{{ mcp_server_url }}/sse"
+        server_headers:
+          Authorization: "Bearer {{ api_key }}"
+        tool_name: find_similar_code
+        tool_arguments:
+          code_snippet: "def authenticate(username, password):"
+          language: "python"
+          top_k: 5
+      register: test_similar
+      ignore_errors: yes
+      when:
+        - transport == 'sse'
+        - with_alloydb | default(false)
+      tags: [phase3, semantic_search, cloud_only]
+
+    - name: Record Test 7 result
+      ansible.builtin.set_fact:
+        test_results: "{{ test_results + [{'test': 'find_similar_code', 'status': 'PASS' if test_similar.success | default(false) else 'SKIPPED', 'duration_ms': 0}] }}"
+        tests_passed: "{{ tests_passed + 1 if test_similar.success | default(false) else tests_passed }}"
+        tests_skipped: "{{ tests_skipped + 1 if not (test_similar.success | default(false)) else tests_skipped }}"
+      when:
+        - transport == 'sse'
+        - with_alloydb | default(false)
+
+  post_tasks:
+    - name: Generate final test summary
+      ansible.builtin.set_fact:
+        final_summary:
+          environment: "{{ env_name | default('unknown') }}"
+          transport: "{{ transport }}"
+          timestamp: "{{ ansible_date_time.iso8601 }}"
+          total_tests: "{{ test_results | length }}"
+          passed: "{{ tests_passed }}"
+          failed: "{{ tests_failed }}"
+          skipped: "{{ tests_skipped }}"
+          pass_rate: "{{ (tests_passed | int * 100 / (test_results | length | int)) | round(1) if (test_results | length | int) > 0 else 0 }}"
+
+    - name: Display regression test summary
+      ansible.builtin.debug:
+        msg:
+          - "═══════════════════════════════════════════════════════"
+          - "📊 Regression Test Summary"
+          - "═══════════════════════════════════════════════════════"
+          - "Environment: {{ final_summary.environment }}"
+          - "Transport: {{ final_summary.transport }}"
+          - ""
+          - "Total Tests: {{ final_summary.total_tests }}"
+          - "✅ Passed: {{ final_summary.passed }}"
+          - "❌ Failed: {{ final_summary.failed }}"
+          - "⏭️  Skipped: {{ final_summary.skipped }}"
+          - "Pass Rate: {{ final_summary.pass_rate }}%"
+          - ""
+          - "Timestamp: {{ final_summary.timestamp }}"
+          - "═══════════════════════════════════════════════════════"
+
+    - name: Generate detailed test report
+      ansible.builtin.copy:
+        content: |
+          # Code Index MCP - Regression Test Report
+
+          **Date**: {{ ansible_date_time.iso8601 }}
+          **Environment**: {{ env_name | default('unknown') }}
+          **Transport**: {{ transport }}
+          {% if transport == 'sse' %}**Server URL**: {{ mcp_server_url }}{% endif %}
+
+          ## Summary
+
+          | Metric | Value |
+          |--------|-------|
+          | Total Tests | {{ final_summary.total_tests }} |
+          | ✅ Passed | {{ final_summary.passed }} |
+          | ❌ Failed | {{ final_summary.failed }} |
+          | ⏭️  Skipped | {{ final_summary.skipped }} |
+          | Pass Rate | {{ final_summary.pass_rate }}% |
+
+          ## Test Results
+
+          | # | Test | Status |
+          |---|------|--------|
+          {% for result in test_results %}| {{ loop.index }} | {{ result.test }} | {{ '✅ ' + result.status if result.status == 'PASS' else '❌ ' + result.status if result.status == 'FAIL' else '⏭️  ' + result.status }} |
+          {% endfor %}
+
+          ## Server Information
+
+          {% if test_server_info.success | default(false) %}
+          - **Server Name**: {{ test_server_info.server_info.server_name | default('N/A') }}
+          - **Protocol Version**: {{ test_server_info.server_info.protocol_version | default('N/A') }}
+          - **Capabilities**: {{ test_server_info.server_info.capabilities | default({}) | to_nice_yaml }}
+          {% else %}
+          Server information not available
+          {% endif %}
+
+          ## Recommendations
+
+          {% if final_summary.failed | int > 0 %}
+          ⚠️  **Action Required**: {{ final_summary.failed }} test(s) failed. Review failures before production deployment.
+          {% elif final_summary.pass_rate | float < 90 %}
+          ⚠️  **Warning**: Pass rate is below 90%. Consider investigating skipped tests.
+          {% else %}
+          ✅ **All systems operational**. Safe to proceed with deployment.
+          {% endif %}
+
+          ---
+          Generated by Code Index MCP Regression Test Suite
+        dest: "./regression-report-{{ env_name | default('unknown') }}-{{ ansible_date_time.epoch }}.md"
+      when: generate_detailed_report | default(true)
+
+    - name: Assert all critical tests passed
+      ansible.builtin.assert:
+        that:
+          - final_summary.failed | int == 0
+          - final_summary.pass_rate | float >= 80
+        success_msg: "✅ Regression test suite PASSED! All critical tests successful."
+        fail_msg: "❌ Regression test suite FAILED! {{ final_summary.failed }} test(s) failed or pass rate below 80%."
+      when: fail_on_error | default(true)
+
+    - name: Display next steps
+      ansible.builtin.debug:
+        msg:
+          - ""
+          - "═══════════════════════════════════════════════════════"
+          - "📋 Next Steps"
+          - "═══════════════════════════════════════════════════════"
+          - "{% if final_summary.failed | int == 0 %}✅ Safe to deploy to production{% else %}❌ Fix failures before deploying{% endif %}"
+          - ""
+          - "View detailed report: regression-report-{{ env_name | default('unknown') }}-{{ ansible_date_time.epoch }}.md"
+          - "═══════════════════════════════════════════════════════"

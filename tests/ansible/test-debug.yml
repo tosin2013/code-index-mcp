@@ -1,0 +1,21 @@
+---
+- name: Debug Test Variables
+  hosts: localhost
+  connection: local
+  
+  tasks:
+    - name: Run test
+      tosin2013.mcp_audit.mcp_server_info:
+        transport: sse
+        server_url: "https://code-index-mcp-dev-920209401641.us-east1.run.app/sse"
+        server_headers:
+          Authorization: "Bearer ***REMOVED***"
+      register: test_result
+    
+    - name: Display test result
+      ansible.builtin.debug:
+        var: test_result
+    
+    - name: Display success value
+      ansible.builtin.debug:
+        msg: "Success: {{ test_result.success }}"

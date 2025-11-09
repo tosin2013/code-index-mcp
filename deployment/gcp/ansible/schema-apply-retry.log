@@ -1,0 +1,88 @@
+[WARNING]: Deprecation warnings can be disabled by setting `deprecation_warnings=False` in ansible.cfg.
+[DEPRECATION WARNING]: DEFAULT_UNDEFINED_VAR_BEHAVIOR option. Reason: This option is no longer used in the Ansible Core code base.
+Alternatives: There is no alternative at the moment. A different mechanism would have to be implemented in the current code base. This feature will be removed from ansible-core version 2.23.
+
+[DEPRECATION WARNING]: community.general.yaml has been deprecated. The plugin has been superseded by the option `result_format=yaml` in callback plugin ansible.builtin.default from ansible-core 2.13 onwards. This feature will be removed from collection 'community.general' version 12.0.0.
+
+PLAY [Code Index MCP - Utilities] **********************************************
+
+TASK [Display utility operation info] ******************************************
+ok: [localhost] => 
+  msg:
+  - ========================================
+  - '  Code Index MCP - Utilities'
+  - ========================================
+  - 'Operation: apply_schema'
+  - 'Environment: dev'
+  - 'Project: tosinscloud'
+  - ========================================
+
+TASK [utilities : Include schema application tasks] ****************************
+included: /Users/tosinakinosho/workspaces/code-index-mcp/deployment/gcp/ansible/roles/utilities/tasks/apply_schema.yml for localhost
+
+TASK [utilities : Display schema application info] *****************************
+ok: [localhost] => 
+  msg:
+  - ========================================
+  - '  Apply AlloyDB Schema'
+  - ========================================
+  - 'Project: tosinscloud'
+  - 'Environment: dev'
+  - 'Schema File: ../../alloydb-schema.sql'
+  - 'Method: Cloud Shell (VPC access)'
+
+TASK [utilities : Check if schema file exists] *********************************
+ok: [localhost]
+
+TASK [utilities : Upload schema file to Cloud Shell] ***************************
+changed: [localhost]
+
+TASK [utilities : Upload application script to Cloud Shell] ********************
+changed: [localhost]
+
+TASK [utilities : Execute schema application in Cloud Shell] *******************
+changed: [localhost]
+
+TASK [utilities : Display schema application output] ***************************
+ok: [localhost] => 
+  msg:
+  - ========================================
+  - '  Apply AlloyDB Schema via Cloud Shell'
+  - ========================================
+  - 'Project: tosinscloud'
+  - 'Environment: dev'
+  - 'Region: us-east1'
+  - ''
+  - "\U0001F4E6 Installing dependencies..."
+  - "\U0001F510 Fetching connection string..."
+  - ''
+  - "\U0001F680 Applying schema to AlloyDB..."
+  - "\U0001F50C Connecting to AlloyDB..."
+  - '   Host: 10.22.0.2'
+  - '   Database: postgres'
+  - '   User: postgres'
+  - '❌ Connection failed: connection to server at "10.22.0.2", port 5432 failed: timeout expired'
+
+TASK [utilities : Cleanup Cloud Shell temp files] ******************************
+ok: [localhost]
+
+TASK [utilities : Final success message] ***************************************
+ok: [localhost] => 
+  msg:
+  - ''
+  - ════════════════════════════════════════
+  - ✅ AlloyDB Schema Application Complete
+  - ════════════════════════════════════════
+  - 'Environment: dev'
+  - 'Database: code_index'
+  - 'Method: Cloud Shell (VPC access)'
+  - ''
+  - 'Next steps:'
+  - '  1. Test semantic search: semantic_search_code()'
+  - '  2. Ingest test repo: ingest_code_from_git()'
+  - '  3. Run cloud tests: ansible-playbook test-cloud.yml'
+  - ''
+
+PLAY RECAP *********************************************************************
+localhost                  : ok=10   changed=3    unreachable=0    failed=0    skipped=12   rescued=0    ignored=0   
+

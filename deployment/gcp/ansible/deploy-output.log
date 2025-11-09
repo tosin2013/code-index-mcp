@@ -1,0 +1,282 @@
+[WARNING]: Deprecation warnings can be disabled by setting `deprecation_warnings=False` in ansible.cfg.
+[DEPRECATION WARNING]: DEFAULT_UNDEFINED_VAR_BEHAVIOR option. Reason: This option is no longer used in the Ansible Core code base.
+Alternatives: There is no alternative at the moment. A different mechanism would have to be implemented in the current code base. This feature will be removed from ansible-core version 2.23.
+
+[DEPRECATION WARNING]: community.general.yaml has been deprecated. The plugin has been superseded by the option `result_format=yaml` in callback plugin ansible.builtin.default from ansible-core 2.13 onwards. This feature will be removed from collection 'community.general' version 12.0.0.
+
+PLAY [Deploy Code Index MCP Server to Google Cloud Run] ************************
+
+TASK [Gathering Facts] *********************************************************
+ok: [localhost]
+
+TASK [Display deployment information] ******************************************
+ok: [localhost] => 
+  msg:
+  - ===================================
+  - Code Index MCP Deployment
+  - ===================================
+  - 'Project: tosinscloud'
+  - 'Environment: dev'
+  - 'Region: us-east1'
+  - 'Service: code-index-mcp-dev'
+  - 'AlloyDB: enabled'
+  - ===================================
+
+TASK [code-index-mcp : Validate required variables] ****************************
+ok: [localhost] => changed=false 
+  msg: Configuration validated for dev environment
+
+TASK [code-index-mcp : Display deployment configuration] ***********************
+ok: [localhost] => 
+  msg:
+  - Deploying Code Index MCP Server
+  - 'Project: tosinscloud'
+  - 'Environment: dev'
+  - 'Region: us-east1'
+  - 'Service: code-index-mcp-dev'
+  - 'AlloyDB: enabled'
+
+TASK [code-index-mcp : Include prerequisite tasks] *****************************
+included: /Users/tosinakinosho/workspaces/code-index-mcp/deployment/gcp/ansible/roles/code-index-mcp/tasks/prerequisites.yml for localhost
+
+TASK [code-index-mcp : Check gcloud CLI is installed] **************************
+ok: [localhost]
+
+TASK [code-index-mcp : Get current GCP project] ********************************
+ok: [localhost]
+
+TASK [code-index-mcp : Enable required GCP APIs] *******************************
+changed: [localhost] => (item=run.googleapis.com)
+changed: [localhost] => (item=cloudbuild.googleapis.com)
+changed: [localhost] => (item=secretmanager.googleapis.com)
+changed: [localhost] => (item=storage.googleapis.com)
+changed: [localhost] => (item=cloudscheduler.googleapis.com)
+changed: [localhost] => (item=artifactregistry.googleapis.com)
+changed: [localhost] => (item=vpcaccess.googleapis.com)
+changed: [localhost] => (item=compute.googleapis.com)
+changed: [localhost] => (item=aiplatform.googleapis.com)
+Pausing for 10 seconds
+
+TASK [code-index-mcp : Wait for APIs to be fully enabled] **********************
+ok: [localhost]
+
+TASK [code-index-mcp : Create Artifact Registry repository] ********************
+ok: [localhost]
+
+TASK [code-index-mcp : Configure Docker for Artifact Registry] *****************
+ok: [localhost]
+
+TASK [code-index-mcp : Check if VPC connector exists (when AlloyDB enabled)] ***
+ok: [localhost]
+
+TASK [code-index-mcp : Display VPC connector status] ***************************
+ok: [localhost] => 
+  msg: VPC connector 'alloydb-connector' will be created by Terraform
+
+TASK [code-index-mcp : Include AlloyDB provisioning tasks (if AlloyDB enabled)] ***
+included: /Users/tosinakinosho/workspaces/code-index-mcp/deployment/gcp/ansible/roles/code-index-mcp/tasks/provision_alloydb.yml for localhost
+
+TASK [code-index-mcp : Check if Terraform is installed] ************************
+ok: [localhost]
+
+TASK [code-index-mcp : Set Terraform directory] ********************************
+ok: [localhost]
+
+TASK [code-index-mcp : Check if Terraform state exists] ************************
+ok: [localhost]
+
+TASK [code-index-mcp : Display AlloyDB provisioning information] ***************
+ok: [localhost] => 
+  msg:
+  - ===================================
+  - AlloyDB Provisioning
+  - ===================================
+  - 'Project: tosinscloud'
+  - 'Region: us-east1'
+  - 'Environment: dev'
+  - 'Terraform state: exists'
+  - ''
+  - 'Estimated cost: ~$179-185/month'
+  - '  - AlloyDB (2 vCPU, 16 GB): ~$164/month'
+  - '  - Storage (10 GB): ~$2/month'
+  - '  - Backups: ~$1/month'
+  - '  - VPC Connector: ~$7/month'
+  - '  - Network: ~$5/month'
+  - ===================================
+
+TASK [code-index-mcp : Check if .terraform directory exists] *******************
+ok: [localhost]
+
+TASK [code-index-mcp : Plan Terraform changes] *********************************
+ok: [localhost]
+
+TASK [code-index-mcp : Display Terraform plan summary] *************************
+ok: [localhost] => 
+  msg:
+  - '        - AlloyDB Instance (2 vCPU, 16 GB): ~$164/month (minimum allowed)'
+  - '        - Storage (10 GB SSD): ~$2/month'
+  - '        - Backups (7 daily): ~$1/month'
+  - '        - VPC Connector: ~$7/month'
+  - '        - Network Egress: ~$5/month (estimated)'
+  - '            '
+  - '        Total: ~$179-185/month'
+  - '            '
+  - '        Note: Scale to production (4 vCPU, 32 GB, 100 GB) = ~$340/month'
+  - '    EOT'
+  - "  \e[32m+\e[0m\e[0m primary_instance_ip      = (sensitive value)"
+  - "  \e[32m+\e[0m\e[0m primary_instance_name    = (known after apply)"
+  - "  \e[32m+\e[0m\e[0m vpc_connector_name       = \"alloydb-connector\""
+  - "\e[90m"
+  - "─────────────────────────────────────────────────────────────────────────────\e[0m"
+  - ''
+  - 'Saved the plan to: /tmp/tfplan'
+  - ''
+  - 'To perform exactly these actions, run the following command to apply:'
+  - '    terraform apply "/tmp/tfplan"'
+
+TASK [code-index-mcp : Check if changes are needed] ****************************
+ok: [localhost]
+
+TASK [code-index-mcp : Display Terraform status] *******************************
+ok: [localhost] => 
+  msg: Terraform changes detected - will apply
+ASYNC POLL on localhost: jid=j308670423620.70233 started=True finished=False
+ASYNC POLL on localhost: jid=j308670423620.70233 started=True finished=False
+ASYNC POLL on localhost: jid=j308670423620.70233 started=True finished=False
+ASYNC POLL on localhost: jid=j308670423620.70233 started=True finished=False
+ASYNC POLL on localhost: jid=j308670423620.70233 started=True finished=False
+ASYNC POLL on localhost: jid=j308670423620.70233 started=True finished=False
+ASYNC POLL on localhost: jid=j308670423620.70233 started=True finished=False
+ASYNC POLL on localhost: jid=j308670423620.70233 started=True finished=False
+ASYNC POLL on localhost: jid=j308670423620.70233 started=True finished=False
+ASYNC POLL on localhost: jid=j308670423620.70233 started=True finished=False
+ASYNC POLL on localhost: jid=j308670423620.70233 started=True finished=False
+ASYNC POLL on localhost: jid=j308670423620.70233 started=True finished=False
+ASYNC POLL on localhost: jid=j308670423620.70233 started=True finished=False
+ASYNC POLL on localhost: jid=j308670423620.70233 started=True finished=False
+ASYNC POLL on localhost: jid=j308670423620.70233 started=True finished=False
+ASYNC POLL on localhost: jid=j308670423620.70233 started=True finished=False
+ASYNC POLL on localhost: jid=j308670423620.70233 started=True finished=False
+ASYNC POLL on localhost: jid=j308670423620.70233 started=True finished=False
+ASYNC POLL on localhost: jid=j308670423620.70233 started=True finished=False
+ASYNC POLL on localhost: jid=j308670423620.70233 started=True finished=False
+ASYNC POLL on localhost: jid=j308670423620.70233 started=True finished=False
+ASYNC POLL on localhost: jid=j308670423620.70233 started=True finished=False
+ASYNC POLL on localhost: jid=j308670423620.70233 started=True finished=False
+ASYNC POLL on localhost: jid=j308670423620.70233 started=True finished=False
+ASYNC POLL on localhost: jid=j308670423620.70233 started=True finished=False
+ASYNC POLL on localhost: jid=j308670423620.70233 started=True finished=False
+ASYNC POLL on localhost: jid=j308670423620.70233 started=True finished=False
+ASYNC POLL on localhost: jid=j308670423620.70233 started=True finished=False
+ASYNC POLL on localhost: jid=j308670423620.70233 started=True finished=False
+ASYNC POLL on localhost: jid=j308670423620.70233 started=True finished=False
+ASYNC POLL on localhost: jid=j308670423620.70233 started=True finished=False
+ASYNC POLL on localhost: jid=j308670423620.70233 started=True finished=False
+ASYNC POLL on localhost: jid=j308670423620.70233 started=True finished=False
+ASYNC POLL on localhost: jid=j308670423620.70233 started=True finished=False
+ASYNC POLL on localhost: jid=j308670423620.70233 started=True finished=False
+ASYNC POLL on localhost: jid=j308670423620.70233 started=True finished=False
+ASYNC POLL on localhost: jid=j308670423620.70233 started=True finished=False
+ASYNC POLL on localhost: jid=j308670423620.70233 started=True finished=False
+ASYNC POLL on localhost: jid=j308670423620.70233 started=True finished=False
+ASYNC POLL on localhost: jid=j308670423620.70233 started=True finished=False
+ASYNC POLL on localhost: jid=j308670423620.70233 started=True finished=False
+ASYNC POLL on localhost: jid=j308670423620.70233 started=True finished=False
+ASYNC POLL on localhost: jid=j308670423620.70233 started=True finished=False
+ASYNC POLL on localhost: jid=j308670423620.70233 started=True finished=False
+ASYNC POLL on localhost: jid=j308670423620.70233 started=True finished=False
+ASYNC POLL on localhost: jid=j308670423620.70233 started=True finished=False
+ASYNC POLL on localhost: jid=j308670423620.70233 started=True finished=False
+ASYNC POLL on localhost: jid=j308670423620.70233 started=True finished=False
+ASYNC POLL on localhost: jid=j308670423620.70233 started=True finished=False
+ASYNC POLL on localhost: jid=j308670423620.70233 started=True finished=False
+ASYNC POLL on localhost: jid=j308670423620.70233 started=True finished=False
+ASYNC POLL on localhost: jid=j308670423620.70233 started=True finished=False
+ASYNC POLL on localhost: jid=j308670423620.70233 started=True finished=False
+ASYNC OK on localhost: jid=j308670423620.70233
+
+TASK [code-index-mcp : Apply Terraform configuration] **************************
+changed: [localhost]
+
+TASK [code-index-mcp : Get Terraform outputs] **********************************
+ok: [localhost]
+
+TASK [code-index-mcp : Parse Terraform outputs] ********************************
+ok: [localhost]
+
+TASK [code-index-mcp : Display AlloyDB provisioning results] *******************
+ok: [localhost] => 
+  msg:
+  - ✅ AlloyDB provisioned successfully
+  - 'Cluster: projects/tosinscloud/locations/us-east1/clusters/code-index-cluster-dev'
+  - 'Instance: projects/tosinscloud/locations/us-east1/clusters/code-index-cluster-dev/instances/code-index-primary-dev'
+  - 'VPC Connector: alloydb-connector'
+  - 'Password Secret: projects/920209401641/secrets/alloydb-password-dev'
+
+TASK [code-index-mcp : Wait for AlloyDB instance to be ready] ******************
+ok: [localhost]
+
+TASK [code-index-mcp : Confirm AlloyDB is ready] *******************************
+ok: [localhost] => 
+  msg: ✅ AlloyDB instance is READY and accepting connections
+
+TASK [code-index-mcp : Include schema application tasks (if AlloyDB enabled)] ***
+included: /Users/tosinakinosho/workspaces/code-index-mcp/deployment/gcp/ansible/roles/code-index-mcp/tasks/apply_schema.yml for localhost
+
+TASK [code-index-mcp : Check if schema file exists] ****************************
+ok: [localhost]
+
+TASK [code-index-mcp : Copy schema file to build context] **********************
+ok: [localhost]
+
+TASK [code-index-mcp : Create schema applier Python script] ********************
+ok: [localhost]
+
+TASK [code-index-mcp : Create schema applier Dockerfile] ***********************
+ok: [localhost]
+
+TASK [code-index-mcp : Build schema applier Docker image] **********************
+[ERROR]: Task failed: Module failed: non-zero return code
+Origin: /Users/tosinakinosho/workspaces/code-index-mcp/deployment/gcp/ansible/roles/code-index-mcp/tasks/apply_schema.yml:31:3
+
+29     dest: "/tmp/Dockerfile.schema"
+30
+31 - name: Build schema applier Docker image
+     ^ column 3
+
+fatal: [localhost]: FAILED! => changed=false 
+  cmd:
+  - docker
+  - buildx
+  - build
+  - --platform
+  - linux/amd64
+  - -t
+  - us-east1-docker.pkg.dev/tosinscloud/code-index/alloydb-schema-applier:latest
+  - -f
+  - /tmp/Dockerfile.schema
+  - /tmp
+  delta: '0:00:00.320725'
+  end: '2025-11-06 13:37:45.375740'
+  msg: non-zero return code
+  rc: 1
+  start: '2025-11-06 13:37:45.055015'
+  stderr: |-
+    #0 building with "desktop-linux" instance using docker driver
+  
+    #1 [internal] load build definition from Dockerfile.schema
+    #1 transferring dockerfile: 396B done
+    #1 ERROR: error from sender: failed to xattr /private/tmp/tmp-mount-8f8Ngx: permission denied
+    ------
+     > [internal] load build definition from Dockerfile.schema:
+    ------
+    ERROR: failed to build: failed to solve: failed to read dockerfile: error from sender: failed to xattr /private/tmp/tmp-mount-8f8Ngx: permission denied
+  
+    View build details: docker-desktop://dashboard/build/desktop-linux/desktop-linux/atci6h3bh290jjqq71fsr28r2
+  stderr_lines: <omitted>
+  stdout: ''
+  stdout_lines: <omitted>
+
+PLAY RECAP *********************************************************************
+localhost                  : ok=34   changed=2    unreachable=0    failed=1    skipped=7    rescued=0    ignored=0   
+

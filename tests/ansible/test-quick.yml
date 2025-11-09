@@ -1,0 +1,158 @@
+---
+# Quick Test - Code Index MCP Server (Local stdio Mode)
+# Simplified test that focuses on tool functionality
+
+- name: Quick Test - Code Index MCP Server
+  hosts: localhost
+  connection: local
+  gather_facts: yes
+
+  pre_tasks:
+    - name: Display test configuration
+      ansible.builtin.debug:
+        msg:
+          - "Transport: {{ transport }}"
+          - "Server Command: {{ mcp_server_command }}"
+          - "Server Args: {{ mcp_server_args }}"
+          - "Test Project: {{ test_project_path }}"
+
+    - name: Create test project directory
+      ansible.builtin.file:
+        path: "{{ test_project_path }}"
+        state: directory
+        mode: '0755'
+
+    - name: Create sample Python file for testing
+      ansible.builtin.copy:
+        content: |
+          """Sample Python module for testing."""
+
+          def authenticate_user(username, password):
+              """Authenticate a user with username and password."""
+              # Implementation here
+              return True
+
+          class UserService:
+              """Service for managing users."""
+
+              def create_user(self, username):
+                  """Create a new user."""
+                  pass
+
+              def delete_user(self, username):
+                  """Delete an existing user."""
+                  pass
+        dest: "{{ test_project_path }}/sample.py"
+        mode: '0644'
+
+  tasks:
+    # Test 1: Get server information
+    - name: "Test 1: Get server information"
+      tosin2013.mcp_audit.mcp_server_info:
+        transport: stdio
+        server_command: "{{ mcp_server_command }}"
+        server_args: "{{ mcp_server_args }}"
+      register: server_info_result
+      ignore_errors: yes
+
+    - name: Display server info
+      ansible.builtin.debug:
+        msg:
+          - "✅ Server discovered"
+          - "Available tools: {{ server_info_result.server_info.available_tools | default(0) }}"
+          - "Available resources: {{ server_info_result.server_info.available_resources | default(0) }}"
+      when: server_info_result.success | default(false)
+
+    # Test 2: Set project path
+    - name: "Test 2: Set project path"
+      tosin2013.mcp_audit.mcp_test_tool:
+        transport: stdio
+        server_command: "{{ mcp_server_command }}"
+        server_args: "{{ mcp_server_args }}"
+        tool_name: set_project_path
+        tool_arguments:
+          path: "{{ test_project_path }}"
+      register: set_path_result
+      ignore_errors: yes
+
+    - name: Display set_project_path result
+      ansible.builtin.debug:
+        msg: "{% if set_path_result.success | default(false) %}✅ set_project_path PASSED{% else %}❌ set_project_path FAILED: {{ set_path_result.error | default('Unknown error') }}{% endif %}"
+
+    # Test 3: Refresh index
+    - name: "Test 3: Refresh index"
+      tosin2013.mcp_audit.mcp_test_tool:
+        transport: stdio
+        server_command: "{{ mcp_server_command }}"
+        server_args: "{{ mcp_server_args }}"
+        tool_name: refresh_index
+        tool_arguments: {}
+      register: refresh_result
+      ignore_errors: yes
+
+    - name: Display refresh_index result
+      ansible.builtin.debug:
+        msg: "{% if refresh_result.success | default(false) %}✅ refresh_index PASSED{% else %}❌ refresh_index FAILED: {{ refresh_result.error | default('Unknown error') }}{% endif %}"
+
+    # Test 4: Find files
+    - name: "Test 4: Find files (*.py)"
+      tosin2013.mcp_audit.mcp_test_tool:
+        transport: stdio
+        server_command: "{{ mcp_server_command }}"
+        server_args: "{{ mcp_server_args }}"
+        tool_name: find_files
+        tool_arguments:
+          pattern: "*.py"
+      register: find_files_result
+      ignore_errors: yes
+
+    - name: Display find_files result
+      ansible.builtin.debug:
+        msg: "{% if find_files_result.success | default(false) %}✅ find_files PASSED - Found: {{ find_files_result.tool_result | string }}{% else %}❌ find_files FAILED: {{ find_files_result.error | default('Unknown error') }}{% endif %}"
+
+    # Test 5: Search code
+    - name: "Test 5: Search code (def authenticate)"
+      tosin2013.mcp_audit.mcp_test_tool:
+        transport: stdio
+        server_command: "{{ mcp_server_command }}"
+        server_args: "{{ mcp_server_args }}"
+        tool_name: search_code_advanced
+        tool_arguments:
+          query: "def authenticate"
+          use_regex: true
+      register: search_result
+      ignore_errors: yes
+
+    - name: Display search_code_advanced result
+      ansible.builtin.debug:
+        msg: "{% if search_result.success | default(false) %}✅ search_code_advanced PASSED{% else %}❌ search_code_advanced FAILED: {{ search_result.error | default('Unknown error') }}{% endif %}"
+
+  post_tasks:
+    - name: Calculate test results
+      ansible.builtin.set_fact:
+        tests_run: 5
+        tests_passed: "{{ [
+          server_info_result.success | default(false),
+          set_path_result.success | default(false),
+          refresh_result.success | default(false),
+          find_files_result.success | default(false),
+          search_result.success | default(false)
+        ] | select | list | length }}"
+
+    - name: Display test summary
+      ansible.builtin.debug:
+        msg:
+          - "═══════════════════════════════════════"
+          - "📊 MCP Server Test Summary"
+          - "═══════════════════════════════════════"
+          - "Tests Run: {{ tests_run }}"
+          - "Tests Passed: {{ tests_passed }}"
+          - "Tests Failed: {{ tests_run | int - tests_passed | int }}"
+          - "Success Rate: {{ ((tests_passed | int / tests_run | int) * 100) | round(1) }}%"
+          - "═══════════════════════════════════════"
+
+    - name: Cleanup test project
+      ansible.builtin.file:
+        path: "{{ test_project_path }}"
+        state: absent
+      when: cleanup_test_data | default(true)

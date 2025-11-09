@@ -12,29 +12,29 @@ pub const GOLDEN_RATIO: f64 = 1.61803398874989484820;
 pub const Complex = struct {
     real: f64,
     imag: f64,
-    
+
     pub fn init(real: f64, imag: f64) Complex {
         return Complex{ .real = real, .imag = imag };
     }
-    
+
     pub fn add(self: Complex, other: Complex) Complex {
         return Complex{
             .real = self.real + other.real,
             .imag = self.imag + other.imag,
         };
     }
-    
+
     pub fn multiply(self: Complex, other: Complex) Complex {
         return Complex{
             .real = self.real * other.real - self.imag * other.imag,
             .imag = self.real * other.imag + self.imag * other.real,
         };
     }
-    
+
     pub fn magnitude(self: Complex) f64 {
         return @sqrt(self.real * self.real + self.imag * self.imag);
     }
-    
+
     pub fn conjugate(self: Complex) Complex {
         return Complex{ .real = self.real, .imag = -self.imag };
     }
@@ -44,17 +44,17 @@ pub const Complex = struct {
 pub const Point2D = struct {
     x: f64,
     y: f64,
-    
+
     pub fn init(x: f64, y: f64) Point2D {
         return Point2D{ .x = x, .y = y };
     }
-    
+
     pub fn distance(self: Point2D, other: Point2D) f64 {
         const dx = self.x - other.x;
         const dy = self.y - other.y;
         return @sqrt(dx * dx + dy * dy);
     }
-    
+
     pub fn midpoint(self: Point2D, other: Point2D) Point2D {
         return Point2D{
             .x = (self.x + other.x) / 2.0,
@@ -67,24 +67,24 @@ pub const Point2D = struct {
 pub const Statistics = struct {
     pub fn mean(values: []const f64) f64 {
         if (values.len == 0) return 0.0;
-        
+
         var sum: f64 = 0.0;
         for (values) |value| {
             sum += value;
         }
-        
+
         return sum / @as(f64, @floatFromInt(values.len));
     }
-    
+
     pub fn median(values: []const f64, buffer: []f64) f64 {
         if (values.len == 0) return 0.0;
-        
+
         // Copy to buffer and sort
         for (values, 0..) |value, i| {
             buffer[i] = value;
         }
         std.sort.insertionSort(f64, buffer[0..values.len], {}, std.sort.asc(f64));
-        
+
         const n = values.len;
         if (n % 2 == 1) {
             return buffer[n / 2];
@@ -92,18 +92,18 @@ pub const Statistics = struct {
             return (buffer[n / 2 - 1] + buffer[n / 2]) / 2.0;
         }
     }
-    
+
     pub fn standardDeviation(values: []const f64) f64 {
         if (values.len <= 1) return 0.0;
-        
+
         const avg = mean(values);
         var sum_sq_diff: f64 = 0.0;
-        
+
         for (values) |value| {
             const diff = value - avg;
             sum_sq_diff += diff * diff;
         }
-        
+
         return @sqrt(sum_sq_diff / @as(f64, @floatFromInt(values.len - 1)));
     }
 };
@@ -132,12 +132,12 @@ pub fn isPrime(n: u32) bool {
     if (n < 2) return false;
     if (n == 2) return true;
     if (n % 2 == 0) return false;
-    
+
     var i: u32 = 3;
     while (i * i <= n) : (i += 2) {
         if (n % i == 0) return false;
     }
-    
+
     return true;
 }
 
@@ -149,11 +149,11 @@ pub fn calculateSum(a: i32, b: i32) i32 {
 pub fn power(base: f64, exponent: i32) f64 {
     if (exponent == 0) return 1.0;
     if (exponent < 0) return 1.0 / power(base, -exponent);
-    
+
     var result: f64 = 1.0;
     var exp = exponent;
     var b = base;
-    
+
     while (exp > 0) {
         if (exp % 2 == 1) {
             result *= b;
@@ -161,14 +161,14 @@ pub fn power(base: f64, exponent: i32) f64 {
         b *= b;
         exp /= 2;
     }
-    
+
     return result;
 }
 
 // Matrix operations (2x2 for simplicity)
 pub const Matrix2x2 = struct {
     data: [2][2]f64,
-    
+
     pub fn init(a: f64, b: f64, c: f64, d: f64) Matrix2x2 {
         return Matrix2x2{
             .data = [_][2]f64{
@@ -177,7 +177,7 @@ pub const Matrix2x2 = struct {
             },
         };
     }
-    
+
     pub fn multiply(self: Matrix2x2, other: Matrix2x2) Matrix2x2 {
         return Matrix2x2{
             .data = [_][2]f64{
@@ -192,7 +192,7 @@ pub const Matrix2x2 = struct {
             },
         };
     }
-    
+
     pub fn determinant(self: Matrix2x2) f64 {
         return self.data[0][0] * self.data[1][1] - self.data[0][1] * self.data[1][0];
     }
@@ -202,11 +202,11 @@ pub const Matrix2x2 = struct {
 test "complex number operations" {
     const z1 = Complex.init(3.0, 4.0);
     const z2 = Complex.init(1.0, 2.0);
-    
+
     const sum = z1.add(z2);
     try std.testing.expectEqual(@as(f64, 4.0), sum.real);
     try std.testing.expectEqual(@as(f64, 6.0), sum.imag);
-    
+
     const magnitude = z1.magnitude();
     try std.testing.expectApproxEqAbs(@as(f64, 5.0), magnitude, 0.0001);
 }
@@ -214,7 +214,7 @@ test "complex number operations" {
 test "point distance calculation" {
     const p1 = Point2D.init(0.0, 0.0);
     const p2 = Point2D.init(3.0, 4.0);
-    
+
     const dist = p1.distance(p2);
     try std.testing.expectApproxEqAbs(@as(f64, 5.0), dist, 0.0001);
 }
@@ -240,10 +240,10 @@ test "prime number detection" {
 
 test "statistics calculations" {
     const values = [_]f64{ 1.0, 2.0, 3.0, 4.0, 5.0 };
-    
+
     const avg = Statistics.mean(&values);
     try std.testing.expectEqual(@as(f64, 3.0), avg);
-    
+
     var buffer: [10]f64 = undefined;
     const med = Statistics.median(&values, &buffer);
     try std.testing.expectEqual(@as(f64, 3.0), med);
@@ -252,11 +252,11 @@ test "statistics calculations" {
 test "matrix operations" {
     const m1 = Matrix2x2.init(1.0, 2.0, 3.0, 4.0);
     const m2 = Matrix2x2.init(5.0, 6.0, 7.0, 8.0);
-    
+
     const product = m1.multiply(m2);
     try std.testing.expectEqual(@as(f64, 19.0), product.data[0][0]);
     try std.testing.expectEqual(@as(f64, 22.0), product.data[0][1]);
-    
+
     const det = m1.determinant();
     try std.testing.expectEqual(@as(f64, -2.0), det);
 }

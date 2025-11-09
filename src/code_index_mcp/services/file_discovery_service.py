@@ -5,16 +5,17 @@ This service handles the business logic for finding files using the new
 JSON-based indexing system optimized for LLM consumption.
 """
 
-from typing import Dict, Any, List, Optional
 from dataclasses import dataclass
+from typing import Any, Dict, List, Optional
 
-from .base_service import BaseService
 from ..indexing import get_shallow_index_manager
+from .base_service import BaseService
 
 
 @dataclass
 class FileDiscoveryResult:
     """Business result for file discovery operations."""
+
     files: List[str]
     total_count: int
     pattern_used: str
@@ -53,11 +54,11 @@ class FileDiscoveryService(BaseService):
 
         # Get files from JSON index
         files = self._index_manager.find_files(pattern)
-        
+
         # Apply max_results limit if specified
         if max_results and len(files) > max_results:
             files = files[:max_results]
-        
+
         return files
 
     def _validate_discovery_request(self, pattern: str) -> None:

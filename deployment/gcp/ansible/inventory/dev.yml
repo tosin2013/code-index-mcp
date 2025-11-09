@@ -1,0 +1,42 @@
+---
+# Development Environment Inventory
+
+all:
+  hosts:
+    localhost:
+      ansible_connection: local
+      ansible_python_interpreter: "{{ ansible_playbook_python }}"
+
+  vars:
+    # Environment
+    env_name: "dev"
+
+    # GCP Configuration
+    gcp_project_id: "tosinscloud"
+    gcp_region: "us-east1"
+
+    # Cloud Run Configuration (smaller for dev)
+    cloudrun_cpu: "1"
+    cloudrun_memory: "1Gi"
+    cloudrun_min_instances: 0
+    cloudrun_max_instances: 5
+    cloudrun_concurrency: 50
+
+    # Cloud Run Service URL (set after deployment)
+    cloudrun_service_url: "https://code-index-mcp-dev-920209401641.us-east1.run.app"
+
+    # AlloyDB Configuration
+    with_alloydb: true
+    vpc_connector_name: "alloydb-connector"
+
+    # Development-specific settings
+    allow_unauthenticated: true  # For testing
+    enable_auto_cleanup: false  # Manual cleanup in dev
+    log_level: "DEBUG"
+
+    # Build Configuration
+    use_cloud_build: true
+    build_machine_type: "E2_HIGHCPU_8"  # Valid Cloud Build machine type
+
+    # Storage
+    bucket_lifecycle_days: 7  # Aggressive cleanup in dev

@@ -1,0 +1,69 @@
+---
+# Prerequisite tasks - API enablement and validation
+
+- name: Check gcloud CLI is installed
+  ansible.builtin.command: gcloud --version
+  register: gcloud_check
+  changed_when: false
+  failed_when: gcloud_check.rc != 0
+
+- name: Get current GCP project
+  ansible.builtin.command: gcloud config get-value project
+  register: current_project
+  changed_when: false
+  failed_when: current_project.stdout != gcp_project_id
+
+- name: Enable required GCP APIs
+  ansible.builtin.command: >
+    gcloud services enable {{ item }}
+    --project={{ gcp_project_id }}
+  loop: "{{ required_apis }}"
+  register: api_enable
+  changed_when: "'Enabled' in api_enable.stdout or 'already enabled' not in api_enable.stdout"
+  failed_when: api_enable.rc != 0
+
+- name: Wait for APIs to be fully enabled
+  ansible.builtin.pause:
+    seconds: 10
+  when: api_enable is changed
+
+- name: Create Artifact Registry repository
+  ansible.builtin.command: >
+    gcloud artifacts repositories describe code-index
+    --location={{ gcp_region }}
+    --project={{ gcp_project_id }}
+  register: registry_check
+  changed_when: false
+  failed_when: false
+
+- name: Create Artifact Registry if not exists
+  ansible.builtin.command: >
+    gcloud artifacts repositories create code-index
+    --repository-format=docker
+    --location={{ gcp_region }}
+    --description="Docker images for Code Index MCP"
+    --project={{ gcp_project_id }}
+  when: registry_check.rc != 0
+  register: registry_create
+  changed_when: registry_create.rc == 0
+
+- name: Configure Docker for Artifact Registry
+  ansible.builtin.command: >
+    gcloud auth configure-docker {{ gcp_region }}-docker.pkg.dev
+    --quiet
+  changed_when: false
+
+- name: Check if VPC connector exists (when AlloyDB enabled)
+  ansible.builtin.command: >
+    gcloud compute networks vpc-access connectors describe {{ vpc_connector_name }}
+    --region={{ gcp_region }}
+    --project={{ gcp_project_id }}
+  register: vpc_connector_check
+  changed_when: false
+  failed_when: false
+  when: with_alloydb | bool
+
+- name: Display VPC connector status
+  ansible.builtin.debug:
+    msg: "VPC connector '{{ vpc_connector_name }}' {{ 'already exists' if vpc_connector_check.rc == 0 else 'will be created by Terraform' }}"
+  when: with_alloydb | bool

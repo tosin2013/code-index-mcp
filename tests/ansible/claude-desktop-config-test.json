@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "code-index-semantic-search": {
+      "url": "https://code-index-mcp-test-cjshzpy4wq-ue.a.run.app/sse",
+      "transport": "sse"
+    }
+  }
+}

@@ -8,34 +8,34 @@ This version uses a service-oriented architecture where MCP decorators delegate
 to domain-specific services for business logic.
 """
 
+import logging
+
 # Standard library imports
 import os
 import sys
-import logging
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import AsyncIterator, Dict, Any, List
+from typing import Any, AsyncIterator, Dict, List
+
+import psycopg2
 
 # Third-party imports
-from mcp.server.fastmcp import FastMCP, Context
-import psycopg2
+from mcp.server.fastmcp import Context, FastMCP
+
+from .middleware.auth import AuthenticationError, AuthMiddleware, require_authentication
 
 # Local imports
 from .project_settings import ProjectSettings
-from .services import (
-    SearchService, FileService, SettingsService, FileWatcherService
-)
-from .services.settings_service import manage_temp_directory
-from .services.file_discovery_service import FileDiscoveryService
-from .services.project_management_service import ProjectManagementService
-from .services.index_management_service import IndexManagementService
+from .services import FileService, FileWatcherService, SearchService, SettingsService
 from .services.code_intelligence_service import CodeIntelligenceService
+from .services.file_discovery_service import FileDiscoveryService
+from .services.index_management_service import IndexManagementService
+from .services.project_management_service import ProjectManagementService
+from .services.settings_service import manage_temp_directory
 from .services.system_management_service import SystemManagementService
-from .middleware.auth import AuthMiddleware, require_authentication, AuthenticationError
-from .utils import (
-    handle_mcp_resource_errors, handle_mcp_tool_errors
-)
+from .utils import handle_mcp_resource_errors, handle_mcp_tool_errors
+
 
 # Setup logging without writing to files
 def setup_indexing_performance_logging():
@@ -44,7 +44,7 @@ def setup_indexing_performance_logging():
     root_logger = logging.getLogger()
     root_logger.handlers.clear()
 
-    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
     # stdout for INFO and DEBUG (Cloud Run captures this)
     stdout_handler = logging.StreamHandler(sys.stdout)
@@ -60,10 +60,12 @@ def setup_indexing_performance_logging():
     root_logger.addHandler(stderr_handler)
     root_logger.setLevel(logging.INFO)
 
+
 # Initialize logging (no file handlers)
 setup_indexing_performance_logging()
 
 logger = logging.getLogger(__name__)
+
 
 def check_alloydb_connection() -> psycopg2.extensions.connection:
     """
@@ -102,7 +104,8 @@ def check_alloydb_connection() -> psycopg2.extensions.connection:
         if "Connection timed out" in error_msg:
             # Parse IP from connection string
             import re
-            ip_match = re.search(r'@([\d\.]+):', connection_string)
+
+            ip_match = re.search(r"@([\d\.]+):", connection_string)
             ip = ip_match.group(1) if ip_match else "unknown"
 
             raise RuntimeError(
@@ -121,13 +124,9 @@ def check_alloydb_connection() -> psycopg2.extensions.connection:
                 f"Error: {error_msg}"
             ) from e
         else:
-            raise RuntimeError(
-                f"❌ AlloyDB connection failed: {error_msg}"
-            ) from e
+            raise RuntimeError(f"❌ AlloyDB connection failed: {error_msg}") from e
     except Exception as e:
-        raise RuntimeError(
-            f"❌ Unexpected error checking AlloyDB connection: {str(e)}"
-        ) from e
+        raise RuntimeError(f"❌ Unexpected error checking AlloyDB connection: {str(e)}") from e
 
 
 def check_alloydb_schema(conn: psycopg2.extensions.connection) -> None:
@@ -148,11 +147,13 @@ def check_alloydb_schema(conn: psycopg2.extensions.connection) -> None:
     try:
         with conn.cursor() as cur:
             # Check pgvector extension
-            cur.execute("""
+            cur.execute(
+                """
                 SELECT EXISTS (
                     SELECT 1 FROM pg_extension WHERE extname = 'vector'
                 )
-            """)
+            """
+            )
             has_pgvector = cur.fetchone()[0]
 
             if not has_pgvector:
@@ -163,12 +164,14 @@ def check_alloydb_schema(conn: psycopg2.extensions.connection) -> None:
                 )
 
             # Check required tables
-            required_tables = ['users', 'projects', 'code_chunks']
-            cur.execute("""
+            required_tables = ["users", "projects", "code_chunks"]
+            cur.execute(
+                """
                 SELECT tablename FROM pg_tables
                 WHERE schemaname = 'public'
                 AND tablename IN ('users', 'projects', 'code_chunks')
-            """)
+            """
+            )
             existing_tables = [row[0] for row in cur.fetchall()]
             missing_tables = set(required_tables) - set(existing_tables)
 
@@ -179,17 +182,30 @@ def check_alloydb_schema(conn: psycopg2.extensions.connection) -> None:
                 )
 
             # Check critical columns exist in code_chunks (including git metadata)
-            required_columns = ['chunk_id', 'project_id', 'user_id', 'file_path',
-                              'content', 'embedding', 'line_start', 'line_end',
-                              'commit_hash', 'branch_name', 'author_name', 'commit_timestamp']
-            cur.execute("""
+            required_columns = [
+                "chunk_id",
+                "project_id",
+                "user_id",
+                "file_path",
+                "content",
+                "embedding",
+                "line_start",
+                "line_end",
+                "commit_hash",
+                "branch_name",
+                "author_name",
+                "commit_timestamp",
+            ]
+            cur.execute(
+                """
                 SELECT column_name
                 FROM information_schema.columns
                 WHERE table_name = 'code_chunks'
                 AND column_name IN ('chunk_id', 'project_id', 'user_id', 'file_path',
                                    'content', 'embedding', 'line_start', 'line_end',
                                    'commit_hash', 'branch_name', 'author_name', 'commit_timestamp')
-            """)
+            """
+            )
             existing_columns = [row[0] for row in cur.fetchall()]
             missing_columns = set(required_columns) - set(existing_columns)
 
@@ -201,39 +217,46 @@ def check_alloydb_schema(conn: psycopg2.extensions.connection) -> None:
                 )
 
             # Check for google_ml_integration extension (for Vertex AI)
-            cur.execute("""
+            cur.execute(
+                """
                 SELECT EXISTS (
                     SELECT 1 FROM pg_extension WHERE extname = 'google_ml_integration'
                 )
-            """)
+            """
+            )
             has_google_ml = cur.fetchone()[0]
 
             if not has_google_ml:
-                logger.warning("⚠️  google_ml_integration extension not found - Vertex AI features may be limited")
+                logger.warning(
+                    "⚠️  google_ml_integration extension not found - Vertex AI features may be limited"
+                )
 
             logger.info("✅ AlloyDB schema validation passed")
             logger.info(f"   - pgvector: enabled")
             logger.info(f"   - Tables: {', '.join(existing_tables)}")
-            logger.info(f"   - Required columns: validated ({len(existing_columns)}/{len(required_columns)})")
-            logger.info(f"   - Google ML Integration: {'enabled' if has_google_ml else 'not enabled'}")
+            logger.info(
+                f"   - Required columns: validated ({len(existing_columns)}/{len(required_columns)})"
+            )
+            logger.info(
+                f"   - Google ML Integration: {'enabled' if has_google_ml else 'not enabled'}"
+            )
 
     except psycopg2.Error as e:
-        raise RuntimeError(
-            f"❌ Schema validation failed: {str(e)}"
-        ) from e
+        raise RuntimeError(f"❌ Schema validation failed: {str(e)}") from e
     except Exception as e:
-        raise RuntimeError(
-            f"❌ Unexpected error validating schema: {str(e)}"
-        ) from e
+        raise RuntimeError(f"❌ Unexpected error validating schema: {str(e)}") from e
+
 
 @dataclass
 class CodeIndexerContext:
     """Context for the Code Indexer MCP server."""
+
     base_path: str
     settings: ProjectSettings
     file_count: int = 0
     file_watcher_service: FileWatcherService = None
     auth_middleware: AuthMiddleware = None
+
 
 @asynccontextmanager
 async def indexer_lifespan(_server: FastMCP) -> AsyncIterator[CodeIndexerContext]:
@@ -256,10 +279,7 @@ async def indexer_lifespan(_server: FastMCP) -> AsyncIterator[CodeIndexerContext
     auth_middleware = None
     if os.getenv("MCP_TRANSPORT") == "http":
         try:
-            auth_middleware = AuthMiddleware(
-                provider='gcp',
-                project_id=os.getenv('GCP_PROJECT_ID')
-            )
+            auth_middleware = AuthMiddleware(provider="gcp", project_id=os.getenv("GCP_PROJECT_ID"))
             logging.info("✅ Auth middleware initialized for HTTP mode")
         except Exception as e:
             logging.warning(f"⚠️  Auth middleware initialization failed: {e}")
@@ -270,7 +290,7 @@ async def indexer_lifespan(_server: FastMCP) -> AsyncIterator[CodeIndexerContext
         base_path=base_path,
         settings=settings,
         file_watcher_service=None,
-        auth_middleware=auth_middleware
+        auth_middleware=auth_middleware,
     )
 
     try:
@@ -281,12 +301,14 @@ async def indexer_lifespan(_server: FastMCP) -> AsyncIterator[CodeIndexerContext
         if context.file_watcher_service:
             context.file_watcher_service.stop_monitoring()
 
+
 # Create the MCP server with lifespan manager
 # Note: For HTTP mode, host/port are passed explicitly in main()
 # See: https://gofastmcp.com/deployment/http
 mcp = FastMCP("CodeIndexer", lifespan=indexer_lifespan, dependencies=["pathlib"])
 
 # ----- RESOURCES -----
+
 
 @mcp.resource("config://code-indexer")
 @handle_mcp_resource_errors
@@ -295,6 +317,7 @@ def get_config() -> str:
     ctx = mcp.get_context()
     return ProjectManagementService(ctx).get_project_config()
 
+
 @mcp.resource("files://{file_path}")
 @handle_mcp_resource_errors
 def get_file_content(file_path: str) -> str:
@@ -302,6 +325,7 @@ def get_file_content(file_path: str) -> str:
     ctx = mcp.get_context()
     # Use FileService for simple file reading - this is appropriate for a resource
     return FileService(ctx).get_file_content(file_path)
+
 
 @mcp.resource("guide://semantic-search-ingestion")
 @handle_mcp_resource_errors
@@ -402,15 +426,15 @@ Choose how code is split for embedding:
 - **function** (default): One chunk per function/method
   - Best for: Finding specific functions
   - Granularity: Fine
-  
+
 - **class**: One chunk per class
   - Best for: Object-oriented codebases
   - Granularity: Medium
-  
+
 - **file**: One chunk per file
   - Best for: Small files, scripts
   - Granularity: Coarse
-  
+
 - **semantic**: Smart chunking with overlap
   - Best for: Maximum search relevance
   - Granularity: Adaptive
@@ -469,7 +493,7 @@ find_similar_code(
 **Solution**: Call `set_project_path` first if using `use_current_project=True`
 
 ### Large Projects (10k+ files)
-**Recommendation**: 
+**Recommendation**:
 - Use file patterns to filter: `.py`, `.js`, `.ts` only
 - Exclude test files, node_modules, vendor directories
 - Consider ingesting incrementally by subdirectory
@@ -497,22 +521,25 @@ For issues or questions:
 - Test connection: `deployment/gcp/test-alloydb-connection.sh`
 """
 
+
 # Removed: structure://project resource - not necessary for most workflows
 # Removed: settings://stats resource - this information is available via get_settings_info() tool
 # and is more of a debugging/technical detail rather than context AI needs
 
 # ----- TOOLS -----
 
+
 @mcp.tool()
-@handle_mcp_tool_errors(return_type='str')
+@handle_mcp_tool_errors(return_type="str")
 def set_project_path(path: str, ctx: Context) -> str:
     """Set the base project path for indexing."""
     # Strip whitespace and newlines from path to handle copy-paste issues
-    clean_path = path.strip().replace('\n', '').replace('\r', '')
+    clean_path = path.strip().replace("\n", "").replace("\r", "")
     return ProjectManagementService(ctx).initialize_project(clean_path)
 
+
 @mcp.tool()
-@handle_mcp_tool_errors(return_type='dict')
+@handle_mcp_tool_errors(return_type="dict")
 def search_code_advanced(
     pattern: str,
     ctx: Context,
@@ -521,7 +548,7 @@ def search_code_advanced(
     file_pattern: str = None,
     fuzzy: bool = False,
     regex: bool = None,
-    max_line_length: int = None
+    max_line_length: int = None,
 ) -> Dict[str, Any]:
     """
     Search for a code pattern in the project using an advanced, fast tool.
@@ -565,11 +592,12 @@ def search_code_advanced(
         file_pattern=file_pattern,
         fuzzy=fuzzy,
         regex=regex,
-        max_line_length=max_line_length
+        max_line_length=max_line_length,
     )
 
+
 @mcp.tool()
-@handle_mcp_tool_errors(return_type='list')
+@handle_mcp_tool_errors(return_type="list")
 def find_files(pattern: str, ctx: Context) -> List[str]:
     """
     Find files matching a glob pattern using pre-built file index.
@@ -594,8 +622,9 @@ def find_files(pattern: str, ctx: Context) -> List[str]:
     """
     return FileDiscoveryService(ctx).find_files(pattern)
 
+
 @mcp.tool()
-@handle_mcp_tool_errors(return_type='dict')
+@handle_mcp_tool_errors(return_type="dict")
 def get_file_summary(file_path: str, ctx: Context) -> Dict[str, Any]:
     """
     Get a summary of a specific file, including:
@@ -606,8 +635,9 @@ def get_file_summary(file_path: str, ctx: Context) -> Dict[str, Any]:
     """
     return CodeIntelligenceService(ctx).analyze_file(file_path)
 
+
 @mcp.tool()
-@handle_mcp_tool_errors(return_type='str')
+@handle_mcp_tool_errors(return_type="str")
 def refresh_index(ctx: Context) -> str:
     """
     Manually refresh the project index when files have been added/removed/moved.
@@ -631,8 +661,9 @@ def refresh_index(ctx: Context) -> str:
     """
     return IndexManagementService(ctx).rebuild_index()
 
+
 @mcp.tool()
-@handle_mcp_tool_errors(return_type='str')
+@handle_mcp_tool_errors(return_type="str")
 def build_deep_index(ctx: Context) -> str:
     """
     Build the deep index (full symbol extraction) for the current project.
@@ -641,32 +672,37 @@ def build_deep_index(ctx: Context) -> str:
     """
     return IndexManagementService(ctx).rebuild_deep_index()
 
+
 @mcp.tool()
-@handle_mcp_tool_errors(return_type='dict')
+@handle_mcp_tool_errors(return_type="dict")
 def get_settings_info(ctx: Context) -> Dict[str, Any]:
     """Get information about the project settings."""
     return SettingsService(ctx).get_settings_info()
 
+
 @mcp.tool()
-@handle_mcp_tool_errors(return_type='dict')
+@handle_mcp_tool_errors(return_type="dict")
 def create_temp_directory() -> Dict[str, Any]:
     """Create the temporary directory used for storing index data."""
-    return manage_temp_directory('create')
+    return manage_temp_directory("create")
+
 
 @mcp.tool()
-@handle_mcp_tool_errors(return_type='dict')
+@handle_mcp_tool_errors(return_type="dict")
 def check_temp_directory() -> Dict[str, Any]:
     """Check the temporary directory used for storing index data."""
-    return manage_temp_directory('check')
+    return manage_temp_directory("check")
+
 
 @mcp.tool()
-@handle_mcp_tool_errors(return_type='str')
+@handle_mcp_tool_errors(return_type="str")
 def clear_settings(ctx: Context) -> str:
     """Clear all settings and cached data."""
     return SettingsService(ctx).clear_all_settings()
 
+
 @mcp.tool()
-@handle_mcp_tool_errors(return_type='str')
+@handle_mcp_tool_errors(return_type="str")
 def refresh_search_tools(ctx: Context) -> str:
     """
     Manually re-detect the available command-line search tools on the system.
@@ -674,71 +710,79 @@ def refresh_search_tools(ctx: Context) -> str:
     """
     return SearchService(ctx).refresh_search_tools()
 
+
 @mcp.tool()
-@handle_mcp_tool_errors(return_type='dict')
+@handle_mcp_tool_errors(return_type="dict")
 def get_file_watcher_status(ctx: Context) -> Dict[str, Any]:
     """Get file watcher service status and statistics."""
     return SystemManagementService(ctx).get_file_watcher_status()
 
+
 @mcp.tool()
-@handle_mcp_tool_errors(return_type='str')
+@handle_mcp_tool_errors(return_type="str")
 def configure_file_watcher(
     ctx: Context,
     enabled: bool = None,
     debounce_seconds: float = None,
-    additional_exclude_patterns: list = None
+    additional_exclude_patterns: list = None,
 ) -> str:
     """Configure file watcher service settings."""
-    return SystemManagementService(ctx).configure_file_watcher(enabled, debounce_seconds, additional_exclude_patterns)
+    return SystemManagementService(ctx).configure_file_watcher(
+        enabled, debounce_seconds, additional_exclude_patterns
+    )
+
 
 # ----- SEMANTIC SEARCH TOOLS (Phase 3A) -----
 
+
 @mcp.tool()
-@handle_mcp_tool_errors(return_type='list')
+@handle_mcp_tool_errors(return_type="list")
 def semantic_search_code(
     ctx: Context,
     query: str,
     project_name: str = None,
     language: str = None,
     top_k: int = 10,
-    min_similarity: float = 0.0
+    min_similarity: float = 0.0,
 ) -> List[Dict[str, Any]]:
     """
     Search code by semantic meaning using vector similarity (Phase 3A feature).
-    
+
     Requires AlloyDB and Vertex AI to be configured. Falls back to mock mode
     if not available.
-    
+
     Args:
         query: Natural language query (e.g., "authentication with JWT")
         project_name: Filter to specific project (optional)
         language: Filter by programming language (optional)
         top_k: Number of results to return (default: 10)
         min_similarity: Minimum similarity threshold 0-1 (default: 0.0)
-    
+
     Returns:
         List of code chunks with similarity scores
-    
+
     Example:
         semantic_search_code("database connection pooling", language="python", top_k=5)
     """
     # Import here to avoid dependency issues if GCP packages not installed
     try:
-        from .services.semantic_search_service import semantic_search
         from uuid import uuid4
-        
+
+        from .services.semantic_search_service import semantic_search
+
         # Get database connection string from environment
         db_conn_str = os.getenv("ALLOYDB_CONNECTION_STRING")
         use_mock = not db_conn_str  # Use mock if no DB configured
-        
+
         if use_mock:
             logging.warning("AlloyDB not configured, using mock mode (returns empty results)")
-        
+
         # Use test user ID (in production, this would come from auth middleware)
         # This matches the user created by seed_test_user utility
         from uuid import UUID
+
         user_id = UUID("00000000-0000-0000-0000-000000000001")
-        
+
         results = semantic_search(
             query=query,
             user_id=user_id,
@@ -746,125 +790,137 @@ def semantic_search_code(
             project_name=project_name,
             language=language,
             top_k=top_k,
-            use_mock=use_mock
+            use_mock=use_mock,
         )
-        
+
         if use_mock and not results:
-            return [{
-                "info": "Semantic search requires AlloyDB setup",
-                "instructions": "Set ALLOYDB_CONNECTION_STRING environment variable",
-                "setup_guide": "See docs/DEPLOYMENT.md for AlloyDB provisioning",
-                "query": query
-            }]
-        
+            return [
+                {
+                    "info": "Semantic search requires AlloyDB setup",
+                    "instructions": "Set ALLOYDB_CONNECTION_STRING environment variable",
+                    "setup_guide": "See docs/DEPLOYMENT.md for AlloyDB provisioning",
+                    "query": query,
+                }
+            ]
+
         return results
-        
+
     except ImportError as e:
-        return [{
-            "error": "Semantic search dependencies not installed",
-            "details": str(e),
-            "install": "Run: uv sync --extra gcp"
-        }]
+        return [
+            {
+                "error": "Semantic search dependencies not installed",
+                "details": str(e),
+                "install": "Run: uv sync --extra gcp",
+            }
+        ]
+
 
 @mcp.tool()
-@handle_mcp_tool_errors(return_type='list')
+@handle_mcp_tool_errors(return_type="list")
 def find_similar_code(
     ctx: Context,
     code_snippet: str,
     project_name: str = None,
     language: str = None,
     top_k: int = 5,
-    min_similarity: float = 0.5
+    min_similarity: float = 0.5,
 ) -> List[Dict[str, Any]]:
     """
     Find code chunks similar to the provided code snippet (Phase 3A feature).
-    
+
     Requires AlloyDB and Vertex AI to be configured. Falls back to mock mode
     if not available.
-    
+
     Args:
         code_snippet: Code to find similar implementations of
         project_name: Filter to specific project (optional)
         language: Filter by programming language (optional)
         top_k: Number of results to return (default: 5)
         min_similarity: Minimum similarity threshold 0-1 (default: 0.5)
-    
+
     Returns:
         List of similar code chunks with similarity scores
-    
+
     Example:
         find_similar_code("def authenticate(user, pwd): return verify(user, pwd)", top_k=3)
     """
     # Import here to avoid dependency issues
     try:
-        from .services.semantic_search_service import find_similar_code as find_similar
         from uuid import uuid4
-        
+
+        from .services.semantic_search_service import find_similar_code as find_similar
+
         # Get database connection string from environment
         db_conn_str = os.getenv("ALLOYDB_CONNECTION_STRING")
         use_mock = not db_conn_str
-        
+
         if use_mock:
             logging.warning("AlloyDB not configured, using mock mode")
-        
+
         # Use test user ID (in production, this would come from auth middleware)
         # This matches the user created by seed_test_user utility
         from uuid import UUID
+
         user_id = UUID("00000000-0000-0000-0000-000000000001")
-        
+
         results = find_similar(
             code_snippet=code_snippet,
             user_id=user_id,
             db_connection_string=db_conn_str or "mock",
             project_name=project_name,
             top_k=top_k,
-            use_mock=use_mock
+            use_mock=use_mock,
         )
-        
+
         if use_mock and not results:
-            return [{
-                "info": "Similar code search requires AlloyDB setup",
-                "instructions": "Set ALLOYDB_CONNECTION_STRING environment variable",
-                "code_snippet_length": len(code_snippet)
-            }]
-        
+            return [
+                {
+                    "info": "Similar code search requires AlloyDB setup",
+                    "instructions": "Set ALLOYDB_CONNECTION_STRING environment variable",
+                    "code_snippet_length": len(code_snippet),
+                }
+            ]
+
         return results
-        
+
     except ImportError as e:
-        return [{
-            "error": "Semantic search dependencies not installed",
-            "details": str(e),
-            "install": "Run: uv sync --extra gcp"
-        }]
+        return [
+            {
+                "error": "Semantic search dependencies not installed",
+                "details": str(e),
+                "install": "Run: uv sync --extra gcp",
+            }
+        ]
+
 
 @mcp.tool()
-@handle_mcp_tool_errors(return_type='dict')
+@handle_mcp_tool_errors(return_type="dict")
 def get_cloud_upload_script() -> Dict[str, str]:
     """
     Get the upload script for cloud ingestion.
-    
+
     When using the cloud-deployed MCP server, you need this script to upload
     files from your local machine.
-    
+
     Returns:
         Dictionary with script content and usage instructions
-        
+
     Example:
         get_cloud_upload_script()
     """
     # Read the script from the same directory
     script_path = Path(__file__).parent.parent.parent / "upload_code_for_ingestion.py"
-    
+
     try:
-        script_content = script_path.read_text(encoding='utf-8')
+        script_content = script_path.read_text(encoding="utf-8")
     except FileNotFoundError:
         # Fallback: return instructions to download it
         return {
             "error": "Script not found in installation",
             "download_url": "https://raw.githubusercontent.com/YOUR-REPO/main/upload_code_for_ingestion.py",
-            "instructions": "Download the script and run: python upload_code_for_ingestion.py /path/to/project --project-name my-app"
+            "instructions": "Download the script and run: python upload_code_for_ingestion.py /path/to/project --project-name my-app",
         }
-    
+
     return {
         "status": "success",
         "script": script_content,
@@ -874,9 +930,10 @@ def get_cloud_upload_script() -> Dict[str, str]:
             "Respects .gitignore patterns",
             "Batches files (default: 50 per batch)",
             "Tracks progress locally",
-            "Resume support for interrupted uploads"
-        ]
+            "Resume support for interrupted uploads",
+        ],
     }
+
 
 # REMOVED: reset_alloydb_schema tool - use Cloud Run Job 'fix-schema' instead
 # This tool was too dangerous to expose to MCP clients as they might call it automatically.
@@ -885,7 +942,7 @@ def get_cloud_upload_script() -> Dict[str, str]:
 #   gcloud run jobs execute fix-schema --region=us-east1 --wait
 #
 # Old implementation preserved below for reference but NOT exposed as MCP tool:
-@handle_mcp_tool_errors(return_type='dict')
+@handle_mcp_tool_errors(return_type="dict")
 def reset_alloydb_schema() -> Dict[str, Any]:
     """
     [INTERNAL ONLY - NOT EXPOSED AS MCP TOOL]
@@ -898,64 +955,71 @@ def reset_alloydb_schema() -> Dict[str, Any]:
     Returns:
         Dictionary with reset status
     """
-    import psycopg2
     import logging
-    
+
+    import psycopg2
+
     logging.info("[SCHEMA RESET] Starting schema reset...")
-    
+
     # Get database connection string
     db_conn_str = os.getenv("ALLOYDB_CONNECTION_STRING")
     if not db_conn_str:
         logging.error("[SCHEMA RESET] AlloyDB connection string not configured")
         return {
             "error": "AlloyDB not configured",
-            "instructions": "Set ALLOYDB_CONNECTION_STRING environment variable"
+            "instructions": "Set ALLOYDB_CONNECTION_STRING environment variable",
         }
-    
+
     try:
         logging.info("[SCHEMA RESET] Connecting to AlloyDB...")
         conn = psycopg2.connect(db_conn_str)
         conn.autocommit = True
         cur = conn.cursor()
-        
+
         # Drop everything
         logging.info("[SCHEMA RESET] Dropping existing tables and functions...")
-        cur.execute("""
+        cur.execute(
+            """
             DROP TABLE IF EXISTS code_chunks CASCADE;
             DROP TABLE IF EXISTS projects CASCADE;
             DROP FUNCTION IF EXISTS set_user_context(UUID);
-        """)
-        
+        """
+        )
+
         logging.info("[SCHEMA RESET] Schema dropped successfully")
-        
+
         cur.close()
         conn.close()
-        
-        logging.info("[SCHEMA RESET] ✅ Schema reset complete! Next ingestion will recreate tables.")
-        
+
+        logging.info(
+            "[SCHEMA RESET] ✅ Schema reset complete! Next ingestion will recreate tables."
+        )
+
         return {
             "status": "success",
             "message": "AlloyDB schema has been reset",
-            "next_steps": "Run ingest_code_for_search() to recreate the schema and ingest code"
+            "next_steps": "Run ingest_code_for_search() to recreate the schema and ingest code",
         }
-        
+
     except Exception as e:
         logging.error(f"[SCHEMA RESET] Error: {e}")
         import traceback
+
         return {
             "error": "Schema reset failed",
             "details": str(e),
-            "traceback": traceback.format_exc()
+            "traceback": traceback.format_exc(),
         }
 
+
 @mcp.tool()
-@handle_mcp_tool_errors(return_type='dict')
+@handle_mcp_tool_errors(return_type="dict")
 def ingest_code_for_search(
     ctx: Context,
     files: List[Dict[str, str]] = None,
     project_name: str = None,
     directory_path: str = None,
-    use_current_project: bool = False
+    use_current_project: bool = False,
 ) -> Dict[str, Any]:
     """
     Ingest code into AlloyDB for semantic search (Phase 3A feature).
@@ -1003,14 +1067,17 @@ def ingest_code_for_search(
     """
     # Import here to avoid dependency issues
     try:
-        from .ingestion.pipeline import ingest_directory
-        from uuid import uuid4
-        from pathlib import Path
-        import traceback
-        import tempfile
         import shutil
-        
-        logging.info(f"[INGESTION] Tool called: files={len(files) if files else 0}, directory_path={directory_path}, project_name={project_name}")
+        import tempfile
+        import traceback
+        from pathlib import Path
+        from uuid import uuid4
+
+        from .ingestion.pipeline import ingest_directory
+
+        logging.info(
+            f"[INGESTION] Tool called: files={len(files) if files else 0}, directory_path={directory_path}, project_name={project_name}"
+        )
 
         # Deprecation warning for files parameter
         if files:
@@ -1028,52 +1095,54 @@ def ingest_code_for_search(
             return {
                 "error": "AlloyDB not configured",
                 "instructions": "Set ALLOYDB_CONNECTION_STRING environment variable",
-                "setup_guide": "See docs/DEPLOYMENT.md for AlloyDB provisioning"
+                "setup_guide": "See docs/DEPLOYMENT.md for AlloyDB provisioning",
             }
-        
+
         logging.info(f"[INGESTION] AlloyDB connection string found: {db_conn_str[:20]}...")
-        
+
         # Determine ingestion mode
         temp_dir = None
         try:
             if files:
                 # CLOUD MODE: Files uploaded in request
                 logging.info(f"[INGESTION] Cloud mode: Processing {len(files)} uploaded files")
-                
+
                 if not project_name:
                     return {
                         "error": "project_name is required when uploading files",
-                        "instructions": "Provide project_name parameter"
+                        "instructions": "Provide project_name parameter",
                     }
-                
+
                 # Create temporary directory for uploaded files
                 temp_dir = tempfile.mkdtemp(prefix=f"code-ingest-{project_name}-")
                 logging.info(f"[INGESTION] Created temp directory: {temp_dir}")
-                
+
                 # Write uploaded files to temp directory
                 for file_info in files:
                     file_path = file_info.get("path")
                     file_content = file_info.get("content")
-                    
+
                     if not file_path or file_content is None:
                         logging.warning(f"[INGESTION] Skipping invalid file: {file_info}")
                         continue
-                    
+
                     # Create file path (relative to temp dir)
                     full_path = Path(temp_dir) / file_path
                     full_path.parent.mkdir(parents=True, exist_ok=True)
-                    
+
                     # Write file content
-                    full_path.write_text(file_content, encoding='utf-8')
-                    logging.debug(f"[INGESTION] Wrote file: {file_path} ({len(file_content)} bytes)")
-                
+                    full_path.write_text(file_content, encoding="utf-8")
+                    logging.debug(
+                        f"[INGESTION] Wrote file: {file_path} ({len(file_content)} bytes)"
+                    )
+
                 directory_path = temp_dir
                 logging.info(f"[INGESTION] Ready to ingest {len(files)} files from temp directory")
-                
+
             else:
                 # STDIO MODE: Use local directory path
                 logging.info("[INGESTION] Stdio mode: Using local directory path")
-                
+
                 if use_current_project:
                     # Get the custom context with base_path
                     logging.info("[INGESTION] Getting custom context for current project")
@@ -1082,28 +1151,28 @@ def ingest_code_for_search(
                         logging.error("[INGESTION] No project path set in context")
                         return {
                             "error": "No project path set",
-                            "instructions": "Call set_project_path first"
+                            "instructions": "Call set_project_path first",
                         }
                     directory_path = custom_ctx.base_path
                     logging.info(f"[INGESTION] Using current project path: {directory_path}")
-                
+
                 if not directory_path:
                     return {
                         "error": "No directory or files specified",
                         "instructions": "For cloud mode: provide 'files' list. For stdio mode: provide 'directory_path'",
-                        "example_cloud": "files=[{\"path\": \"src/main.py\", \"content\": \"...\"}]",
-                        "example_stdio": "directory_path=\"/path/to/project\""
+                        "example_cloud": 'files=[{"path": "src/main.py", "content": "..."}]',
+                        "example_stdio": 'directory_path="/path/to/project"',
                     }
-                
+
                 # Strip whitespace and newlines from path
-                directory_path = directory_path.strip().replace('\n', '').replace('\r', '')
+                directory_path = directory_path.strip().replace("\n", "").replace("\r", "")
                 logging.info(f"[INGESTION] Cleaned directory path: {directory_path}")
-                
+
                 # Auto-detect project name if not provided
                 if not project_name:
                     project_name = Path(directory_path).name
                     logging.info(f"[INGESTION] Auto-detected project name: {project_name}")
-            
+
             # Generate user ID
             user_id = uuid4()
             logging.info(f"[INGESTION] Generated user_id: {user_id}")
@@ -1113,7 +1182,9 @@ def ingest_code_for_search(
                 logging.info(f"[INGESTION PROGRESS] {message} | Data: {data}")
 
             # Run ingestion with progress logging
-            logging.info(f"[INGESTION] Starting code ingestion for project '{project_name}' at {directory_path}")
+            logging.info(
+                f"[INGESTION] Starting code ingestion for project '{project_name}' at {directory_path}"
+            )
             logging.info(f"[INGESTION] This may take several minutes for large codebases...")
             stats = ingest_directory(
                 directory_path=directory_path,
@@ -1121,24 +1192,24 @@ def ingest_code_for_search(
                 project_name=project_name,
                 db_connection_string=db_conn_str,
                 use_mock_embedder=False,  # Use real Vertex AI
-                progress_callback=log_progress
+                progress_callback=log_progress,
             )
-            
+
             logging.info(f"[INGESTION] Completed successfully: {stats.to_dict()}")
             return {
                 "status": "success",
                 "project_name": project_name,
                 "files_uploaded": len(files) if files else 0,
                 "mode": "cloud" if files else "stdio",
-                **stats.to_dict()
+                **stats.to_dict(),
             }
-            
+
         finally:
             # Clean up temp directory
             if temp_dir and Path(temp_dir).exists():
                 logging.info(f"[INGESTION] Cleaning up temp directory: {temp_dir}")
                 shutil.rmtree(temp_dir, ignore_errors=True)
-        
+
     except ImportError as e:
         logging.error(f"[INGESTION] Import error: {e}")
         logging.error(f"[INGESTION] Traceback: {traceback.format_exc()}")
@@ -1146,20 +1217,16 @@ def ingest_code_for_search(
             "error": "Ingestion dependencies not installed",
             "details": str(e),
             "traceback": traceback.format_exc(),
-            "install": "Run: uv sync --extra gcp"
+            "install": "Run: uv sync --extra gcp",
         }
     except Exception as e:
         logging.error(f"[INGESTION] Unexpected error: {e}")
         logging.error(f"[INGESTION] Traceback: {traceback.format_exc()}")
-        return {
-            "error": "Ingestion failed",
-            "details": str(e),
-            "traceback": traceback.format_exc()
-        }
+        return {"error": "Ingestion failed", "details": str(e), "traceback": traceback.format_exc()}
 
 
 @mcp.tool()
-@handle_mcp_tool_errors(return_type='dict')
+@handle_mcp_tool_errors(return_type="dict")
 async def ingest_code_from_git(
     ctx: Context,
     git_url: str,
@@ -1167,7 +1234,7 @@ async def ingest_code_from_git(
     branch: str = "main",
     auth_token: str = None,
     sync_only: bool = False,
-    chunking_strategy: str = "function"
+    chunking_strategy: str = "function",
 ) -> Dict[str, Any]:
     """
     Ingest code from Git repository with smart sync (Phase 3A - Git-Sync feature).
@@ -1254,20 +1321,23 @@ async def ingest_code_from_git(
         - Webhooks can be configured for automatic sync on push
     """
     try:
-        from .ingestion.git_manager import GitRepositoryManager, GitManagerError
-        from .ingestion.pipeline import ingest_directory
-        from uuid import uuid4
-        from pathlib import Path
         import traceback
+        from pathlib import Path
+        from uuid import uuid4
 
-        logging.info(f"[GIT-SYNC] Tool called: git_url={git_url}, branch={branch}, project_name={project_name}")
+        from .ingestion.git_manager import GitManagerError, GitRepositoryManager
+        from .ingestion.pipeline import ingest_directory
+
+        logging.info(
+            f"[GIT-SYNC] Tool called: git_url={git_url}, branch={branch}, project_name={project_name}"
+        )
 
         # Validate git_url
         if not git_url or not git_url.strip():
             return {
                 "error": "git_url is required",
                 "instructions": "Provide a valid Git repository URL",
-                "example": "https://github.com/user/repo"
+                "example": "https://github.com/user/repo",
             }
 
         # Get database connection string
@@ -1277,7 +1347,7 @@ async def ingest_code_from_git(
             return {
                 "error": "AlloyDB not configured",
                 "instructions": "Set ALLOYDB_CONNECTION_STRING environment variable",
-                "setup_guide": "See docs/DEPLOYMENT.md for AlloyDB provisioning"
+                "setup_guide": "See docs/DEPLOYMENT.md for AlloyDB provisioning",
             }
 
         # Get GCS bucket for git repositories
@@ -1294,8 +1364,7 @@ async def ingest_code_from_git(
         if auth_middleware:
             try:
                 user_context = await require_authentication(
-                    ctx.request_context.session,
-                    auth_middleware
+                    ctx.request_context.session, auth_middleware
                 )
                 user_id = user_context.user_id
                 logging.info(f"[GIT-SYNC] Authenticated user: {user_id}")
@@ -1305,6 +1374,7 @@ async def ingest_code_from_git(
         else:
             # Fallback to test user for local/stdio mode
             from uuid import UUID
+
             user_id = UUID("00000000-0000-0000-0000-000000000001")
             logging.warning(
                 f"[GIT-SYNC] Using test user_id: {user_id} "
@@ -1312,17 +1382,12 @@ async def ingest_code_from_git(
             )
 
         # Initialize GitRepositoryManager
-        git_manager = GitRepositoryManager(
-            gcs_bucket=git_bucket,
-            user_id=str(user_id)
-        )
+        git_manager = GitRepositoryManager(gcs_bucket=git_bucket, user_id=str(user_id))
 
         # Sync repository (clone or pull)
         logging.info(f"[GIT-SYNC] Syncing repository: {git_url}")
         sync_result = await git_manager.sync_repository(
-            git_url=git_url,
-            branch=branch,
-            auth_token=auth_token
+            git_url=git_url, branch=branch, auth_token=auth_token
         )
 
         logging.info(
@@ -1332,7 +1397,7 @@ async def ingest_code_from_git(
 
         # Auto-detect project name if not provided
         if not project_name:
-            project_name = sync_result['repo_info']['repo']
+            project_name = sync_result["repo_info"]["repo"]
             logging.info(f"[GIT-SYNC] Auto-detected project name: {project_name}")
 
         # If sync_only, return sync results without ingestion
@@ -1340,12 +1405,12 @@ async def ingest_code_from_git(
             return {
                 "status": "success",
                 "mode": "git-sync-only",
-                "sync_type": sync_result['sync_type'],
-                "repo_info": sync_result['repo_info'],
-                "files_changed": sync_result.get('files_changed'),
-                "local_path": sync_result['local_path'],
+                "sync_type": sync_result["sync_type"],
+                "repo_info": sync_result["repo_info"],
+                "files_changed": sync_result.get("files_changed"),
+                "local_path": sync_result["local_path"],
                 "project_name": project_name,
-                "ingestion_skipped": "Set sync_only=False to ingest code"
+                "ingestion_skipped": "Set sync_only=False to ingest code",
             }
 
         # Progress callback for visibility
@@ -1361,12 +1426,12 @@ async def ingest_code_from_git(
         # For now, ingest entire directory (optimization for future PR)
 
         stats = ingest_directory(
-            directory_path=sync_result['local_path'],
+            directory_path=sync_result["local_path"],
             user_id=user_id,
             project_name=project_name,
             db_connection_string=db_conn_str,
             use_mock_embedder=False,  # Use real Vertex AI
-            progress_callback=log_progress
+            progress_callback=log_progress,
         )
 
         logging.info(f"[GIT-SYNC] Ingestion completed: {stats.to_dict()}")
@@ -1374,16 +1439,17 @@ async def ingest_code_from_git(
         return {
             "status": "success",
             "mode": "git-sync",
-            "sync_type": sync_result['sync_type'],
-            "repo_info": {
-                **sync_result['repo_info'],
-                "branch": branch
-            },
-            "files_changed": sync_result.get('files_changed'),
+            "sync_type": sync_result["sync_type"],
+            "repo_info": {**sync_result["repo_info"], "branch": branch},
+            "files_changed": sync_result.get("files_changed"),
             "project_name": project_name,
             "token_savings": "99% vs files upload (estimated)",
-            "performance": "95% faster for incremental updates" if sync_result['sync_type'] == 'pull' else "75% faster vs file upload",
-            **stats.to_dict()
+            "performance": (
+                "95% faster for incremental updates"
+                if sync_result["sync_type"] == "pull"
+                else "75% faster vs file upload"
+            ),
+            **stats.to_dict(),
         }
 
     except GitManagerError as e:
@@ -1397,8 +1463,8 @@ async def ingest_code_from_git(
                 "check_url": "Verify the Git URL is correct",
                 "check_auth": "For private repos, provide auth_token",
                 "check_branch": "Verify the branch exists",
-                "supported_platforms": ["GitHub", "GitLab", "Bitbucket", "Gitea"]
-            }
+                "supported_platforms": ["GitHub", "GitLab", "Bitbucket", "Gitea"],
+            },
         }
     except ImportError as e:
         logging.error(f"[GIT-SYNC] Import error: {e}")
@@ -1407,7 +1473,7 @@ async def ingest_code_from_git(
             "error": "Git-sync dependencies not installed",
             "details": str(e),
             "traceback": traceback.format_exc(),
-            "install": "Run: uv sync --extra gcp"
+            "install": "Run: uv sync --extra gcp",
         }
     except Exception as e:
         logging.error(f"[GIT-SYNC] Unexpected error: {e}")
@@ -1415,18 +1481,19 @@ async def ingest_code_from_git(
         return {
             "error": "Git-sync ingestion failed",
             "details": str(e),
-            "traceback": traceback.format_exc()
+            "traceback": traceback.format_exc(),
         }
 
 
 # ----- PROMPTS -----
 # Removed: analyze_code, code_search, set_project prompts
 
+
 def main():
     """Main function to run the MCP server."""
     # Support both stdio (local) and HTTP/SSE (cloud) modes via environment variable
     transport_mode = os.getenv("MCP_TRANSPORT", "stdio")
-    
+
     if transport_mode == "http":
         # HTTP/SSE mode for cloud deployment (Cloud Run, Lambda, OpenShift)
         # FastMCP reads host/port from mcp.settings object
@@ -1441,6 +1508,7 @@ def main():
         # Register webhook routes for Git-sync (Phase 3)
         try:
             from .admin.webhook_handler import setup_webhook_routes
+
             setup_webhook_routes(mcp)
             logging.info("Git-sync webhook routes registered successfully")
         except ImportError as e:
@@ -1451,8 +1519,12 @@ def main():
         require_auth = os.getenv("REQUIRE_AUTH", "false").lower() == "true"
 
         if require_auth:
-            logging.info(f"Starting MCP server in HTTP/SSE mode on {host}:{port} with API key authentication")
-            logging.info("Note: Authentication middleware is available but not yet integrated with FastMCP SSE endpoints")
+            logging.info(
+                f"Starting MCP server in HTTP/SSE mode on {host}:{port} with API key authentication"
+            )
+            logging.info(
+                "Note: Authentication middleware is available but not yet integrated with FastMCP SSE endpoints"
+            )
             logging.info("To enable auth, API keys must be validated in a custom middleware")
             # TODO: Integrate AuthMiddleware with FastMCP's SSE endpoints
             # See: src/code_index_mcp/middleware/auth.py
@@ -1470,5 +1542,6 @@ def main():
         logging.info("Starting MCP server in stdio mode")
         mcp.run()
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()

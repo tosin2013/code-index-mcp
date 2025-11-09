@@ -4,8 +4,9 @@ Fallback parsing strategy for unsupported languages and file types.
 
 import os
 from typing import Dict, List, Tuple
+
+from ..models import FileInfo, SymbolInfo
 from .base_strategy import ParsingStrategy
-from ..models import SymbolInfo, FileInfo
 
 
 class FallbackParsingStrategy(ParsingStrategy):
@@ -29,18 +30,27 @@ class FallbackParsingStrategy(ParsingStrategy):
             language=self.language_name,
             line_count=len(content.splitlines()),
             symbols={"functions": [], "classes": []},
-            imports=[]
+            imports=[],
         )
 
         # For document files (e.g. .md, .txt, .json), we can add a symbol representing the file itself
-        if self.language_name in ['markdown', 'text', 'json', 'yaml', 'xml', 'config', 'css', 'html']:
+        if self.language_name in [
+            "markdown",
+            "text",
+            "json",
+            "yaml",
+            "xml",
+            "config",
+            "css",
+            "html",
+        ]:
             filename = os.path.basename(file_path)
             symbol_id = self._create_symbol_id(file_path, f"file:{filename}")
             symbols[symbol_id] = SymbolInfo(
                 type="file",
                 file=file_path,
                 line=1,
-                signature=f"{self.language_name} file: {filename}"
+                signature=f"{self.language_name} file: {filename}",
             )
 
         return symbols, file_info

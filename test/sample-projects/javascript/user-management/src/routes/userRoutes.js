@@ -125,17 +125,17 @@ router.get('/', auth, asyncHandler(async (req, res) => {
   const page = parseInt(req.query.page) || 1;
   const limit = parseInt(req.query.limit) || 20;
   const filter = {};
-  
+
   // Add filtering by role if provided
   if (req.query.role) {
     filter.role = req.query.role;
   }
-  
+
   // Add filtering by status if provided
   if (req.query.status) {
     filter.status = req.query.status;
   }
-  
+
   const result = await userService.getAllUsers(page, limit, filter);
   res.json(createSuccessResponse(result, 'Users retrieved successfully'));
 }));

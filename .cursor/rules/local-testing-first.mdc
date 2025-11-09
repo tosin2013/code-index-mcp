@@ -1,0 +1,197 @@
+---
+title: Local Testing First - Cloud Deployment Rule
+description: Always test Docker containers locally before deploying to cloud
+tags: [deployment, testing, docker, cloud-run]
+---
+
+# Local Testing First - Cloud Deployment Rule
+
+**Rule**: Always test Docker containers locally before deploying to Google Cloud Run, AWS, or OpenShift.
+
+## Rationale
+
+1. **Faster Feedback**: Local testing catches issues in seconds vs minutes waiting for cloud builds
+2. **Cost Savings**: Avoid expensive cloud build cycles for simple errors
+3. **Better Debugging**: Full access to container logs and shell locally
+4. **No Quota Limits**: Cloud Build has daily quotas; local testing is unlimited
+
+## Workflow
+
+### ❌ DON'T DO THIS
+```bash
+# Don't deploy directly to cloud without local testing
+./deploy.sh dev
+```
+
+### ✅ DO THIS INSTEAD
+```bash
+# Step 1: Test locally first
+./test-local.sh
+
+# Step 2: Manual verification (optional)
+curl http://localhost:8080/health
+docker logs -f code-index-mcp-test
+
+# Step 3: If local tests pass, deploy to cloud
+./deploy.sh dev
+```
+
+## Local Testing Script
+
+Use the provided `test-local.sh` script:
+
+```bash
+cd deployment/gcp
+./test-local.sh
+```
+
+### What It Tests
+
+1. ✅ Docker image builds successfully
+2. ✅ Container starts without crashing
+3. ✅ Server listens on correct port (8080)
+4. ✅ Health endpoint responds correctly
+5. ✅ MCP_TRANSPORT=http mode works
+6. ✅ Logs show no errors
+
+### Expected Output
+
+```
+[INFO] Checking Docker...
+[SUCCESS] Docker is running
+[INFO] Building Docker image...
+[SUCCESS] Image built successfully
+[INFO] Starting container on port 8080...
+[SUCCESS] Container started
+[INFO] Testing health endpoint...
+[SUCCESS] Health check passed!
+[SUCCESS] ✅ Local testing PASSED!
+```
+
+## Manual Local Testing (Alternative)
+
+If you prefer manual testing:
+
+```bash
+# Build image
+docker build -t code-index-mcp-test -f deployment/gcp/Dockerfile .
+
+# Run container
+docker run -d \
+    --name mcp-test \
+    -p 8080:8080 \
+    -e MCP_TRANSPORT=http \
+    -e PORT=8080 \
+    code-index-mcp-test
+
+# Test health endpoint
+curl http://localhost:8080/health
+
+# Check logs
+docker logs -f mcp-test
+
+# Clean up when done
+docker stop mcp-test
+docker rm mcp-test
+```
+
+## Common Issues & Solutions
+
+### Issue: "Docker is not running"
+```bash
+# Solution: Start Docker Desktop
+open -a Docker  # macOS
+```
+
+### Issue: "Port 8080 already in use"
+```bash
+# Solution: Find and stop the process using port 8080
+lsof -ti:8080 | xargs kill -9
+
+# Or use a different port in test-local.sh
+TEST_PORT=8081
+```
+
+### Issue: Container crashes immediately
+```bash
+# Check logs
+docker logs code-index-mcp-test
+
+# Common causes:
+# 1. Import errors (missing dependencies)
+# 2. Syntax errors in Python code
+# 3. Environment variable issues
+# 4. Port binding conflicts
+```
+
+### Issue: Health check fails
+```bash
+# Check if server is listening
+docker exec code-index-mcp-test netstat -tlnp
+
+# Check application logs
+docker logs --tail=50 code-index-mcp-test
+
+# Common causes:
+# 1. Server not binding to 0.0.0.0 (binding to 127.0.0.1 instead)
+# 2. Wrong PORT environment variable
+# 3. FastMCP not in HTTP/SSE mode
+```
+
+## Integration with deploy.sh
+
+The `deploy.sh` script should check if local testing was done:
+
+```bash
+# At the start of deploy.sh
+if [ ! -f ".local-test-passed" ]; then
+    echo "WARNING: Local testing not verified"
+    echo "Run ./test-local.sh first to catch issues early"
+    read -p "Continue anyway? (y/N): " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        exit 1
+    fi
+fi
+```
+
+## When to Skip Local Testing
+
+You can skip local testing ONLY when:
+
+1. ✅ Making documentation-only changes
+2. ✅ Updating environment variables (no code changes)
+3. ✅ Re-deploying exact same image
+4. ✅ Hot-fixing in production emergency (test after deploy)
+
+## Verification Checklist
+
+Before deploying to cloud:
+
+- [ ] `./test-local.sh` passes all checks
+- [ ] Health endpoint returns 200 OK
+- [ ] Container logs show "Starting MCP server in HTTP/SSE mode"
+- [ ] No Python errors or tracebacks in logs
+- [ ] Server is listening on port 8080
+- [ ] Container runs for at least 30 seconds without crashing
+
+## Cost Comparison
+
+| Approach | Time | Cost | Iterations |
+|----------|------|------|------------|
+| **Cloud-first** | 5-10 min/attempt | $0.10/build | 3-5 attempts = $0.30-0.50 |
+| **Local-first** | 30 sec/attempt | $0 | Unlimited = $0 |
+
+**Savings**: ~10 minutes and $0.50 per development cycle
+
+## References
+
+- [Google Codelabs - Deploy MCP Server on Cloud Run](https://codelabs.developers.google.com/codelabs/cloud-run/how-to-deploy-a-secure-mcp-server-on-cloud-run)
+- [Docker Best Practices](https://docs.docker.com/develop/dev-best-practices/)
+- [FastMCP Documentation](https://github.com/jlowin/fastmcp)
+
+---
+
+**Created**: October 24, 2025  
+**Priority**: HIGH  
+**Enforcement**: Required for all cloud deployments

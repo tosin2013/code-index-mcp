@@ -1,0 +1,34 @@
+---
+# Default variables for utilities role
+# These can be overridden in inventory files or via command line
+
+# GCP Configuration
+gcp_project_id: "{{ lookup('env', 'GCP_PROJECT_ID') | default('', true) }}"
+gcp_region: "us-east1"
+env_name: "dev"
+
+# Service Configuration
+service_name: "code-index-mcp-{{ env_name }}"
+vpc_connector_name: "alloydb-connector"
+with_alloydb: true
+
+# AlloyDB Configuration (for connection tests)
+alloydb_ip: "10.175.0.2"  # Default AlloyDB private IP
+
+# Storage Configuration
+storage_bucket: "code-index-projects-{{ gcp_project_id }}"
+git_bucket: "code-index-git-repos-{{ gcp_project_id }}"
+
+# API Key Generation
+user_id: "demo-user"
+save_to_file: true
+
+# Query Configuration
+query_method: "cloud_run_job"  # Options: cloud_run_job, vm
+
+# Teardown Configuration
+delete_buckets: false
+auto_approve: false
+
+# Operation Type (set via command line)
+operation: ""  # Options: generate_api_key, query_database, verify_schema, test_connection, teardown

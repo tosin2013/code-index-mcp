@@ -1,0 +1,186 @@
+---
+# Teardown all GCP resources (Cloud Run, images, scheduler, optional bucket)
+# NOTE: This does NOT delete AlloyDB - use terraform destroy for that
+- name: Display teardown warning
+  ansible.builtin.debug:
+    msg:
+      - "========================================"
+      - "  WARNING: DESTRUCTIVE OPERATION"
+      - "========================================"
+      - ""
+      - "This will delete the following resources:"
+      - "  - Cloud Run service: {{ service_name }}"
+      - "  - Container images for: {{ service_name }}"
+      - "  - Cloud Scheduler cleanup job"
+      - "{{ '  - GCS buckets (ALL DATA WILL BE LOST)' if delete_buckets | default(false) else '  - GCS buckets will be PRESERVED' }}"
+      - ""
+      - "Project: {{ gcp_project_id }}"
+      - "Environment: {{ env_name }}"
+      - "Region: {{ gcp_region }}"
+      - ""
+
+- name: Confirm teardown
+  ansible.builtin.pause:
+    prompt: "Type 'yes' to confirm teardown (or press Ctrl+C to cancel)"
+  register: confirm_result
+  when: not (auto_approve | default(false))
+
+- name: Validate confirmation
+  ansible.builtin.fail:
+    msg: "Teardown cancelled - you must type 'yes' to confirm"
+  when:
+    - not (auto_approve | default(false))
+    - confirm_result.user_input != 'yes'
+
+- name: Delete Cloud Run service
+  block:
+    - name: Check if Cloud Run service exists
+      ansible.builtin.command: >
+        gcloud run services describe {{ service_name }}
+        --platform=managed
+        --region={{ gcp_region }}
+        --project={{ gcp_project_id }}
+      register: service_check
+      failed_when: false
+      changed_when: false
+
+    - name: Delete Cloud Run service
+      ansible.builtin.command: >
+        gcloud run services delete {{ service_name }}
+        --platform=managed
+        --region={{ gcp_region }}
+        --project={{ gcp_project_id }}
+        --quiet
+      when: service_check.rc == 0
+      register: service_delete
+      changed_when: "'Deleted service' in service_delete.stderr"
+
+    - name: Log service deletion status
+      ansible.builtin.debug:
+        msg: "{{ 'Cloud Run service deleted' if service_check.rc == 0 else 'Cloud Run service not found (already deleted?)' }}"
+
+- name: Delete container images from Artifact Registry
+  block:
+    - name: List images in Artifact Registry
+      ansible.builtin.command: >
+        gcloud artifacts docker images list
+        {{ gcp_region }}-docker.pkg.dev/{{ gcp_project_id }}/code-index
+        --filter="package:{{ service_name }}"
+        --format="value(package)"
+      register: image_list
+      failed_when: false
+      changed_when: false
+
+    - name: Delete each image
+      ansible.builtin.command: >
+        gcloud artifacts docker images delete
+        {{ item }}
+        --delete-tags
+        --quiet
+      loop: "{{ image_list.stdout_lines }}"
+      when: image_list.stdout_lines | length > 0
+      register: image_delete
+      changed_when: "'Deleted' in image_delete.stderr"
+      failed_when: false
+
+    - name: Log image deletion status
+      ansible.builtin.debug:
+        msg: "{{ 'Container images deleted' if image_list.stdout_lines | length > 0 else 'No container images found' }}"
+
+- name: Delete Cloud Scheduler cleanup job
+  block:
+    - name: Check if scheduler job exists
+      ansible.builtin.command: >
+        gcloud scheduler jobs describe code-index-cleanup-{{ env_name }}
+        --location={{ gcp_region }}
+        --project={{ gcp_project_id }}
+      register: scheduler_check
+      failed_when: false
+      changed_when: false
+
+    - name: Delete scheduler job
+      ansible.builtin.command: >
+        gcloud scheduler jobs delete code-index-cleanup-{{ env_name }}
+        --location={{ gcp_region }}
+        --project={{ gcp_project_id }}
+        --quiet
+      when: scheduler_check.rc == 0
+      register: scheduler_delete
+      changed_when: "'Deleted job' in scheduler_delete.stderr"
+
+    - name: Log scheduler deletion status
+      ansible.builtin.debug:
+        msg: "{{ 'Scheduler job deleted' if scheduler_check.rc == 0 else 'Scheduler job not found (already deleted?)' }}"
+
+- name: Delete GCS buckets (optional)
+  when: delete_buckets | default(false)
+  block:
+    - name: Check if project bucket exists
+      ansible.builtin.command: >
+        gsutil ls gs://{{ storage_bucket }}
+      register: project_bucket_check
+      failed_when: false
+      changed_when: false
+
+    - name: Delete project bucket contents
+      ansible.builtin.command: >
+        gsutil -m rm -r gs://{{ storage_bucket }}/**
+      when: project_bucket_check.rc == 0
+      register: project_bucket_empty
+      changed_when: true
+      failed_when: false
+
+    - name: Delete project bucket
+      ansible.builtin.command: >
+        gsutil rb gs://{{ storage_bucket }}
+      when: project_bucket_check.rc == 0
+      register: project_bucket_delete
+      changed_when: "'Removing gs://' in project_bucket_delete.stderr"
+
+    - name: Check if git bucket exists
+      ansible.builtin.command: >
+        gsutil ls gs://{{ git_bucket }}
+      register: git_bucket_check
+      failed_when: false
+      changed_when: false
+
+    - name: Delete git bucket contents
+      ansible.builtin.command: >
+        gsutil -m rm -r gs://{{ git_bucket }}/**
+      when: git_bucket_check.rc == 0
+      register: git_bucket_empty
+      changed_when: true
+      failed_when: false
+
+    - name: Delete git bucket
+      ansible.builtin.command: >
+        gsutil rb gs://{{ git_bucket }}
+      when: git_bucket_check.rc == 0
+      register: git_bucket_delete
+      changed_when: "'Removing gs://' in git_bucket_delete.stderr"
+
+    - name: Log bucket deletion status
+      ansible.builtin.debug:
+        msg: "GCS buckets deleted (ALL DATA LOST)"
+
+- name: Display summary
+  ansible.builtin.debug:
+    msg:
+      - ""
+      - "========================================"
+      - "  Cleanup Complete"
+      - "========================================"
+      - ""
+      - "Deleted resources:"
+      - "  ✓ Cloud Run service: {{ service_name }}"
+      - "  ✓ Container images"
+      - "  ✓ Cloud Scheduler job"
+      - "{{ '  ✓ GCS buckets' if delete_buckets | default(false) else '  ℹ GCS buckets preserved: gs://' + storage_bucket }}"
+      - ""
+      - "{{ '⚠️  IMPORTANT: AlloyDB is NOT deleted (~$180-200/month keeps billing!)' if with_alloydb else '' }}"
+      - "{{ 'To stop AlloyDB billing, run: cd .. && terraform destroy' if with_alloydb else '' }}"
+      - ""
+      - "Verify deletion:"
+      - "  gcloud run services list --region={{ gcp_region }}"
+      - "  gsutil ls"
+      - ""

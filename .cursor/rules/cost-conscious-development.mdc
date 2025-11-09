@@ -1,0 +1,16 @@
+---
+rule_type: auto
+description: "Enforce cost-conscious cloud feature development"
+globs: ["deployment/**/*", "docs/adrs/*.md"]
+---
+
+When adding cloud features, consider if the service can scale-to-zero (run on-demand only).
+When adding cloud features, ensure unused resources will be cleaned up automatically.
+When adding cloud features, document monthly cost impact in the relevant ADR.
+When adding cloud features, recommend setting up cost monitoring and budget alerts.
+Verify that cleanup automation is implemented (Cloud Scheduler, EventBridge, CronJob).
+Test auto-cleanup logic with mock data before production deployment.
+Include cost estimates in ADRs: idle cost, light usage cost, production usage cost.
+Consider serverless options (Cloud Run, Lambda) over always-on services when possible.
+Implement lifecycle rules for cloud storage (archive after 30 days, delete after 90 days).
+Use auto-scaling with appropriate min/max replica counts.

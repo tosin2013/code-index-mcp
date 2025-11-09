@@ -9,35 +9,35 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
-    
+
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
         python-version: '3.10'
-    
+
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         pip install build twine
-    
+
     - name: Extract version from tag
       id: get_version
       run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_ENV
-      
+
     - name: Update version in files
       run: |
         # Update pyproject.toml version
         sed -i "s/^version = .*/version = \"${{ env.VERSION }}\"/" pyproject.toml
-        
+
         # Update __init__.py version
         sed -i "s/__version__ = .*/__version__ = \"${{ env.VERSION }}\"/" src/code_index_mcp/__init__.py
-    
+
     - name: Build package
       run: python -m build
-    
+
     - name: Check package
       run: twine check dist/*
-      
+
     - name: Publish to PyPI
       uses: pypa/gh-action-pypi-publish@release/v1
       with:

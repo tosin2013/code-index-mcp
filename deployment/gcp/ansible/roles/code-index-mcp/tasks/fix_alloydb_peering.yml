@@ -1,0 +1,105 @@
+---
+# Fix AlloyDB VPC Peering to Enable Route Export
+# This resolves connectivity issues between VPC connector and AlloyDB
+
+- name: "Peering Fix: Display warning"
+  ansible.builtin.debug:
+    msg:
+      - "═══════════════════════════════════════════════════════"
+      - "🔧 Fixing AlloyDB VPC Peering Configuration"
+      - "═══════════════════════════════════════════════════════"
+      - "This will enable custom route export/import for the"
+      - "servicenetworking peering, allowing VPC connector to"
+      - "reach AlloyDB private IP addresses."
+      - "═══════════════════════════════════════════════════════"
+
+- name: "Peering Fix: Update VPC peering to export custom routes"
+  ansible.builtin.command: >
+    gcloud compute networks peerings update servicenetworking-googleapis-com
+    --network=code-index-alloydb-network-{{ env_name }}
+    --export-custom-routes
+    --import-custom-routes
+    --project={{ gcp_project_id }}
+  register: peering_update
+  changed_when: "'Updated' in peering_update.stdout"
+
+- name: "Peering Fix: Display update result"
+  ansible.builtin.debug:
+    msg:
+      - "Peering update result: {{ peering_update.stdout }}"
+
+- name: "Peering Fix: Wait for peering to propagate (30 seconds)"
+  ansible.builtin.pause:
+    seconds: 30
+    prompt: "Waiting for VPC peering changes to propagate..."
+
+- name: "Peering Fix: Verify peering configuration"
+  ansible.builtin.command: >
+    gcloud compute networks describe code-index-alloydb-network-{{ env_name }}
+    --format=json
+  register: peering_verification
+  changed_when: false
+
+- name: "Peering Fix: Parse network details"
+  ansible.builtin.set_fact:
+    network_info: "{{ peering_verification.stdout | from_json }}"
+
+- name: "Peering Fix: Find servicenetworking peering"
+  ansible.builtin.set_fact:
+    peering_config: "{{ network_info.peerings | selectattr('name', 'equalto', 'servicenetworking-googleapis-com') | first }}"
+  when: network_info.peerings is defined and network_info.peerings | length > 0
+
+- name: "Peering Fix: Assert routes are exported"
+  ansible.builtin.assert:
+    that:
+      - peering_config is defined
+      - peering_config.exportCustomRoutes | default(false)
+      - peering_config.importCustomRoutes | default(false)
+    fail_msg: |
+      ❌ VPC peering update failed
+      Export custom routes: {{ peering_config.exportCustomRoutes | default(false) }}
+      Import custom routes: {{ peering_config.importCustomRoutes | default(false) }}
+    success_msg: "✅ VPC peering now exports/imports custom routes"
+
+- name: "Peering Fix: Get VPC connector subnet"
+  ansible.builtin.command: >
+    gcloud compute networks vpc-access connectors describe alloydb-connector
+    --region={{ gcp_region }}
+    --format='value(ipCidrRange)'
+  register: vpc_connector_subnet_result
+  changed_when: false
+
+- name: "Peering Fix: Set VPC connector subnet variable"
+  ansible.builtin.set_fact:
+    vpc_connector_subnet: "{{ vpc_connector_subnet_result.stdout }}"
+
+- name: "Peering Fix: Create firewall rule for VPC connector to AlloyDB"
+  ansible.builtin.command: >
+    gcloud compute firewall-rules create allow-vpc-connector-to-alloydb-{{ env_name }}
+    --network=code-index-alloydb-network-{{ env_name }}
+    --allow=tcp:5432
+    --source-ranges={{ vpc_connector_subnet }}
+    --target-tags=alloydb
+    --description="Allow VPC connector to connect to AlloyDB"
+    --project={{ gcp_project_id }}
+  register: firewall_create
+  failed_when:
+    - firewall_create.rc != 0
+    - "'already exists' not in firewall_create.stderr"
+  changed_when: firewall_create.rc == 0
+
+- name: "Peering Fix: Display firewall rule result"
+  ansible.builtin.debug:
+    msg: "{{ 'Firewall rule created ✅' if firewall_create.rc == 0 else 'Firewall rule already exists ✅' }}"
+
+- name: "Peering Fix: Display success message"
+  ansible.builtin.debug:
+    msg:
+      - "═══════════════════════════════════════════════════════"
+      - "✅ AlloyDB VPC Peering Fix Complete"
+      - "═══════════════════════════════════════════════════════"
+      - "VPC Peering: Exports/imports custom routes ✅"
+      - "Firewall Rule: Allows VPC connector → AlloyDB ✅"
+      - ""
+      - "Cloud Run services should now be able to connect to AlloyDB."
+      - "═══════════════════════════════════════════════════════"

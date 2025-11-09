@@ -30,33 +30,33 @@ class App {
   setupMiddleware() {
     // Security middleware
     this.app.use(helmet());
-    
+
     // CORS configuration
     this.app.use(cors({
       origin: process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:3000'],
       credentials: true,
     }));
-    
+
     // Compression middleware
     this.app.use(compression());
-    
+
     // Body parsing middleware
     this.app.use(express.json({ limit: '10mb' }));
     this.app.use(express.urlencoded({ extended: true, limit: '10mb' }));
-    
+
     // Logging middleware
     this.app.use(morgan('combined', { stream: logger.stream }));
-    
+
     // Rate limiting
     this.app.use(generalLimiter);
-    
+
     // Request ID middleware
     this.app.use((req, res, next) => {
       req.requestId = Math.random().toString(36).substr(2, 9);
       res.set('X-Request-ID', req.requestId);
       next();
     });
-    
+
     // Health check endpoint
     this.app.get('/health', (req, res) => {
       res.json({
@@ -75,7 +75,7 @@ class App {
   setupRoutes() {
     // API routes
     this.app.use('/api/users', userRoutes);
-    
+
     // Root endpoint
     this.app.get('/', (req, res) => {
       res.json({
@@ -96,7 +96,7 @@ class App {
   setupErrorHandling() {
     // Handle 404 for unknown routes
     this.app.use(handleNotFound);
-    
+
     // Global error handler
     this.app.use(globalErrorHandler);
   }
@@ -108,22 +108,22 @@ class App {
     try {
       // Connect to database
       await database.connect();
-      
+
       // Start server
       this.server = this.app.listen(this.port, () => {
         logger.info(`Server running on port ${this.port}`);
         logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
         logger.info(`Health check: http://localhost:${this.port}/health`);
       });
-      
+
       // Handle server errors
       this.server.on('error', (error) => {
         if (error.syscall !== 'listen') {
           throw error;
         }
-        
+
         const bind = typeof this.port === 'string' ? `Pipe ${this.port}` : `Port ${this.port}`;
-        
+
         switch (error.code) {
           case 'EACCES':
             logger.error(`${bind} requires elevated privileges`);
@@ -137,11 +137,11 @@ class App {
             throw error;
         }
       });
-      
+
       // Graceful shutdown
       process.on('SIGTERM', this.gracefulShutdown.bind(this));
       process.on('SIGINT', this.gracefulShutdown.bind(this));
-      
+
     } catch (error) {
       logger.error('Failed to start server:', error);
       process.exit(1);
@@ -153,11 +153,11 @@ class App {
    */
   async gracefulShutdown(signal) {
     logger.info(`Received ${signal}. Graceful shutdown...`);
-    
+
     if (this.server) {
       this.server.close(async () => {
         logger.info('HTTP server closed');
-        
+
         try {
           await database.disconnect();
           logger.info('Database disconnected');

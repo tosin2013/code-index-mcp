@@ -1,0 +1,40 @@
+---
+# GCP Development environment testing configuration
+all:
+  hosts:
+    localhost:
+      ansible_connection: local
+      ansible_python_interpreter: "/Users/tosinakinosho/workspaces/code-index-mcp/.venv/bin/python"
+  vars:
+    # Transport Configuration
+    transport: sse
+
+    # GCP Configuration
+    gcp_project_id: "tosinscloud"
+    gcp_region: "us-east1"
+    env_name: "dev"
+
+    # Cloud Run Configuration
+    # Get this from: gcloud run services describe code-index-mcp-dev --format='value(status.url)'
+    # Or from deployment output
+    mcp_server_url: "{{ lookup('ansible.builtin.env', 'CLOUDRUN_SERVICE_URL_DEV') | default('https://code-index-mcp-dev-920209401641.us-east1.run.app', true) }}"
+
+    # Authentication
+    # Get API key from: ansible-playbook utilities.yml -i inventory/dev.yml -e "operation=generate_api_key user_id=test-user"
+    api_key: "{{ lookup('ansible.builtin.env', 'MCP_API_KEY_DEV') | default('***REMOVED***', true) }}"
+
+    # Feature Flags
+    with_alloydb: true  # AlloyDB is deployed in dev environment
+    test_git_ingestion: true
+    run_llm_tests: true  # Enable LLM tests with Ollama
+    ollama_available: true
+    ollama_base_url: "http://localhost:11434"
+    llm_model: "codellama:13b-instruct"
+
+    # Test Configuration
+    test_timeout_seconds: 60
+    verbose_output: true
+
+    # Expected Server Configuration
+    expected_server_name: "CodeIndexer"
+    expected_protocol_version: "2024-11-05"

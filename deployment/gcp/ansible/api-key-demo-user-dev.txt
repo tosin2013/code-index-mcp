@@ -1,0 +1,18 @@
+API_KEY=ci_EET8xqesFizcNWYfzYBcEl7Wse4zkNLHsDjhXHPWN5jurrrUKwJXxoVPwzWYeFTH
+SECRET_NAME=code-index-api-key-demo-user-dev
+USER_ID=demo-user
+ENVIRONMENT=dev
+PROJECT_ID=tosinscloud
+
+# Claude Desktop Configuration
+{
+  "mcpServers": {
+    "code-index-semantic-search": {
+      "url": "https://code-index-mcp-dev-*.run.app/sse",
+      "transport": "sse",
+      "headers": {
+        "X-API-Key": "ci_EET8xqesFizcNWYfzYBcEl7Wse4zkNLHsDjhXHPWN5jurrrUKwJXxoVPwzWYeFTH"
+      }
+    }
+  }
+}

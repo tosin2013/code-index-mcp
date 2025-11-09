@@ -22,6 +22,26 @@ dependencies = [
     "tree-sitter-zig>=0.20.0",
     "pathspec>=0.12.1",
     "msgpack>=1.0.0",
+    "numpy>=1.24.0",  # For embeddings (mock and real)
+]
+
+[project.optional-dependencies]
+# Google Cloud Platform deployment (ADR 0002, 0003)
+gcp = [
+    "google-cloud-secret-manager>=2.16.0",
+    "google-cloud-storage>=2.10.0",
+    "google-cloud-aiplatform>=1.38.0",  # For Vertex AI embeddings (ADR 0003)
+    "psycopg2-binary>=2.9.0",  # For AlloyDB connection (ADR 0003)
+]
+# AWS deployment (ADR 0004, 0006) - future
+aws = [
+    "boto3>=1.28.0",
+]
+# All cloud providers
+cloud = [
+    "google-cloud-secret-manager>=2.16.0",
+    "google-cloud-storage>=2.10.0",
+    "boto3>=1.28.0",
 ]
 
 [project.urls]
@@ -33,3 +53,9 @@ code-index-mcp = "code_index_mcp.server:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4.2",
+    "pytest-asyncio>=1.2.0",
+]

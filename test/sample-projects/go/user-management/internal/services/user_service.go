@@ -30,32 +30,32 @@ func (s *UserService) CreateUser(req *models.UserRequest) (*models.User, error) 
 	if err := s.db.Where("username = ?", req.Username).First(&existingUser).Error; err == nil {
 		return nil, errors.New("username already exists")
 	}
-	
+
 	// Check if email already exists (if provided)
 	if req.Email != "" {
 		if err := s.db.Where("email = ?", req.Email).First(&existingUser).Error; err == nil {
 			return nil, errors.New("email already exists")
 		}
 	}
-	
+
 	// Create new user
 	user := &models.User{
 		Role:   models.RoleUser,
 		Status: models.StatusActive,
 	}
-	
+
 	if err := user.FromRequest(req); err != nil {
 		return nil, fmt.Errorf("failed to create user from request: %w", err)
 	}
-	
+
 	if err := user.Validate(); err != nil {
 		return nil, fmt.Errorf("user validation failed: %w", err)
 	}
-	
+
 	if err := s.db.Create(user).Error; err != nil {
 		return nil, fmt.Errorf("failed to create user: %w", err)
 	}
-	
+
 	return user, nil
 }
 
@@ -101,7 +101,7 @@ func (s *UserService) UpdateUser(id uuid.UUID, updates map[string]interface{}) (
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Apply updates
 	for key, value := range updates {
 		switch key {
@@ -131,15 +131,15 @@ func (s *UserService) UpdateUser(id uuid.UUID, updates map[string]interface{}) (
 			}
 		}
 	}
-	
+
 	if err := user.Validate(); err != nil {
 		return nil, fmt.Errorf("user validation failed: %w", err)
 	}
-	
+
 	if err := s.db.Save(user).Error; err != nil {
 		return nil, fmt.Errorf("failed to update user: %w", err)
 	}
-	
+
 	return user, nil
 }
 
@@ -149,13 +149,13 @@ func (s *UserService) DeleteUser(id uuid.UUID) error {
 	if err != nil {
 		return err
 	}
-	
+
 	user.Delete()
-	
+
 	if err := s.db.Save(user).Error; err != nil {
 		return fmt.Errorf("failed to delete user: %w", err)
 	}
-	
+
 	return nil
 }
 
@@ -171,18 +171,18 @@ func (s *UserService) HardDeleteUser(id uuid.UUID) error {
 func (s *UserService) GetAllUsers(page, pageSize int) ([]*models.User, int64, error) {
 	var users []*models.User
 	var total int64
-	
+
 	// Count total users
 	if err := s.db.Model(&models.User{}).Count(&total).Error; err != nil {
 		return nil, 0, fmt.Errorf("failed to count users: %w", err)
 	}
-	
+
 	// Get users with pagination
 	offset := (page - 1) * pageSize
 	if err := s.db.Limit(pageSize).Offset(offset).Find(&users).Error; err != nil {
 		return nil, 0, fmt.Errorf("failed to get users: %w", err)
 	}
-	
+
 	return users, total, nil
 }
 
@@ -208,9 +208,9 @@ func (s *UserService) GetUsersByRole(role models.UserRole) ([]*models.User, erro
 func (s *UserService) SearchUsers(query string, page, pageSize int) ([]*models.User, int64, error) {
 	var users []*models.User
 	var total int64
-	
+
 	searchQuery := "%" + strings.ToLower(query) + "%"
-	
+
 	// Count total matching users
 	if err := s.db.Model(&models.User{}).Where(
 		"LOWER(name) LIKE ? OR LOWER(username) LIKE ? OR LOWER(email) LIKE ?",
@@ -218,7 +218,7 @@ func (s *UserService) SearchUsers(query string, page, pageSize int) ([]*models.U
 	).Count(&total).Error; err != nil {
 		return nil, 0, fmt.Errorf("failed to count search results: %w", err)
 	}
-	
+
 	// Get matching users with pagination
 	offset := (page - 1) * pageSize
 	if err := s.db.Where(
@@ -227,44 +227,44 @@ func (s *UserService) SearchUsers(query string, page, pageSize int) ([]*models.U
 	).Limit(pageSize).Offset(offset).Find(&users).Error; err != nil {
 		return nil, 0, fmt.Errorf("failed to search users: %w", err)
 	}
-	
+
 	return users, total, nil
 }
 
 // GetUserStats returns user statistics
 func (s *UserService) GetUserStats() (*utils.UserStats, error) {
 	var stats utils.UserStats
-	
+
 	// Total users
 	if err := s.db.Model(&models.User{}).Count(&stats.Total).Error; err != nil {
 		return nil, fmt.Errorf("failed to count total users: %w", err)
 	}
-	
+
 	// Active users
 	if err := s.db.Model(&models.User{}).Where("status = ?", models.StatusActive).Count(&stats.Active).Error; err != nil {
 		return nil, fmt.Errorf("failed to count active users: %w", err)
 	}
-	
+
 	// Admin users
 	if err := s.db.Model(&models.User{}).Where("role = ?", models.RoleAdmin).Count(&stats.Admin).Error; err != nil {
 		return nil, fmt.Errorf("failed to count admin users: %w", err)
 	}
-	
+
 	// Regular users
 	if err := s.db.Model(&models.User{}).Where("role = ?", models.RoleUser).Count(&stats.User).Error; err != nil {
 		return nil, fmt.Errorf("failed to count regular users: %w", err)
 	}
-	
+
 	// Guest users
 	if err := s.db.Model(&models.User{}).Where("role = ?", models.RoleGuest).Count(&stats.Guest).Error; err != nil {
 		return nil, fmt.Errorf("failed to count guest users: %w", err)
 	}
-	
+
 	// Users with email
 	if err := s.db.Model(&models.User{}).Where("email != ''").Count(&stats.WithEmail).Error; err != nil {
 		return nil, fmt.Errorf("failed to count users with email: %w", err)
 	}
-	
+
 	return &stats, nil
 }
 
@@ -274,15 +274,15 @@ func (s *UserService) AuthenticateUser(username, password string) (*models.User,
 	if err != nil {
 		return nil, errors.New("invalid username or password")
 	}
-	
+
 	if !user.IsActive() {
 		return nil, errors.New("user account is not active")
 	}
-	
+
 	if user.IsLocked() {
 		return nil, errors.New("user account is locked")
 	}
-	
+
 	if !user.VerifyPassword(password) {
 		user.FailedLoginAttempt()
 		if err := s.db.Save(user).Error; err != nil {
@@ -290,16 +290,16 @@ func (s *UserService) AuthenticateUser(username, password string) (*models.User,
 		}
 		return nil, errors.New("invalid username or password")
 	}
-	
+
 	// Successful login
 	if err := user.Login(); err != nil {
 		return nil, fmt.Errorf("login failed: %w", err)
 	}
-	
+
 	if err := s.db.Save(user).Error; err != nil {
 		return nil, fmt.Errorf("failed to update login info: %w", err)
 	}
-	
+
 	return user, nil
 }
 
@@ -309,19 +309,19 @@ func (s *UserService) ChangePassword(id uuid.UUID, currentPassword, newPassword 
 	if err != nil {
 		return err
 	}
-	
+
 	if !user.VerifyPassword(currentPassword) {
 		return errors.New("current password is incorrect")
 	}
-	
+
 	if err := user.SetPassword(newPassword); err != nil {
 		return fmt.Errorf("failed to set new password: %w", err)
 	}
-	
+
 	if err := s.db.Save(user).Error; err != nil {
 		return fmt.Errorf("failed to update password: %w", err)
 	}
-	
+
 	return nil
 }
 
@@ -331,17 +331,17 @@ func (s *UserService) ResetPassword(id uuid.UUID, newPassword string) error {
 	if err != nil {
 		return err
 	}
-	
+
 	if err := user.SetPassword(newPassword); err != nil {
 		return fmt.Errorf("failed to set new password: %w", err)
 	}
-	
+
 	user.ResetLoginAttempts()
-	
+
 	if err := s.db.Save(user).Error; err != nil {
 		return fmt.Errorf("failed to update password: %w", err)
 	}
-	
+
 	return nil
 }
 
@@ -351,13 +351,13 @@ func (s *UserService) AddPermission(id uuid.UUID, permission string) error {
 	if err != nil {
 		return err
 	}
-	
+
 	user.AddPermission(permission)
-	
+
 	if err := s.db.Save(user).Error; err != nil {
 		return fmt.Errorf("failed to add permission: %w", err)
 	}
-	
+
 	return nil
 }
 
@@ -367,13 +367,13 @@ func (s *UserService) RemovePermission(id uuid.UUID, permission string) error {
 	if err != nil {
 		return err
 	}
-	
+
 	user.RemovePermission(permission)
-	
+
 	if err := s.db.Save(user).Error; err != nil {
 		return fmt.Errorf("failed to remove permission: %w", err)
 	}
-	
+
 	return nil
 }
 
@@ -383,17 +383,17 @@ func (s *UserService) ExportUsers() ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to get users for export: %w", err)
 	}
-	
+
 	var responses []*models.UserResponse
 	for _, user := range users {
 		responses = append(responses, user.ToResponse())
 	}
-	
+
 	data, err := json.MarshalIndent(responses, "", "  ")
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal users: %w", err)
 	}
-	
+
 	return data, nil
 }
 
@@ -403,7 +403,7 @@ func (s *UserService) GetUserActivity(id uuid.UUID) (*utils.UserActivity, error)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	activity := &utils.UserActivity{
 		UserID:        user.ID,
 		Username:      user.Username,
@@ -414,6 +414,6 @@ func (s *UserService) GetUserActivity(id uuid.UUID) (*utils.UserActivity, error)
 		CreatedAt:     user.CreatedAt,
 		UpdatedAt:     user.UpdatedAt,
 	}
-	
+
 	return activity, nil
 }

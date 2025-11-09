@@ -1,0 +1,62 @@
+---
+# Utilities Playbook - Run various utility operations
+#
+# Usage examples:
+#   # Generate API key
+#   ansible-playbook utilities.yml -i inventory/dev.yml -e "operation=generate_api_key user_id=john-doe"
+#
+#   # Query database
+#   ansible-playbook utilities.yml -i inventory/dev.yml -e "operation=query_database"
+#
+#   # Verify schema
+#   ansible-playbook utilities.yml -i inventory/dev.yml -e "operation=verify_schema"
+#
+#   # Test connection
+#   ansible-playbook utilities.yml -i inventory/dev.yml -e "operation=test_connection"
+#
+#   # Teardown (with confirmation)
+#   ansible-playbook utilities.yml -i inventory/dev.yml -e "operation=teardown"
+#
+#   # Teardown (auto-approve, delete buckets)
+#   ansible-playbook utilities.yml -i inventory/dev.yml -e "operation=teardown auto_approve=true delete_buckets=true"
+
+- name: Code Index MCP - Utilities
+  hosts: localhost
+  connection: local
+  gather_facts: yes
+
+  pre_tasks:
+    - name: Validate operation parameter
+      ansible.builtin.fail:
+        msg: |
+          Operation parameter is required.
+
+          Available operations:
+            - generate_api_key: Generate API key for a user
+            - query_database: Query AlloyDB database
+            - apply_schema: Apply database schema to AlloyDB
+            - seed_test_user: Create test user for ingestion (REQUIRED before first ingestion)
+            - verify_schema: Verify database schema
+            - test_connection: Test AlloyDB connection
+            - test_alloydb_connectivity: Comprehensive AlloyDB connectivity test
+            - fix_alloydb_peering: Fix VPC peering for AlloyDB connectivity
+            - reset_database: Reset database to clean state (truncate all tables)
+            - teardown: Delete all cloud resources
+
+          Example:
+            ansible-playbook utilities.yml -i inventory/dev.yml -e "operation=generate_api_key"
+      when: operation is not defined or operation == ""
+
+    - name: Display utility operation info
+      ansible.builtin.debug:
+        msg:
+          - "========================================"
+          - "  Code Index MCP - Utilities"
+          - "========================================"
+          - "Operation: {{ operation }}"
+          - "Environment: {{ env_name }}"
+          - "Project: {{ gcp_project_id }}"
+          - "========================================"
+
+  roles:
+    - role: utilities

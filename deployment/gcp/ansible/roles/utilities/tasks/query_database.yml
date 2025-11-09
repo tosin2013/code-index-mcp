@@ -1,0 +1,199 @@
+---
+# Query AlloyDB via Cloud Run Job (recommended) or temporary VM
+- name: Display query database info
+  ansible.builtin.debug:
+    msg:
+      - "========================================"
+      - "  Query AlloyDB Database"
+      - "========================================"
+      - "Method: {{ query_method | default('cloud_run_job') }}"
+      - "Project: {{ gcp_project_id }}"
+      - "Environment: {{ env_name }}"
+
+# Method 1: Cloud Run Job (Recommended - faster, no VM overhead)
+- name: Query via Cloud Run Job
+  when: query_method | default('cloud_run_job') == 'cloud_run_job'
+  block:
+    - name: Create temporary query SQL file
+      ansible.builtin.copy:
+        content: |
+          -- Projects
+          SELECT 'PROJECTS:' as section;
+          SELECT project_id, project_name, language, created_at
+          FROM projects
+          ORDER BY created_at DESC;
+
+          -- Code chunks summary
+          SELECT '' as blank_line;
+          SELECT 'CODE CHUNKS SUMMARY:' as section;
+          SELECT
+              p.project_name,
+              COUNT(*) as chunk_count,
+              COUNT(DISTINCT c.file_path) as file_count,
+              STRING_AGG(DISTINCT c.language, ', ') as languages
+          FROM code_chunks c
+          JOIN projects p ON c.project_id = p.project_id
+          GROUP BY p.project_name;
+
+          -- Sample chunks
+          SELECT '' as blank_line;
+          SELECT 'SAMPLE CHUNKS:' as section;
+          SELECT
+              c.file_path,
+              c.function_name,
+              c.language,
+              LEFT(c.code, 100) as code_preview
+          FROM code_chunks c
+          JOIN projects p ON c.project_id = p.project_id
+          LIMIT 5;
+        dest: /tmp/query_alloydb.sql
+        mode: '0644'
+
+    - name: Build query Docker image
+      ansible.builtin.command: >
+        gcloud builds submit
+        --tag={{ gcp_region }}-docker.pkg.dev/{{ gcp_project_id }}/code-index/query-runner:latest
+        --project={{ gcp_project_id }}
+        - <<EOF
+        FROM postgres:16-alpine
+        COPY query_alloydb.sql /query.sql
+        RUN apk add --no-cache postgresql-client
+        EOF
+      args:
+        chdir: /tmp
+      register: build_result
+      changed_when: "'DONE' in build_result.stderr"
+
+    - name: Create Cloud Run Job for query
+      ansible.builtin.shell: |
+        gcloud run jobs create query-alloydb-{{ env_name }} \
+          --image={{ gcp_region }}-docker.pkg.dev/{{ gcp_project_id }}/code-index/query-runner:latest \
+          --region={{ gcp_region }} \
+          --project={{ gcp_project_id }} \
+          --vpc-connector={{ vpc_connector_name }} \
+          --vpc-egress=private-ranges-only \
+          --set-secrets=POSTGRES_CONNECTION=alloydb-connection-string-{{ env_name }}:latest \
+          --command=psql \
+          --args='$(POSTGRES_CONNECTION)',--file=/query.sql \
+          --execute-now \
+          --wait
+      register: query_result
+      changed_when: true
+
+    - name: Display query results
+      ansible.builtin.debug:
+        msg: "{{ query_result.stdout_lines }}"
+
+    - name: Clean up query job
+      ansible.builtin.command: >
+        gcloud run jobs delete query-alloydb-{{ env_name }}
+        --region={{ gcp_region }}
+        --project={{ gcp_project_id }}
+        --quiet
+      register: cleanup
+      changed_when: "'Deleted job' in cleanup.stderr"
+      failed_when: false
+
+# Method 2: Temporary VM (Fallback)
+- name: Query via temporary VM
+  when: query_method | default('cloud_run_job') == 'vm'
+  block:
+    - name: Create temporary query VM
+      ansible.builtin.command: >
+        gcloud compute instances create alloydb-query-vm-{{ env_name }}
+        --zone={{ gcp_region }}-b
+        --machine-type=e2-micro
+        --network=code-index-alloydb-network-{{ env_name }}
+        --subnet=default
+        --no-address
+        --project={{ gcp_project_id }}
+        --metadata=startup-script='#!/bin/bash
+        apt-get update
+        apt-get install -y postgresql-client'
+      register: vm_create
+      changed_when: "'Created' in vm_create.stderr"
+      failed_when: false
+
+    - name: Wait for VM to initialize
+      ansible.builtin.pause:
+        seconds: 30
+
+    - name: Get database password from Secret Manager
+      ansible.builtin.command: >
+        gcloud secrets versions access latest
+        --secret=alloydb-password-{{ env_name }}
+        --project={{ gcp_project_id }}
+      register: db_password
+      changed_when: false
+      no_log: true
+
+    - name: Run queries on VM
+      ansible.builtin.shell: |
+        gcloud compute ssh alloydb-query-vm-{{ env_name }} \
+          --zone={{ gcp_region }}-b \
+          --project={{ gcp_project_id }} \
+          --command="
+        export PGPASSWORD='{{ db_password.stdout }}'
+
+        echo '==================================='
+        echo 'Checking for projects...'
+        echo '==================================='
+        psql -h {{ alloydb_ip }} -U code_index_admin -d postgres -c \"
+        SELECT project_id, project_name, language, created_at
+        FROM projects
+        ORDER BY created_at DESC;
+        \"
+
+        echo ''
+        echo '==================================='
+        echo 'Checking for code chunks...'
+        echo '==================================='
+        psql -h {{ alloydb_ip }} -U code_index_admin -d postgres -c \"
+        SELECT
+            p.project_name,
+            COUNT(*) as chunk_count,
+            COUNT(DISTINCT c.file_path) as file_count,
+            STRING_AGG(DISTINCT c.language, ', ') as languages
+        FROM code_chunks c
+        JOIN projects p ON c.project_id = p.project_id
+        GROUP BY p.project_name;
+        \"
+
+        echo ''
+        echo '==================================='
+        echo 'Sample chunks...'
+        echo '==================================='
+        psql -h {{ alloydb_ip }} -U code_index_admin -d postgres -c \"
+        SELECT
+            c.file_path,
+            c.function_name,
+            c.language,
+            LEFT(c.code, 100) as code_preview
+        FROM code_chunks c
+        JOIN projects p ON c.project_id = p.project_id
+        LIMIT 5;
+        \"
+        "
+      register: query_output
+      changed_when: false
+
+    - name: Display query results
+      ansible.builtin.debug:
+        msg: "{{ query_output.stdout_lines }}"
+
+    - name: Delete temporary VM
+      ansible.builtin.command: >
+        gcloud compute instances delete alloydb-query-vm-{{ env_name }}
+        --zone={{ gcp_region }}-b
+        --project={{ gcp_project_id }}
+        --quiet
+      register: vm_delete
+      changed_when: "'Deleted' in vm_delete.stderr"
+      failed_when: false
+
+- name: Display completion message
+  ansible.builtin.debug:
+    msg:
+      - ""
+      - "✅ Database query complete!"
+      - ""

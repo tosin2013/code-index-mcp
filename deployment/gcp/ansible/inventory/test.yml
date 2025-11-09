@@ -1,0 +1,52 @@
+---
+# Test Environment Inventory - For Phase 2A.1 Ansible Validation Testing
+#
+# Purpose: Clean environment testing for deployment validation
+# Updated: 2025-11-04 for Phase 2A.1 validation testing
+#
+# Usage:
+#   ansible-playbook deploy.yml -i inventory/test.yml -e "confirm_deployment=yes"
+#   ansible-playbook utilities.yml -i inventory/test.yml -e "operation=test_connection"
+
+all:
+  hosts:
+    localhost:
+      ansible_connection: local
+      ansible_python_interpreter: "{{ ansible_playbook_python }}"
+
+  vars:
+    # Environment
+    env_name: "test"
+
+    # GCP Configuration
+    gcp_project_id: "tosinscloud"  # TODO: Consider dedicated test project if available
+    gcp_region: "us-east1"
+
+    # Cloud Run Configuration (minimal for testing)
+    cloudrun_cpu: "1"
+    cloudrun_memory: "1Gi"
+    cloudrun_min_instances: 0
+    cloudrun_max_instances: 3
+    cloudrun_concurrency: 50
+
+    # AlloyDB Configuration
+    with_alloydb: false  # Start without AlloyDB for Phase 2A.1 validation
+    # Set to true for Phase 3A validation after AlloyDB is provisioned
+
+    # Test-specific settings
+    allow_unauthenticated: true  # Simplifies testing, no API key needed
+    enable_auto_cleanup: false  # Manual cleanup in test environment
+    log_level: "DEBUG"  # Verbose logging for troubleshooting
+
+    # Build Configuration
+    use_cloud_build: true
+    build_machine_type: "E2_HIGHCPU_8"  # Valid Cloud Build machine type (smallest available)
+
+    # Storage
+    bucket_lifecycle_days: 1  # Aggressive cleanup (delete after 1 day)
+
+    # Validation Testing Configuration
+    run_validation: true  # Enable post-deployment validation
+
+    # Test Project Configuration
+    test_project_path: "/tmp/code-index-mcp-test-project"  # For MCP tool testing

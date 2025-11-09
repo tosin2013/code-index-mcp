@@ -240,7 +240,7 @@ func demonstrateUserOperations(userService *services.UserService) {
 
 	log.Printf("Found %d users (total: %d):", len(users), total)
 	for _, user := range users {
-		log.Printf("  - %s (%s) - %s [%s]", 
+		log.Printf("  - %s (%s) - %s [%s]",
 			user.Username, user.Name, user.Role, user.Status)
 	}
 

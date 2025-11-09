@@ -1,0 +1,146 @@
+[WARNING]: Deprecation warnings can be disabled by setting `deprecation_warnings=False` in ansible.cfg.
+[DEPRECATION WARNING]: community.general.yaml has been deprecated. The plugin has been superseded by the option `result_format=yaml` in callback plugin ansible.builtin.default from ansible-core 2.13 onwards. This feature will be removed from collection 'community.general' version 12.0.0.
+
+PLAY [Test Code Index MCP Server - Cloud HTTP/SSE Mode] ************************
+
+TASK [Gathering Facts] *********************************************************
+ok: [localhost]
+
+TASK [Validate required environment variables] *********************************
+ok: [localhost] => changed=false 
+  msg: All assertions passed
+
+TASK [Display test configuration] **********************************************
+ok: [localhost] => 
+  msg:
+  - ═══════════════════════════════════════
+  - "\U0001F310 Cloud HTTP/SSE Test Configuration"
+  - ═══════════════════════════════════════
+  - 'Server URL: https://code-index-mcp-dev-920209401641.us-east1.run.app'
+  - 'Transport: sse'
+  - 'Environment: dev'
+  - 'API Key: SET (ci_LP4eKMV...)'
+  - ═══════════════════════════════════════
+
+TASK [Get server information via SSE] ******************************************
+ok: [localhost]
+
+TASK [Display server capabilities] *********************************************
+ok: [localhost] => 
+  server_info:
+    changed: false
+    error: null
+    execution_time: 0.278
+    failed: false
+    metadata:
+      timestamp: '2025-11-06T21:27:29.312864Z'
+    server_info:
+      available_prompts: 0
+      available_resources: 2
+      available_tools: 19
+      capabilities: {}
+      server_name: unknown
+      server_version: unknown
+    status: Successfully retrieved server information
+    success: true
+
+TASK [Validate server basic info] **********************************************
+ok: [localhost] => changed=false 
+  msg: ✅ Server info validation passed
+
+TASK [Test set_project_path tool] **********************************************
+ok: [localhost]
+
+TASK [Validate set_project_path response] **************************************
+ok: [localhost] => changed=false 
+  msg: ✅ set_project_path tool passed
+
+TASK [Test find_files tool] ****************************************************
+ok: [localhost]
+
+TASK [Test search_code_advanced tool] ******************************************
+ok: [localhost]
+
+TASK [Test semantic_search_code tool (cloud-only, requires AlloyDB)] ***********
+ok: [localhost]
+
+TASK [Display semantic search results] *****************************************
+ok: [localhost] => 
+  msg:
+  - 'Semantic Search Status: SUCCESS'
+  - 'Note: semantic_search_code requires AlloyDB deployment'
+
+TASK [Test ingest_code_from_git tool (cloud-only)] *****************************
+ok: [localhost]
+
+TASK [Display git ingestion results] *******************************************
+ok: [localhost] => 
+  msg:
+  - 'Git Ingestion Status: SUCCESS'
+  - 'Chunks Ingested: 0'
+
+TASK [Test file resource retrieval] ********************************************
+[ERROR]: Task failed: Module failed: Resource test error: Failed to read resource 'file:///tmp/cloud-test-project/README.md': Unknown resource: file:///tmp/cloud-test-project/README.md
+Origin: /Users/tosinakinosho/workspaces/code-index-mcp/tests/ansible/test-cloud.yml:172:7
+
+170
+171     # Phase 4: Resource Testing
+172     - name: Test file resource retrieval
+          ^ column 7
+
+fatal: [localhost]: FAILED! => changed=false 
+  error: 'Resource test error: Failed to read resource ''file:///tmp/cloud-test-project/README.md'': Unknown resource: file:///tmp/cloud-test-project/README.md'
+  execution_time: 0.407
+  metadata:
+    timestamp: '2025-11-06T21:33:54.999067Z'
+  msg: 'Resource test error: Failed to read resource ''file:///tmp/cloud-test-project/README.md'': Unknown resource: file:///tmp/cloud-test-project/README.md'
+  response: null
+  status: Resource test failed
+  success: false
+  test_passed: false
+...ignoring
+
+TASK [Display resource result] *************************************************
+ok: [localhost] => 
+  resource_result:
+    changed: false
+    error: 'Resource test error: Failed to read resource ''file:///tmp/cloud-test-project/README.md'': Unknown resource: file:///tmp/cloud-test-project/README.md'
+    exception: (traceback unavailable)
+    execution_time: 0.407
+    failed: true
+    metadata:
+      timestamp: '2025-11-06T21:33:54.999067Z'
+    msg: 'Resource test error: Failed to read resource ''file:///tmp/cloud-test-project/README.md'': Unknown resource: file:///tmp/cloud-test-project/README.md'
+    response: null
+    status: Resource test failed
+    success: false
+    test_passed: false
+
+TASK [Generate test summary] ***************************************************
+ok: [localhost]
+
+TASK [Display test summary] ****************************************************
+ok: [localhost] => 
+  msg:
+  - ═══════════════════════════════════════
+  - "\U0001F4CA Test Summary - Cloud HTTP/SSE Mode"
+  - ═══════════════════════════════════════
+  - 'Server: https://code-index-mcp-dev-920209401641.us-east1.run.app'
+  - 'Environment: dev'
+  - 'Total Tests: 7'
+  - 'Passed: 4'
+  - 'Semantic Search: AVAILABLE'
+  - 'Git Ingestion: TESTED'
+  - 'Timestamp: 2025-11-06T21:27:28Z'
+  - ═══════════════════════════════════════
+
+TASK [Save test report] ********************************************************
+changed: [localhost]
+
+TASK [Final status check] ******************************************************
+ok: [localhost] => changed=false 
+  msg: ✅ All critical cloud tests passed!
+
+PLAY RECAP *********************************************************************
+localhost                  : ok=20   changed=1    unreachable=0    failed=0    skipped=0    rescued=0    ignored=1   
+

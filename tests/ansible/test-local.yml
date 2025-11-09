@@ -1,0 +1,182 @@
+---
+# Test Code Index MCP Server - Local stdio Mode
+# This playbook tests the MCP server running locally via stdio transport
+
+- name: Test Code Index MCP Server - Local stdio Mode
+  hosts: localhost
+  connection: local
+  gather_facts: yes
+
+  pre_tasks:
+    - name: Display test configuration
+      ansible.builtin.debug:
+        msg:
+          - "Transport: {{ transport }}"
+          - "Server Command: {{ mcp_server_command }}"
+          - "Server Args: {{ mcp_server_args }}"
+          - "Test Project: {{ test_project_path }}"
+
+    - name: Create test project directory
+      ansible.builtin.file:
+        path: "{{ test_project_path }}"
+        state: directory
+        mode: '0755'
+
+    - name: Create sample Python file for testing
+      ansible.builtin.copy:
+        content: |
+          """Sample Python module for testing."""
+
+          def authenticate_user(username, password):
+              """Authenticate a user with username and password."""
+              # Implementation here
+              return True
+
+          class UserService:
+              """Service for managing users."""
+
+              def create_user(self, username):
+                  """Create a new user."""
+                  pass
+
+              def delete_user(self, username):
+                  """Delete an existing user."""
+                  pass
+        dest: "{{ test_project_path }}/sample.py"
+        mode: '0644'
+
+  tasks:
+    # Phase 1: Server Discovery
+    - name: Get server information
+      tosin2013.mcp_audit.mcp_server_info:
+        transport: stdio
+        server_command: "{{ mcp_server_command }}"
+        server_args: "{{ mcp_server_args }}"
+      register: server_info
+
+    - name: Display server capabilities
+      ansible.builtin.debug:
+        var: server_info
+      when: verbose_output | default(false)
+
+    - name: Validate server basic info
+      ansible.builtin.assert:
+        that:
+          - server_info.success
+          - server_info.server_info.server_name is defined
+          - server_info.server_info.capabilities is defined
+          - server_info.server_info.available_tools is defined
+          - server_info.server_info.available_tools | int > 0
+        success_msg: "✅ Server info validation passed"
+        fail_msg: "❌ Server info validation failed"
+
+    # Phase 2: Tool Testing - Basic Operations
+    - name: Test set_project_path tool
+      tosin2013.mcp_audit.mcp_test_tool:
+        transport: stdio
+        server_command: "{{ mcp_server_command }}"
+        server_args: "{{ mcp_server_args }}"
+        tool_name: set_project_path
+        tool_arguments:
+          path: "{{ test_project_path }}"
+      register: set_path_result
+
+    - name: Validate set_project_path response
+      ansible.builtin.assert:
+        that:
+          - set_path_result.success
+          - set_path_result.test_passed
+        success_msg: "✅ set_project_path tool passed"
+        fail_msg: "❌ set_project_path tool failed"
+
+    - name: Test refresh_index tool
+      tosin2013.mcp_audit.mcp_test_tool:
+        transport: stdio
+        server_command: "{{ mcp_server_command }}"
+        server_args: "{{ mcp_server_args }}"
+        tool_name: refresh_index
+        tool_arguments: {}
+      register: refresh_result
+
+    - name: Test find_files tool
+      tosin2013.mcp_audit.mcp_test_tool:
+        transport: stdio
+        server_command: "{{ mcp_server_command }}"
+        server_args: "{{ mcp_server_args }}"
+        tool_name: find_files
+        tool_arguments:
+          pattern: "*.py"
+      register: find_files_result
+
+    - name: Validate find_files response
+      ansible.builtin.assert:
+        that:
+          - find_files_result.success
+          - find_files_result.tool_result is defined
+          - "'sample.py' in find_files_result.tool_result | string"
+        success_msg: "✅ find_files tool passed"
+        fail_msg: "❌ find_files tool failed"
+
+    # Phase 3: Tool Testing - Code Search
+    - name: Test search_code_advanced tool (regex search)
+      tosin2013.mcp_audit.mcp_test_tool:
+        transport: stdio
+        server_command: "{{ mcp_server_command }}"
+        server_args: "{{ mcp_server_args }}"
+        tool_name: search_code_advanced
+        tool_arguments:
+          query: "def authenticate"
+          use_regex: true
+      register: search_result
+
+    - name: Validate search results
+      ansible.builtin.assert:
+        that:
+          - search_result.success
+          - search_result.tool_result is defined
+        success_msg: "✅ search_code_advanced tool passed"
+        fail_msg: "❌ search_code_advanced tool failed"
+
+    # Phase 4: Resource Testing
+    - name: Test file resource retrieval
+      tosin2013.mcp_audit.mcp_test_resource:
+        transport: stdio
+        server_command: "{{ mcp_server_command }}"
+        server_args: "{{ mcp_server_args }}"
+        resource_uri: "file://{{ test_project_path }}/sample.py"
+      register: resource_result
+      ignore_errors: yes  # File resources may not be fully implemented yet
+
+    - name: Display resource result (if available)
+      ansible.builtin.debug:
+        var: resource_result
+      when:
+        - resource_result is defined
+        - verbose_output | default(false)
+
+  post_tasks:
+    - name: Generate test summary
+      ansible.builtin.set_fact:
+        test_summary:
+          total_tests: 6
+          passed_tests: "{{ [server_info.success, set_path_result.success, refresh_result.success, find_files_result.success, search_result.success] | select | list | length }}"
+          timestamp: "{{ ansible_date_time.iso8601 }}"
+          environment: "local-stdio"
+
+    - name: Display test summary
+      ansible.builtin.debug:
+        msg:
+          - "═══════════════════════════════════════"
+          - "📊 Test Summary - Local stdio Mode"
+          - "═══════════════════════════════════════"
+          - "Total Tests: {{ test_summary.total_tests }}"
+          - "Passed: {{ test_summary.passed_tests }}"
+          - "Environment: {{ test_summary.environment }}"
+          - "Timestamp: {{ test_summary.timestamp }}"
+          - "═══════════════════════════════════════"
+
+    - name: Cleanup test project
+      ansible.builtin.file:
+        path: "{{ test_project_path }}"
+        state: absent
+      when: cleanup_test_data | default(true)

@@ -37,7 +37,41 @@ Thumbs.db
 
 # Code Index MCP specific files
 .code_indexer/
+.ingestion_progress.json
 
+# Cloud credentials and secrets (NEVER COMMIT THESE!)
+*.key
+*.pem
+*.p12
+*.pfx
+.env
+.env.*
+!.env.example
+gcloud-*.json
+service-account-*.json
+aws-credentials.json
+secrets/
+deployment/**/*.key
+deployment/**/*.pem
+deployment/**/*.json
+*-credentials.json
+*.serviceaccount
+.google-credentials
+.aws/credentials
+.azure/credentials
+
+# API keys and tokens
+*.apikey
+*.token
+api_keys.txt
+
+# Cloud configuration with sensitive data
+.gcloud/
+.aws/
+.azure/
+terraform.tfstate
+terraform.tfstate.backup
+.terraform/
 
 # Claude Code generated files
 CLAUDE.local.md

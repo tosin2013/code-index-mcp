@@ -1,0 +1,18 @@
+---
+rule_type: auto
+description: "Enforce testing guidelines and requirements"
+globs: ["tests/**/*.py", "test/**/*"]
+---
+
+Place automated tests under `tests/`, mirroring the package hierarchy (e.g., `tests/indexing/test_shallow_index.py`).
+Use `uv run pytest` for unit and integration coverage.
+Use optional `-k` selectors for focused test runs.
+Stage representative fixtures inside `test/sample-projects/` when exercising new language strategies.
+Document expected behaviors in fixtures' README files or inline comments.
+Fail fast if tree-sitter support is not available for a language you add.
+Reserve `tests/` for runnable suites, use `test/sample-projects/` for sample corpora.
+When adding new language support, test with sample projects in `test/sample-projects/{language}/`.
+Run full test suite (`uv run pytest`) before releases.
+Test local stdio mode (`uv run code-index-mcp`) before releases.
+Test local HTTP mode (`MCP_TRANSPORT=http uv run code-index-mcp`) before releases.
+Smoke test with MCP Inspector (`npx @modelcontextprotocol/inspector uv run code-index-mcp`) before releases.

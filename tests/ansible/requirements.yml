@@ -1,0 +1,16 @@
+---
+# Ansible Galaxy collections required for MCP server testing
+collections:
+  - name: tosin2013.mcp_audit
+    version: ">=1.0.1"
+    source: https://galaxy.ansible.com
+    # Note: v1.0.1 has core testing modules
+    # v1.1.0 (when released) will add mcp_test_llm_integration
+
+  - name: google.cloud
+    version: ">=1.0.0"
+    source: https://galaxy.ansible.com
+
+  - name: community.general
+    version: ">=5.0.0"
+    source: https://galaxy.ansible.com

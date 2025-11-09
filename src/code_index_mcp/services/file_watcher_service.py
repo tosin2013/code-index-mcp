@@ -5,43 +5,53 @@ This module provides file system monitoring capabilities that automatically
 trigger index rebuilds when relevant files are modified, created, or deleted.
 It uses the watchdog library for cross-platform file system event monitoring.
 """
+
 # pylint: disable=missing-function-docstring  # Fallback stub methods don't need docstrings
 
 import logging
 import os
 import traceback
-from threading import Timer
-from typing import Optional, Callable, List
 from pathlib import Path
+from threading import Timer
+from typing import Callable, List, Optional
 
 try:
+    from watchdog.events import FileSystemEvent, FileSystemEventHandler
     from watchdog.observers import Observer
-    from watchdog.events import FileSystemEventHandler, FileSystemEvent
+
     WATCHDOG_AVAILABLE = True
 except ImportError:
     # Fallback classes for when watchdog is not available
     class Observer:
         """Fallback Observer class when watchdog library is not available."""
+
         def __init__(self):
             pass
+
         def schedule(self, *args, **kwargs):
             pass
+
         def start(self):
             pass
+
         def stop(self):
             pass
+
         def join(self, *args, **kwargs):
             pass
+
         def is_alive(self):
             return False
 
     class FileSystemEventHandler:
         """Fallback FileSystemEventHandler class when watchdog library is not available."""
+
         def __init__(self):
             pass
 
     class FileSystemEvent:
         """Fallback FileSystemEvent class when watchdog library is not available."""
+
         def __init__(self):
             self.is_directory = False
             self.src_path = ""
@@ -49,8 +59,8 @@ except ImportError:
 
     WATCHDOG_AVAILABLE = False
 
-from .base_service import BaseService
 from ..constants import SUPPORTED_EXTENSIONS
+from .base_service import BaseService
 
 
 class FileWatcherService(BaseService):
@@ -62,6 +72,7 @@ class FileWatcherService(BaseService):
     It includes intelligent debouncing to batch rapid changes and filtering
     to only monitor relevant file types.
     """
+
     MAX_RESTART_ATTEMPTS = 3
 
     def __init__(self, ctx):
@@ -111,7 +122,7 @@ class FileWatcherService(BaseService):
 
         # Get debounce seconds from config
         config = self.settings.get_file_watcher_config()
-        debounce_seconds = config.get('debounce_seconds', 6.0)
+        debounce_seconds = config.get("debounce_seconds", 6.0)
 
         try:
             self.observer = Observer()
@@ -119,18 +130,14 @@ class FileWatcherService(BaseService):
                 debounce_seconds=debounce_seconds,
                 rebuild_callback=self.rebuild_callback,
                 base_path=Path(self.base_path),
-                logger=self.logger
+                logger=self.logger,
             )
 
             # Log detailed Observer setup
             watch_path = str(self.base_path)
             self.logger.debug("Scheduling Observer for path: %s", watch_path)
 
-            self.observer.schedule(
-                self.event_handler,
-                watch_path,
-                recursive=True
-            )
+            self.observer.schedule(self.event_handler, watch_path, recursive=True)
 
             # Log Observer start
             self.logger.debug("Starting Observer...")
@@ -139,7 +146,7 @@ class FileWatcherService(BaseService):
             self.restart_attempts = 0
 
             # Log Observer thread info
-            if hasattr(self.observer, '_thread'):
+            if hasattr(self.observer, "_thread"):
                 self.logger.debug("Observer thread: %s", self.observer._thread)
 
             # Verify observer is actually running
@@ -149,8 +156,8 @@ class FileWatcherService(BaseService):
                     extra={
                         "debounce_seconds": debounce_seconds,
                         "monitored_path": str(self.base_path),
-                        "supported_extensions": len(SUPPORTED_EXTENSIONS)
-                    }
+                        "supported_extensions": len(SUPPORTED_EXTENSIONS),
+                    },
                 )
 
                 # Add diagnostic test - create a test event to verify Observer works
@@ -161,7 +168,10 @@ class FileWatcherService(BaseService):
                 # Log current directory for comparison
                 current_dir = os.getcwd()
                 self.logger.debug("Current working directory: %s", current_dir)
-                self.logger.debug("Are paths same: %s", os.path.normpath(current_dir) == os.path.normpath(str(self.base_path)))
+                self.logger.debug(
+                    "Are paths same: %s",
+                    os.path.normpath(current_dir) == os.path.normpath(str(self.base_path)),
+                )
 
                 return True
             else:
@@ -234,9 +244,7 @@ class FileWatcherService(BaseService):
         Returns:
             True if actively monitoring, False otherwise
         """
-        return (self.is_monitoring and
-                self.observer and
-                self.observer.is_alive())
+        return self.is_monitoring and self.observer and self.observer.is_alive()
 
     def restart_observer(self) -> bool:
         """
@@ -249,8 +257,9 @@ class FileWatcherService(BaseService):
             self.logger.error("Max restart attempts reached, file watcher disabled")
             return False
 
-        self.logger.info("Attempting to restart file watcher (attempt %d)",
-                         self.restart_attempts + 1)
+        self.logger.info(
+            "Attempting to restart file watcher (attempt %d)", self.restart_attempts + 1
+        )
         self.restart_attempts += 1
 
         # Stop current observer if running
@@ -264,11 +273,7 @@ class FileWatcherService(BaseService):
         # Start new observer
         try:
             self.observer = Observer()
-            self.observer.schedule(
-                self.event_handler,
-                str(self.base_path),
-                recursive=True
-            )
+            self.observer.schedule(self.event_handler, str(self.base_path), recursive=True)
             self.observer.start()
             self.is_monitoring = True
 
@@ -288,7 +293,7 @@ class FileWatcherService(BaseService):
         """
         # Get current debounce seconds from config
         config = self.settings.get_file_watcher_config()
-        debounce_seconds = config.get('debounce_seconds', 6.0)
+        debounce_seconds = config.get("debounce_seconds", 6.0)
 
         return {
             "available": WATCHDOG_AVAILABLE,
@@ -297,7 +302,7 @@ class FileWatcherService(BaseService):
             "restart_attempts": self.restart_attempts,
             "debounce_seconds": debounce_seconds,
             "base_path": self.base_path if self.base_path else None,
-            "observer_alive": self.observer.is_alive() if self.observer else False
+            "observer_alive": self.observer.is_alive() if self.observer else False,
         }
 
 
@@ -310,8 +315,14 @@ class DebounceEventHandler(FileSystemEventHandler):
     rebuild operations.
     """
 
-    def __init__(self, debounce_seconds: float, rebuild_callback: Callable,
-                 base_path: Path, logger: logging.Logger, additional_excludes: Optional[List[str]] = None):
+    def __init__(
+        self,
+        debounce_seconds: float,
+        rebuild_callback: Callable,
+        base_path: Path,
+        logger: logging.Logger,
+        additional_excludes: Optional[List[str]] = None,
+    ):
         """
         Initialize the debounce event handler.
 
@@ -323,7 +334,7 @@ class DebounceEventHandler(FileSystemEventHandler):
             additional_excludes: Additional patterns to exclude
         """
         from ..utils import FileFilter
-        
+
         super().__init__()
         self.debounce_seconds = debounce_seconds
         self.rebuild_callback = rebuild_callback
@@ -367,8 +378,8 @@ class DebounceEventHandler(FileSystemEventHandler):
             return False
 
         # Select path to check: dest_path for moves, src_path for others
-        if event.event_type == 'moved':
-            if not hasattr(event, 'dest_path'):
+        if event.event_type == "moved":
+            if not hasattr(event, "dest_path"):
                 return False
             target_path = event.dest_path
         else:
@@ -378,29 +389,21 @@ class DebounceEventHandler(FileSystemEventHandler):
         try:
             path = Path(target_path)
             should_process = self.file_filter.should_process_path(path, self.base_path)
-            
+
             # Skip temporary files using centralized logic
             if not should_process or self.file_filter.is_temporary_file(path):
                 return False
-                
+
             return True
         except Exception:
             return False
-
-
-
-
-
 
     def reset_debounce_timer(self) -> None:
         """Reset the debounce timer, canceling any existing timer."""
         if self.debounce_timer:
             self.debounce_timer.cancel()
 
-        self.debounce_timer = Timer(
-            self.debounce_seconds,
-            self.trigger_rebuild
-        )
+        self.debounce_timer = Timer(self.debounce_seconds, self.trigger_rebuild)
         self.debounce_timer.start()
 
     def trigger_rebuild(self) -> None:

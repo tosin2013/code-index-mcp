@@ -1,0 +1,65 @@
+---
+# Debug Ingestion Issues - Check Git Clone and File Discovery
+- name: Debug Code Ingestion
+  hosts: localhost
+  connection: local
+  gather_facts: yes
+
+  tasks:
+    - name: Test ingest_code_from_git with detailed logging
+      tosin2013.mcp_audit.mcp_test_tool:
+        transport: "{{ transport }}"
+        server_url: "{{ mcp_server_url }}/sse"
+        server_headers:
+          Authorization: "Bearer {{ api_key }}"
+        tool_name: ingest_code_from_git
+        tool_arguments:
+          git_url: "https://github.com/anthropics/anthropic-sdk-python"
+          project_name: "anthropic-sdk-test"
+          branch: "main"
+      register: ingestion_debug
+
+    - name: Display full ingestion response
+      ansible.builtin.debug:
+        msg:
+          - "════════════════════════════════════════════════════════════"
+          - "🔍 Ingestion Debug Information"
+          - "════════════════════════════════════════════════════════════"
+          - "Success: {{ ingestion_debug.success }}"
+          - "Tool Result:"
+          - "{{ ingestion_debug.tool_result | to_nice_json }}"
+          - "════════════════════════════════════════════════════════════"
+
+    - name: Check Cloud Run logs for errors
+      ansible.builtin.shell: |
+        gcloud logging read "resource.type=cloud_run_revision \
+          AND resource.labels.service_name=code-index-mcp-dev \
+          AND severity>=ERROR \
+          AND timestamp>=\"$(date -u -v-10M '+%Y-%m-%dT%H:%M:%SZ')\"" \
+          --project=tosinscloud \
+          --limit=20 \
+          --format="table(timestamp,textPayload)"
+      register: error_logs
+      ignore_errors: yes
+
+    - name: Display error logs
+      ansible.builtin.debug:
+        msg: "{{ error_logs.stdout_lines }}"
+      when: error_logs.stdout_lines is defined
+
+    - name: Check ingestion logs
+      ansible.builtin.shell: |
+        gcloud logging read "resource.type=cloud_run_revision \
+          AND resource.labels.service_name=code-index-mcp-dev \
+          AND (textPayload:\"GIT-SYNC\" OR textPayload:\"ingest\" OR textPayload:\"chunk\") \
+          AND timestamp>=\"$(date -u -v-10M '+%Y-%m-%dT%H:%M:%SZ')\"" \
+          --project=tosinscloud \
+          --limit=50 \
+          --format="value(timestamp,textPayload)"
+      register: ingestion_logs
+      ignore_errors: yes
+
+    - name: Display ingestion logs
+      ansible.builtin.debug:
+        msg: "{{ ingestion_logs.stdout_lines }}"
+      when: ingestion_logs.stdout_lines is defined

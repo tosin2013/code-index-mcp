@@ -1,0 +1,17 @@
+---
+rule_type: auto
+description: "Enforce Python coding standards for Code Index MCP project"
+globs: ["**/*.py"]
+---
+
+Target Python 3.10+ for all code implementations.
+Follow `.pylintrc` configuration: 4-space indentation, 100-character line limit.
+Limit function signatures to 7 or fewer parameters.
+Use `snake_case` for modules and functions.
+Use `PascalCase` for class names.
+Use `UPPER_CASE_WITH_UNDERSCORES` for constants.
+Prefer explicit imports from sibling packages (`from .services import ...`).
+Keep all logging output to stderr as implemented in `server.py`.
+Avoid checking in generated `__pycache__` artifacts.
+Place source code in `src/code_index_mcp/` with proper module organization.
+Use `indexing/` for builders, `services/` for MCP tool implementations, `search/` for query utilities, `utils/` for cross-cutting helpers.

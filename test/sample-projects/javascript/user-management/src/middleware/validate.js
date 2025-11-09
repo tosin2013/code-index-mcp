@@ -7,22 +7,22 @@ const { ValidationError } = require('../utils/errors');
  */
 const validate = (req, res, next) => {
   const errors = validationResult(req);
-  
+
   if (!errors.isEmpty()) {
     const errorMessages = errors.array().map(error => ({
       field: error.path,
       message: error.msg,
       value: error.value,
     }));
-    
+
     const validationError = new ValidationError(
       'Validation failed',
       errorMessages
     );
-    
+
     return next(validationError);
   }
-  
+
   next();
 };
 
