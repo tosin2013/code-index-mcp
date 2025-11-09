@@ -16,7 +16,7 @@
       --timeout={{ cloudrun_timeout }}
       --execution-environment={{ cloudrun_execution_environment }}
       --service-account={{ service_account }}
-      --set-env-vars=MCP_TRANSPORT=http,GCP_PROJECT_ID={{ gcp_project_id }},GCS_BUCKET={{ storage_bucket }},GCS_GIT_BUCKET={{ git_bucket }},ENVIRONMENT={{ env_name }}
+      --set-env-vars=MCP_TRANSPORT=http,GCP_PROJECT_ID={{ gcp_project_id }},GCS_BUCKET={{ storage_bucket }},GCS_GIT_BUCKET={{ git_bucket }},ENVIRONMENT={{ env_name }},FAIL_ON_INIT_ERROR=true
       --set-secrets=GITHUB_WEBHOOK_SECRET=github-webhook-secret:latest,GITLAB_WEBHOOK_SECRET=gitlab-webhook-secret:latest,GITEA_WEBHOOK_SECRET=gitea-webhook-secret:latest
       {{ '--vpc-connector=' + vpc_connector_name if with_alloydb else '' }}
       {{ '--set-secrets=ALLOYDB_CONNECTION_STRING=' + alloydb_connection_secret + ':latest' if with_alloydb else '' }}

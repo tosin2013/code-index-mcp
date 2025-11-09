@@ -278,12 +278,26 @@ async def indexer_lifespan(_server: FastMCP) -> AsyncIterator[CodeIndexerContext
     # Initialize auth middleware if in HTTP mode
     auth_middleware = None
     if os.getenv("MCP_TRANSPORT") == "http":
+        # In production, fail fast on initialization errors
+        # Set FAIL_ON_INIT_ERROR=false to allow local development without full auth setup
+        fail_on_error = os.getenv("FAIL_ON_INIT_ERROR", "true").lower() == "true"
+
         try:
             auth_middleware = AuthMiddleware(provider="gcp", project_id=os.getenv("GCP_PROJECT_ID"))
             logging.info("✅ Auth middleware initialized for HTTP mode")
+
         except Exception as e:
-            logging.warning(f"⚠️  Auth middleware initialization failed: {e}")
-            logging.warning("Continuing without authentication - development mode only!")
+            logging.error(f"❌ Auth middleware initialization failed: {e}")
+            if fail_on_error:
+                logging.error("FAIL_ON_INIT_ERROR=true - Stopping server startup")
+                logging.error("This prevents silent failures in production deployments")
+                raise RuntimeError(
+                    f"Critical dependency initialization failed: {e}\n"
+                    "Set FAIL_ON_INIT_ERROR=false to continue without auth (development only)"
+                ) from e
+            else:
+                logging.warning("⚠️  FAIL_ON_INIT_ERROR=false - Continuing without authentication")
+                logging.warning("This is ONLY safe for local development!")
 
     # Initialize context - file watcher will be initialized later when project path is set
     context = CodeIndexerContext(
@@ -1497,7 +1511,8 @@ def main():
     if transport_mode == "http":
         # HTTP/SSE mode for cloud deployment (Cloud Run, Lambda, OpenShift)
         # FastMCP reads host/port from mcp.settings object
-        host = os.getenv("HOST", "0.0.0.0")
+        # nosec B104: Binding to 0.0.0.0 is required for Cloud Run containerized deployments
+        host = os.getenv("HOST", "0.0.0.0")  # nosec B104
         port = int(os.getenv("PORT", 8080))
 
         # Set the host and port in mcp.settings before calling run()
