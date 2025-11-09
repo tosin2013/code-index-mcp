@@ -223,8 +223,7 @@ gcloud compute networks vpc-access connectors list --region=us-east1
 
 ---
 
-**Total Time**: ~30 minutes  
+**Total Time**: ~30 minutes
 **Total Cost**: ~$100/month
 
 That's it! You now have semantic code search in Claude Desktop 🎉
-

@@ -1,6 +1,6 @@
 # Dockerfile for Code Index MCP Server - Google Cloud Run
 # Multi-stage build for optimal image size and security
-# 
+#
 # Build: docker build -t code-index-mcp -f deployment/gcp/Dockerfile .
 # Run:   docker run -p 8080:8080 -e MCP_TRANSPORT=http code-index-mcp
 #
@@ -73,4 +73,3 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
 
 # Run the server
 CMD ["python", "-m", "code_index_mcp.server"]
-

@@ -20,10 +20,3 @@ embedding_wait_time: 30
 # Validation report settings
 write_validation_report: true
 validation_report_path: "./mcp-validation-report-{{ ansible_date_time.epoch }}.md"
-
-
-
-
-
-
-

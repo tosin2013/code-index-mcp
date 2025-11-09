@@ -1,8 +1,8 @@
 # Cloud Run Deployment: Updated MCP Server with Ingestion Guide
 
-**Date**: October 27, 2025  
-**Status**: ✅ **DEPLOYED SUCCESSFULLY**  
-**Environment**: dev  
+**Date**: October 27, 2025
+**Status**: ✅ **DEPLOYED SUCCESSFULLY**
+**Environment**: dev
 **Service URL**: https://code-index-mcp-dev-cjshzpy4wq-ue.a.run.app
 
 ---
@@ -31,7 +31,7 @@ Users can now reference comprehensive ingestion documentation directly in Claude
 
 This provides:
 - Quick start examples (stdio & HTTP modes)
-- Chunking strategy recommendations  
+- Chunking strategy recommendations
 - Cost estimation & best practices
 - Troubleshooting common errors
 - HTTP mode file upload guidance
@@ -203,7 +203,7 @@ gcloud run services logs tail code-index-mcp-dev --region=us-east1
    ```bash
    # View billing dashboard
    gcloud billing accounts list
-   
+
    # Set budget alerts (recommended)
    ```
 
@@ -212,7 +212,7 @@ gcloud run services logs tail code-index-mcp-dev --region=us-east1
 ## 🐛 Troubleshooting
 
 ### Issue: "MCP server not connecting"
-**Solution**: 
+**Solution**:
 1. Check service URL in Claude Desktop config
 2. Verify Cloud Run service is running: `gcloud run services describe code-index-mcp-dev --region=us-east1`
 3. Check service logs for errors
@@ -228,11 +228,11 @@ gcloud compute networks vpc-access connectors describe alloydb-connector --regio
 ```
 
 ### Issue: "No results from semantic search"
-**Reason**: No code has been ingested yet  
+**Reason**: No code has been ingested yet
 **Solution**: Ingest code first using `ingest_code_for_search` tool
 
 ### Issue: "HTTP mode doesn't scan directories automatically"
-**Expected Behavior**: This is correct! In HTTP mode, the server doesn't have filesystem access.  
+**Expected Behavior**: This is correct! In HTTP mode, the server doesn't have filesystem access.
 **Solution**: Pass file contents in the `files` parameter, or use stdio mode locally.
 
 ---
@@ -299,16 +299,8 @@ curl -X POST https://code-index-mcp-dev-cjshzpy4wq-ue.a.run.app/admin/cleanup
 
 ---
 
-**Status**: ✅ **PRODUCTION READY** (dev environment)  
-**Confidence**: 98%  
+**Status**: ✅ **PRODUCTION READY** (dev environment)
+**Confidence**: 98%
 **Ready for**: Testing, evaluation, user onboarding
 
 **Deployed**: October 27, 2025, 7:52 PM UTC
-
-
-
-
-
-
-
-

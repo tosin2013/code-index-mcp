@@ -39,20 +39,21 @@ Usage:
 Confidence: 92% - Core Git operations are standard, GCS integration tested
 """
 
+import logging
 import os
 import re
-import logging
+import shutil
 import subprocess
 import tempfile
-import shutil
-from pathlib import Path
-from typing import Optional, List, Dict, Any, Tuple
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlparse, urlunparse
 
 try:
     from google.cloud import storage
     from google.cloud.exceptions import GoogleCloudError
+
     GOOGLE_CLOUD_AVAILABLE = True
 except ImportError:
     GOOGLE_CLOUD_AVAILABLE = False
@@ -67,6 +68,7 @@ class GitRepositoryInfo:
     """
     Information about a Git repository.
     """
+
     host: str  # github.com, gitlab.com, bitbucket.org, gitea.example.com
     owner: str  # user or organization
     repo: str  # repository name
@@ -78,6 +80,7 @@ class GitRepositoryInfo:
 
 class GitManagerError(Exception):
     """Base exception for Git manager errors."""
+
     pass
 
 
@@ -96,10 +99,10 @@ class GitRepositoryManager:
 
     # Platform patterns for URL parsing
     PLATFORM_PATTERNS = {
-        'github': re.compile(r'github\.com[:/]([^/]+)/([^/]+?)(?:\.git)?$'),
-        'gitlab': re.compile(r'gitlab\.com[:/]([^/]+)/([^/]+?)(?:\.git)?$'),
-        'bitbucket': re.compile(r'bitbucket\.org[:/]([^/]+)/([^/]+?)(?:\.git)?$'),
-        'gitea': re.compile(r'([^/]+)[:/]([^/]+)/([^/]+?)(?:\.git)?$'),  # Custom domain
+        "github": re.compile(r"github\.com[:/]([^/]+)/([^/]+?)(?:\.git)?$"),
+        "gitlab": re.compile(r"gitlab\.com[:/]([^/]+)/([^/]+?)(?:\.git)?$"),
+        "bitbucket": re.compile(r"bitbucket\.org[:/]([^/]+)/([^/]+?)(?:\.git)?$"),
+        "gitea": re.compile(r"([^/]+)[:/]([^/]+)/([^/]+?)(?:\.git)?$"),  # Custom domain
     }
 
     def __init__(
@@ -107,7 +110,7 @@ class GitRepositoryManager:
         gcs_bucket: str,
         user_id: str,
         project_id: Optional[str] = None,
-        local_cache_dir: Optional[Path] = None
+        local_cache_dir: Optional[Path] = None,
     ):
         """
         Initialize Git repository manager.
@@ -129,7 +132,7 @@ class GitRepositoryManager:
 
         self.gcs_bucket = gcs_bucket
         self.user_id = user_id
-        self.project_id = project_id or os.getenv('GCP_PROJECT_ID')
+        self.project_id = project_id or os.getenv("GCP_PROJECT_ID")
 
         # Initialize GCS client
         if self.project_id:
@@ -140,7 +143,9 @@ class GitRepositoryManager:
         self.bucket = self.storage_client.bucket(gcs_bucket)
 
         # Local cache directory for git operations
-        self.local_cache_dir = local_cache_dir or Path(tempfile.gettempdir()) / "code-index-git-cache" / user_id
+        self.local_cache_dir = (
+            local_cache_dir or Path(tempfile.gettempdir()) / "code-index-git-cache" / user_id
+        )
         self.local_cache_dir.mkdir(parents=True, exist_ok=True)
 
         logger.info(
@@ -168,28 +173,28 @@ class GitRepositoryManager:
             GitManagerError: If URL format is invalid
         """
         # Normalize URL
-        git_url = git_url.strip().rstrip('/')
+        git_url = git_url.strip().rstrip("/")
 
         # Convert SSH to HTTPS format for parsing
-        if git_url.startswith('git@'):
+        if git_url.startswith("git@"):
             # git@github.com:user/repo.git -> https://github.com/user/repo.git
-            git_url = git_url.replace('git@', 'https://', 1)
+            git_url = git_url.replace("git@", "https://", 1)
             # Find the colon after the host (not in https://)
-            if ':' in git_url[8:]:  # Skip 'https://'
-                colon_pos = git_url.index(':', 8)
-                git_url = git_url[:colon_pos] + '/' + git_url[colon_pos+1:]
+            if ":" in git_url[8:]:  # Skip 'https://'
+                colon_pos = git_url.index(":", 8)
+                git_url = git_url[:colon_pos] + "/" + git_url[colon_pos + 1 :]
 
         # Parse URL
         parsed = urlparse(git_url)
-        host = parsed.netloc or parsed.path.split('/')[0]
-        path = parsed.path.lstrip('/')
+        host = parsed.netloc or parsed.path.split("/")[0]
+        path = parsed.path.lstrip("/")
 
         # Try to match known platforms
         for platform, pattern in self.PLATFORM_PATTERNS.items():
-            if platform == 'gitea':
+            if platform == "gitea":
                 # Gitea needs special handling (custom domains)
                 # Only match if it's not a known platform
-                if any(known in host for known in ['github.com', 'gitlab.com', 'bitbucket.org']):
+                if any(known in host for known in ["github.com", "gitlab.com", "bitbucket.org"]):
                     continue
 
                 match = pattern.search(f"{host}/{path}")
@@ -203,10 +208,10 @@ class GitRepositoryManager:
                         host=gitea_host,
                         owner=owner,
                         repo=repo,
-                        platform='gitea',
+                        platform="gitea",
                         git_url=f"https://{gitea_host}/{owner}/{repo}.git",
                         clone_path=f"{gitea_host}/{owner}/{repo}.git",
-                        worktree_path=f"{gitea_host}/{owner}/{repo}"
+                        worktree_path=f"{gitea_host}/{owner}/{repo}",
                     )
             else:
                 match = pattern.search(f"{host}/{path}")
@@ -219,7 +224,7 @@ class GitRepositoryManager:
                         platform=platform,
                         git_url=f"https://{host}/{owner}/{repo}.git",
                         clone_path=f"{host}/{owner}/{repo}.git",
-                        worktree_path=f"{host}/{owner}/{repo}"
+                        worktree_path=f"{host}/{owner}/{repo}",
                     )
 
         raise GitManagerError(
@@ -249,14 +254,16 @@ class GitRepositoryManager:
         netloc_with_auth = f"{auth_token}@{parsed.netloc}"
 
         # Reconstruct URL
-        auth_url = urlunparse((
-            parsed.scheme,
-            netloc_with_auth,
-            parsed.path,
-            parsed.params,
-            parsed.query,
-            parsed.fragment
-        ))
+        auth_url = urlunparse(
+            (
+                parsed.scheme,
+                netloc_with_auth,
+                parsed.path,
+                parsed.params,
+                parsed.query,
+                parsed.fragment,
+            )
+        )
 
         return auth_url
 
@@ -276,10 +283,7 @@ class GitRepositoryManager:
         return blob.exists()
 
     def _run_git_command(
-        self,
-        args: List[str],
-        cwd: Optional[Path] = None,
-        env: Optional[Dict[str, str]] = None
+        self, args: List[str], cwd: Optional[Path] = None, env: Optional[Dict[str, str]] = None
     ) -> Tuple[str, str]:
         """
         Run a git command and return output.
@@ -295,7 +299,7 @@ class GitRepositoryManager:
         Raises:
             GitManagerError: If command fails
         """
-        cmd = ['git'] + args
+        cmd = ["git"] + args
 
         try:
             result = subprocess.run(
@@ -304,15 +308,13 @@ class GitRepositoryManager:
                 env=env or os.environ.copy(),
                 capture_output=True,
                 text=True,
-                timeout=300  # 5 minute timeout
+                timeout=300,  # 5 minute timeout
             )
 
             if result.returncode != 0:
                 logger.error(f"Git command failed: {' '.join(cmd)}")
                 logger.error(f"stderr: {result.stderr}")
-                raise GitManagerError(
-                    f"Git command failed: {result.stderr or result.stdout}"
-                )
+                raise GitManagerError(f"Git command failed: {result.stderr or result.stdout}")
 
             return result.stdout, result.stderr
 
@@ -321,11 +323,7 @@ class GitRepositoryManager:
         except Exception as e:
             raise GitManagerError(f"Git command error: {e}")
 
-    async def _upload_repo_to_gcs(
-        self,
-        local_repo_path: Path,
-        gcs_repo_path: str
-    ) -> None:
+    async def _upload_repo_to_gcs(self, local_repo_path: Path, gcs_repo_path: str) -> None:
         """
         Upload local Git repository to Cloud Storage.
 
@@ -347,11 +345,7 @@ class GitRepositoryManager:
 
         logger.info(f"Repository uploaded to GCS: {gcs_repo_path}")
 
-    async def _download_repo_from_gcs(
-        self,
-        gcs_repo_path: str,
-        local_repo_path: Path
-    ) -> None:
+    async def _download_repo_from_gcs(self, gcs_repo_path: str, local_repo_path: Path) -> None:
         """
         Download Git repository from Cloud Storage to local directory.
 
@@ -365,15 +359,12 @@ class GitRepositoryManager:
         local_repo_path.mkdir(parents=True, exist_ok=True)
 
         # List all blobs with prefix
-        blobs = self.storage_client.list_blobs(
-            self.gcs_bucket,
-            prefix=gcs_repo_path
-        )
+        blobs = self.storage_client.list_blobs(self.gcs_bucket, prefix=gcs_repo_path)
 
         # Download each blob
         for blob in blobs:
             # Get relative path
-            relative_path = blob.name[len(gcs_repo_path):].lstrip('/')
+            relative_path = blob.name[len(gcs_repo_path) :].lstrip("/")
             if not relative_path:
                 continue
 
@@ -385,10 +376,7 @@ class GitRepositoryManager:
         logger.info(f"Repository downloaded from GCS: {gcs_repo_path}")
 
     async def _clone_repo(
-        self,
-        repo_info: GitRepositoryInfo,
-        branch: str,
-        auth_token: Optional[str] = None
+        self, repo_info: GitRepositoryInfo, branch: str, auth_token: Optional[str] = None
     ) -> Path:
         """
         Clone repository to local cache and upload to GCS.
@@ -401,9 +389,7 @@ class GitRepositoryManager:
         Returns:
             Local path to cloned repository
         """
-        logger.info(
-            f"Cloning repository: {repo_info.platform}:{repo_info.owner}/{repo_info.repo}"
-        )
+        logger.info(f"Cloning repository: {repo_info.platform}:{repo_info.owner}/{repo_info.repo}")
 
         # Prepare git URL with auth token if provided
         git_url = repo_info.git_url
@@ -419,15 +405,11 @@ class GitRepositoryManager:
 
         # Clone repository (shallow for speed)
         try:
-            self._run_git_command([
-                'clone',
-                '--depth', '1',
-                '--branch', branch,
-                git_url,
-                str(local_repo_path)
-            ])
+            self._run_git_command(
+                ["clone", "--depth", "1", "--branch", branch, git_url, str(local_repo_path)]
+            )
         except GitManagerError as e:
-            if 'not found' in str(e).lower() or 'does not exist' in str(e).lower():
+            if "not found" in str(e).lower() or "does not exist" in str(e).lower():
                 raise GitManagerError(
                     f"Repository not found or not accessible: {repo_info.git_url}. "
                     f"Check URL and authentication token."
@@ -435,19 +417,13 @@ class GitRepositoryManager:
             raise
 
         # Upload to GCS
-        await self._upload_repo_to_gcs(
-            local_repo_path,
-            repo_info.worktree_path
-        )
+        await self._upload_repo_to_gcs(local_repo_path, repo_info.worktree_path)
 
         logger.info(f"Repository cloned and uploaded: {repo_info.worktree_path}")
         return local_repo_path
 
     async def _pull_changes(
-        self,
-        repo_info: GitRepositoryInfo,
-        branch: str,
-        auth_token: Optional[str] = None
+        self, repo_info: GitRepositoryInfo, branch: str, auth_token: Optional[str] = None
     ) -> Tuple[Path, List[str]]:
         """
         Pull changes from remote repository.
@@ -460,74 +436,50 @@ class GitRepositoryManager:
         Returns:
             Tuple of (local_repo_path, list of changed files)
         """
-        logger.info(
-            f"Pulling changes: {repo_info.platform}:{repo_info.owner}/{repo_info.repo}"
-        )
+        logger.info(f"Pulling changes: {repo_info.platform}:{repo_info.owner}/{repo_info.repo}")
 
         # Local path
         local_repo_path = self.local_cache_dir / repo_info.worktree_path
 
         # Download from GCS if not present locally
         if not local_repo_path.exists():
-            await self._download_repo_from_gcs(
-                repo_info.worktree_path,
-                local_repo_path
-            )
+            await self._download_repo_from_gcs(repo_info.worktree_path, local_repo_path)
 
         # Get current commit before pull
-        stdout, _ = self._run_git_command(
-            ['rev-parse', 'HEAD'],
-            cwd=local_repo_path
-        )
+        stdout, _ = self._run_git_command(["rev-parse", "HEAD"], cwd=local_repo_path)
         before_commit = stdout.strip()
 
         # Configure git credentials if auth token provided
         if auth_token:
             git_url = self._inject_auth_token(repo_info.git_url, auth_token)
-            self._run_git_command(
-                ['remote', 'set-url', 'origin', git_url],
-                cwd=local_repo_path
-            )
+            self._run_git_command(["remote", "set-url", "origin", git_url], cwd=local_repo_path)
 
         # Pull changes
-        self._run_git_command(
-            ['pull', 'origin', branch],
-            cwd=local_repo_path
-        )
+        self._run_git_command(["pull", "origin", branch], cwd=local_repo_path)
 
         # Get commit after pull
-        stdout, _ = self._run_git_command(
-            ['rev-parse', 'HEAD'],
-            cwd=local_repo_path
-        )
+        stdout, _ = self._run_git_command(["rev-parse", "HEAD"], cwd=local_repo_path)
         after_commit = stdout.strip()
 
         # Get list of changed files
         changed_files = []
         if before_commit != after_commit:
             stdout, _ = self._run_git_command(
-                ['diff', '--name-only', before_commit, after_commit],
-                cwd=local_repo_path
+                ["diff", "--name-only", before_commit, after_commit], cwd=local_repo_path
             )
-            changed_files = [f.strip() for f in stdout.split('\n') if f.strip()]
+            changed_files = [f.strip() for f in stdout.split("\n") if f.strip()]
 
             logger.info(f"Files changed: {len(changed_files)}")
 
             # Upload changes to GCS
-            await self._upload_repo_to_gcs(
-                local_repo_path,
-                repo_info.worktree_path
-            )
+            await self._upload_repo_to_gcs(local_repo_path, repo_info.worktree_path)
         else:
             logger.info("No changes detected")
 
         return local_repo_path, changed_files
 
     async def sync_repository(
-        self,
-        git_url: str,
-        branch: str = "main",
-        auth_token: Optional[str] = None
+        self, git_url: str, branch: str = "main", auth_token: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Sync repository (clone or pull).
@@ -559,9 +511,7 @@ class GitRepositoryManager:
         # Check if repo exists in GCS
         if self._repo_exists_in_gcs(repo_info):
             # Pull changes
-            local_path, changed_files = await self._pull_changes(
-                repo_info, branch, auth_token
-            )
+            local_path, changed_files = await self._pull_changes(repo_info, branch, auth_token)
 
             return {
                 "sync_type": "pull",
@@ -572,8 +522,8 @@ class GitRepositoryManager:
                     "platform": repo_info.platform,
                     "host": repo_info.host,
                     "owner": repo_info.owner,
-                    "repo": repo_info.repo
-                }
+                    "repo": repo_info.repo,
+                },
             }
         else:
             # Clone repository
@@ -587,15 +537,12 @@ class GitRepositoryManager:
                     "platform": repo_info.platform,
                     "host": repo_info.host,
                     "owner": repo_info.owner,
-                    "repo": repo_info.repo
-                }
+                    "repo": repo_info.repo,
+                },
             }
 
     async def get_changed_files(
-        self,
-        git_url: str,
-        since_commit: Optional[str] = None,
-        branch: str = "main"
+        self, git_url: str, since_commit: Optional[str] = None, branch: str = "main"
     ) -> List[str]:
         """
         Get list of files changed since a specific commit.
@@ -615,25 +562,20 @@ class GitRepositoryManager:
 
         # Ensure repo is downloaded
         if not local_repo_path.exists():
-            await self._download_repo_from_gcs(
-                repo_info.worktree_path,
-                local_repo_path
-            )
+            await self._download_repo_from_gcs(repo_info.worktree_path, local_repo_path)
 
         # Get changed files
         if since_commit:
             stdout, _ = self._run_git_command(
-                ['diff', '--name-only', since_commit, 'HEAD'],
-                cwd=local_repo_path
+                ["diff", "--name-only", since_commit, "HEAD"], cwd=local_repo_path
             )
         else:
             # Get files from last commit
             stdout, _ = self._run_git_command(
-                ['diff', '--name-only', 'HEAD~1', 'HEAD'],
-                cwd=local_repo_path
+                ["diff", "--name-only", "HEAD~1", "HEAD"], cwd=local_repo_path
             )
 
-        changed_files = [f.strip() for f in stdout.split('\n') if f.strip()]
+        changed_files = [f.strip() for f in stdout.split("\n") if f.strip()]
         return changed_files
 
     def cleanup_local_cache(self, repo_url: Optional[str] = None) -> None:
@@ -658,8 +600,4 @@ class GitRepositoryManager:
 
 
 # Export public API
-__all__ = [
-    'GitRepositoryManager',
-    'GitRepositoryInfo',
-    'GitManagerError'
-]
+__all__ = ["GitRepositoryManager", "GitRepositoryInfo", "GitManagerError"]

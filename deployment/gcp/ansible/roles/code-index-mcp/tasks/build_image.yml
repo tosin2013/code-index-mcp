@@ -14,7 +14,7 @@
 - name: Fail if Dockerfile not found
   ansible.builtin.fail:
     msg: "Dockerfile not found at {{ project_root }}/Dockerfile"
-  when: 
+  when:
     - not dockerfile_check.stat.exists
     - not ansible_check_mode  # Don't fail in check mode if file exists
 
@@ -34,7 +34,7 @@
     - name: Extract build ID from output
       ansible.builtin.set_fact:
         build_id: "{{ cloud_build_result.stdout | default('') | regex_search('build ([a-f0-9-]+)', '\\1') | first | default('check-mode-build-id') }}"
-      when: 
+      when:
         - cloud_build_result.rc is defined
         - cloud_build_result.rc == 0
 

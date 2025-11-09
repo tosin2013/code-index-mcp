@@ -264,7 +264,7 @@ API keys support two permission levels:
    ./setup-secrets.sh alice_prod read,write
    ./setup-secrets.sh bob_dev read
    ./setup-secrets.sh github_ci read
-   
+
    # Bad (too generic)
    ./setup-secrets.sh user1 read,write
    ./setup-secrets.sh temp read,write
@@ -274,7 +274,7 @@ API keys support two permission levels:
    ```bash
    # List all keys
    gcloud secrets list --filter="name:mcp-api-key-*"
-   
+
    # Check last access time
    gcloud logging read "resource.labels.secret_id:mcp-api-key-*" \
      --format="table(timestamp, resource.labels.secret_id)"
@@ -452,9 +452,6 @@ done
 
 ---
 
-**Last Updated**: October 25, 2025  
-**Version**: 2.4.1 (Phase 2A)  
+**Last Updated**: October 25, 2025
+**Version**: 2.4.1 (Phase 2A)
 **Deployment**: Google Cloud Run
-
-
-

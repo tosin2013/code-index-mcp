@@ -59,6 +59,7 @@ CREATE INDEX idx_projects_last_indexed ON projects(last_indexed_at);
 CREATE TABLE code_chunks (
     chunk_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     project_id UUID REFERENCES projects(project_id) ON DELETE CASCADE,
+    user_id UUID REFERENCES users(user_id) ON DELETE CASCADE,
 
     -- File information
     file_path TEXT NOT NULL,
@@ -95,6 +96,7 @@ CREATE TABLE code_chunks (
 
 -- Indexes for code_chunks
 CREATE INDEX idx_code_chunks_project ON code_chunks(project_id);
+CREATE INDEX idx_code_chunks_user ON code_chunks(user_id);
 CREATE INDEX idx_code_chunks_file_path ON code_chunks(file_path);
 CREATE INDEX idx_code_chunks_language ON code_chunks(language);
 CREATE INDEX idx_code_chunks_chunk_type ON code_chunks(chunk_type);

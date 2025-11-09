@@ -8,7 +8,7 @@ TASK [Gathering Facts] *********************************************************
 ok: [localhost]
 
 TASK [Display test configuration] **********************************************
-ok: [localhost] => 
+ok: [localhost] =>
   msg:
   - 'Transport: stdio'
   - 'Server Command: uvx'
@@ -25,7 +25,7 @@ TASK [Get server information] **************************************************
 ok: [localhost]
 
 TASK [Display server capabilities] *********************************************
-ok: [localhost] => 
+ok: [localhost] =>
   server_info:
     changed: false
     error: null
@@ -52,11 +52,10 @@ Origin: /Users/tosinakinosho/workspaces/code-index-mcp/tests/ansible/test-local.
 62     - name: Validate server basic info
          ^ column 7
 
-fatal: [localhost]: FAILED! => changed=false 
+fatal: [localhost]: FAILED! => changed=false
   assertion: server_info.server_info.capabilities.tools is defined
   evaluated_to: false
   msg: ❌ Server info validation failed
 
 PLAY RECAP *********************************************************************
-localhost                  : ok=6    changed=0    unreachable=0    failed=1    skipped=0    rescued=0    ignored=0   
-
+localhost                  : ok=6    changed=0    unreachable=0    failed=1    skipped=0    rescued=0    ignored=0

@@ -320,4 +320,3 @@ cd deployment/gcp/ansible && ./test-clean-project.sh
 
 **Status**: Ready to test ✅
 **Confidence**: 95% (extensively tested framework)
-

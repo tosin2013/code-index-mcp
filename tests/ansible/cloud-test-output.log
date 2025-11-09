@@ -7,11 +7,11 @@ TASK [Gathering Facts] *********************************************************
 ok: [localhost]
 
 TASK [Validate required environment variables] *********************************
-ok: [localhost] => changed=false 
+ok: [localhost] => changed=false
   msg: All assertions passed
 
 TASK [Display test configuration] **********************************************
-ok: [localhost] => 
+ok: [localhost] =>
   msg:
   - ═══════════════════════════════════════
   - "\U0001F310 Cloud HTTP/SSE Test Configuration"
@@ -26,7 +26,7 @@ TASK [Get server information via SSE] ******************************************
 ok: [localhost]
 
 TASK [Display server capabilities] *********************************************
-ok: [localhost] => 
+ok: [localhost] =>
   server_info:
     changed: false
     error: null
@@ -45,14 +45,14 @@ ok: [localhost] =>
     success: true
 
 TASK [Validate server basic info] **********************************************
-ok: [localhost] => changed=false 
+ok: [localhost] => changed=false
   msg: ✅ Server info validation passed
 
 TASK [Test set_project_path tool] **********************************************
 ok: [localhost]
 
 TASK [Validate set_project_path response] **************************************
-ok: [localhost] => changed=false 
+ok: [localhost] => changed=false
   msg: ✅ set_project_path tool passed
 
 TASK [Test find_files tool] ****************************************************
@@ -65,7 +65,7 @@ TASK [Test semantic_search_code tool (cloud-only, requires AlloyDB)] ***********
 ok: [localhost]
 
 TASK [Display semantic search results] *****************************************
-ok: [localhost] => 
+ok: [localhost] =>
   msg:
   - 'Semantic Search Status: SUCCESS'
   - 'Note: semantic_search_code requires AlloyDB deployment'
@@ -74,7 +74,7 @@ TASK [Test ingest_code_from_git tool (cloud-only)] *****************************
 ok: [localhost]
 
 TASK [Display git ingestion results] *******************************************
-ok: [localhost] => 
+ok: [localhost] =>
   msg:
   - 'Git Ingestion Status: SUCCESS'
   - 'Chunks Ingested: 0'
@@ -88,7 +88,7 @@ Origin: /Users/tosinakinosho/workspaces/code-index-mcp/tests/ansible/test-cloud.
 172     - name: Test file resource retrieval
           ^ column 7
 
-fatal: [localhost]: FAILED! => changed=false 
+fatal: [localhost]: FAILED! => changed=false
   error: 'Resource test error: Failed to read resource ''file:///tmp/cloud-test-project/README.md'': Unknown resource: file:///tmp/cloud-test-project/README.md'
   execution_time: 0.407
   metadata:
@@ -101,7 +101,7 @@ fatal: [localhost]: FAILED! => changed=false
 ...ignoring
 
 TASK [Display resource result] *************************************************
-ok: [localhost] => 
+ok: [localhost] =>
   resource_result:
     changed: false
     error: 'Resource test error: Failed to read resource ''file:///tmp/cloud-test-project/README.md'': Unknown resource: file:///tmp/cloud-test-project/README.md'
@@ -120,7 +120,7 @@ TASK [Generate test summary] ***************************************************
 ok: [localhost]
 
 TASK [Display test summary] ****************************************************
-ok: [localhost] => 
+ok: [localhost] =>
   msg:
   - ═══════════════════════════════════════
   - "\U0001F4CA Test Summary - Cloud HTTP/SSE Mode"
@@ -138,9 +138,8 @@ TASK [Save test report] ********************************************************
 changed: [localhost]
 
 TASK [Final status check] ******************************************************
-ok: [localhost] => changed=false 
+ok: [localhost] => changed=false
   msg: ✅ All critical cloud tests passed!
 
 PLAY RECAP *********************************************************************
-localhost                  : ok=20   changed=1    unreachable=0    failed=0    skipped=0    rescued=0    ignored=1   
-
+localhost                  : ok=20   changed=1    unreachable=0    failed=0    skipped=0    rescued=0    ignored=1

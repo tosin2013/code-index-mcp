@@ -11,7 +11,7 @@
   ansible.builtin.fail:
     msg: |
       Terraform is not installed. Install it from: https://www.terraform.io/downloads
-      
+
       macOS: brew install terraform
       Linux: https://www.terraform.io/downloads
   when: terraform_check.rc != 0
@@ -207,4 +207,3 @@
 - name: Display connection string secret status
   ansible.builtin.debug:
     msg: "✅ AlloyDB connection string secret created/updated: alloydb-connection-string"
-

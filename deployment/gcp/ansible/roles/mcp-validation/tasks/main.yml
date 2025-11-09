@@ -69,27 +69,27 @@
   ansible.builtin.copy:
     content: |
       # MCP Server Validation Report
-      
+
       **Timestamp**: {{ validation_results.timestamp }}
       **Service URL**: {{ validation_results.service_url }}
-      
+
       ## Test Results
-      
+
       | Test | Status |
       |------|--------|
       | SSE Endpoint | {{ validation_results.tests.sse_endpoint }} |
       | Tools List | {{ validation_results.tests.tools_list }} |
       | Git Ingestion | {{ validation_results.tests.ingestion }} |
       | Semantic Search | {{ validation_results.tests.semantic_search }} |
-      
+
       ## Available MCP Tools
-      
+
       {% for tool in validation_results.available_tools | default([]) %}
       - {{ tool }}
       {% endfor %}
-      
+
       ## Raw Results
-      
+
       ```json
       {{ validation_results | to_nice_json }}
       ```

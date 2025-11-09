@@ -8,7 +8,4 @@ This package contains middleware components for HTTP mode:
 
 from .auth import AuthMiddleware, get_user_from_request
 
-__all__ = ['AuthMiddleware', 'get_user_from_request']
-
-
-
+__all__ = ["AuthMiddleware", "get_user_from_request"]

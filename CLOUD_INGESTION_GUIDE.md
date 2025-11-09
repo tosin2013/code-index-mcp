@@ -106,16 +106,16 @@ The server automatically detects which mode to use based on whether `files` are 
 
 ### Troubleshooting
 
-**Q: "Too many files, batches are too large"**  
+**Q: "Too many files, batches are too large"**
 A: Use smaller batch size: `--batch-size 25`
 
-**Q: "Want to skip certain files"**  
+**Q: "Want to skip certain files"**
 A: Add ignore patterns: `--ignore "*.test.js" "*.spec.ts"`
 
-**Q: "Progress file corrupted"**  
+**Q: "Progress file corrupted"**
 A: Reset and start fresh: `--reset`
 
-**Q: "Some files showing as 'already processed'"**  
+**Q: "Some files showing as 'already processed'"**
 A: That's the resume feature working! Use `--reset` to reprocess all files.
 
 ---

@@ -1,6 +1,6 @@
 # AlloyDB Development Instance Configuration
 # Cost: ~$100/month (1 vCPU, 8 GB RAM, 10 GB storage)
-# 
+#
 # Deploy with:
 #   cd deployment/gcp
 #   terraform init
@@ -72,7 +72,7 @@ resource "google_service_networking_connection" "alloydb_connection" {
 resource "google_alloydb_cluster" "code_index_cluster" {
   cluster_id = "code-index-cluster-${var.environment}"
   location   = var.region
-  
+
   network_config {
     network = google_compute_network.alloydb_network.id
   }
@@ -85,10 +85,10 @@ resource "google_alloydb_cluster" "code_index_cluster" {
 
   # Automated backups
   automated_backup_policy {
-    enabled = true
-    backup_window = "3600s"  # 1 hour backup window
-    location = var.region
-    
+    enabled       = true
+    backup_window = "3600s" # 1 hour backup window
+    location      = var.region
+
     weekly_schedule {
       days_of_week = ["MONDAY", "WEDNESDAY", "FRIDAY"]
       start_times {
@@ -98,9 +98,9 @@ resource "google_alloydb_cluster" "code_index_cluster" {
         nanos   = 0
       }
     }
-    
+
     quantity_based_retention {
-      count = 7  # Keep 7 backups
+      count = 7 # Keep 7 backups
     }
   }
 
@@ -194,17 +194,15 @@ output "connection_string" {
 output "estimated_monthly_cost" {
   value = <<-EOT
     Development AlloyDB Configuration Cost Estimate:
-    
+
     - AlloyDB Instance (2 vCPU, 16 GB): ~$164/month (minimum allowed)
     - Storage (10 GB SSD): ~$2/month
     - Backups (7 daily): ~$1/month
     - VPC Connector: ~$7/month
     - Network Egress: ~$5/month (estimated)
-    
+
     Total: ~$179-185/month
-    
+
     Note: Scale to production (4 vCPU, 32 GB, 100 GB) = ~$340/month
   EOT
 }
-
-

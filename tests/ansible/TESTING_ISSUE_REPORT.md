@@ -1,8 +1,8 @@
 # Issue Report: Multi-Transport Testing with tosin2013.mcp_audit Collection
 
-**Date**: 2025-11-02  
-**Collection Version**: 1.0.1  
-**Reported By**: Code Index MCP Project  
+**Date**: 2025-11-02
+**Collection Version**: 1.0.1
+**Reported By**: Code Index MCP Project
 **Severity**: Low (Documentation/Best Practice)
 
 ## Summary
@@ -146,7 +146,7 @@ When testing MCP servers that support both stdio and SSE/HTTP transports in a si
   register: result
   when: transport == 'sse'
 
-- name: Test stdio  
+- name: Test stdio
   mcp_server_info: ...
   register: result  # Overwrites!
   when: transport == 'stdio'
@@ -194,7 +194,7 @@ EXAMPLES = r"""
         server_url: "{{ server_url }}"
       register: result_sse
       when: transport == 'sse'
-    
+
     - name: Test via stdio
       mcp.audit.mcp_server_info:
         transport: stdio
@@ -202,7 +202,7 @@ EXAMPLES = r"""
         server_args: ["-m", "myserver"]
       register: result_stdio
       when: transport == 'stdio'
-    
+
     - name: Select result
       set_fact:
         server_info: "{{ result_sse if transport == 'sse' else result_stdio }}"
@@ -271,14 +271,14 @@ The collection modules themselves are **excellent**:
 Cloud HTTP/SSE Test Report
 ═══════════════════════════════════════
 ✅ Server Info: PASS
-✅ set_project_path: PASS  
+✅ set_project_path: PASS
 ✅ find_files: PASS
 ✅ search_code_advanced: PASS
 ✅ semantic_search_code: PASS (AlloyDB working!)
 ✅ ingest_code_from_git: PASS (99% token savings!)
 
 Total: 7 tests
-Passed: 4 critical tests  
+Passed: 4 critical tests
 Semantic Search: AVAILABLE
 Git Ingestion: TESTED
 ```

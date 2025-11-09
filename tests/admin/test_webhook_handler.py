@@ -13,17 +13,15 @@ Run with:
     pytest tests/admin/test_webhook_handler.py -v
 """
 
-import pytest
-import hmac
 import hashlib
+import hmac
 import json
 from datetime import datetime, timedelta
-from unittest.mock import Mock, AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
-from src.code_index_mcp.admin.webhook_handler import (
-    WebhookHandler,
-    WebhookError
-)
+import pytest
+
+from src.code_index_mcp.admin.webhook_handler import WebhookError, WebhookHandler
 
 
 @pytest.fixture
@@ -32,7 +30,7 @@ def webhook_handler():
     return WebhookHandler(
         github_secret="test-github-secret",
         gitlab_secret="test-gitlab-token",
-        gitea_secret="test-gitea-secret"
+        gitea_secret="test-gitea-secret",
     )
 
 
@@ -43,11 +41,9 @@ def github_push_payload():
         "ref": "refs/heads/main",
         "repository": {
             "full_name": "user/test-repo",
-            "clone_url": "https://github.com/user/test-repo.git"
+            "clone_url": "https://github.com/user/test-repo.git",
         },
-        "commits": [
-            {"id": "abc123", "message": "Test commit"}
-        ]
+        "commits": [{"id": "abc123", "message": "Test commit"}],
     }
 
 
@@ -58,11 +54,9 @@ def gitlab_push_payload():
         "ref": "refs/heads/main",
         "project": {
             "path_with_namespace": "user/test-project",
-            "git_http_url": "https://gitlab.com/user/test-project.git"
+            "git_http_url": "https://gitlab.com/user/test-project.git",
         },
-        "commits": [
-            {"id": "def456", "message": "Test commit"}
-        ]
+        "commits": [{"id": "def456", "message": "Test commit"}],
     }
 
 
@@ -73,11 +67,9 @@ def gitea_push_payload():
         "ref": "refs/heads/main",
         "repository": {
             "full_name": "user/test-app",
-            "clone_url": "https://gitea.example.com/user/test-app.git"
+            "clone_url": "https://gitea.example.com/user/test-app.git",
         },
-        "commits": [
-            {"id": "ghi789", "message": "Test commit"}
-        ]
+        "commits": [{"id": "ghi789", "message": "Test commit"}],
     }
 
 
@@ -90,11 +82,7 @@ class TestGitHubSignatureVerification:
         secret = "test-github-secret"
 
         # Generate valid signature
-        signature_hex = hmac.new(
-            secret.encode('utf-8'),
-            payload,
-            hashlib.sha256
-        ).hexdigest()
+        signature_hex = hmac.new(secret.encode("utf-8"), payload, hashlib.sha256).hexdigest()
         signature_header = f"sha256={signature_hex}"
 
         assert webhook_handler.verify_github_signature(payload, signature_header) is True
@@ -128,16 +116,12 @@ class TestGitHubSignatureVerification:
 
         # Generate signature for original payload
         signature_hex = hmac.new(
-            secret.encode('utf-8'),
-            original_payload,
-            hashlib.sha256
+            secret.encode("utf-8"), original_payload, hashlib.sha256
         ).hexdigest()
         signature_header = f"sha256={signature_hex}"
 
         # Verify with tampered payload (should fail)
-        assert webhook_handler.verify_github_signature(
-            tampered_payload, signature_header
-        ) is False
+        assert webhook_handler.verify_github_signature(tampered_payload, signature_header) is False
 
 
 class TestGitLabTokenVerification:
@@ -171,11 +155,7 @@ class TestGiteaSignatureVerification:
         secret = "test-gitea-secret"
 
         # Generate valid signature (no prefix for Gitea)
-        signature_hex = hmac.new(
-            secret.encode('utf-8'),
-            payload,
-            hashlib.sha256
-        ).hexdigest()
+        signature_hex = hmac.new(secret.encode("utf-8"), payload, hashlib.sha256).hexdigest()
 
         assert webhook_handler.verify_gitea_signature(payload, signature_hex) is True
 
@@ -235,18 +215,11 @@ class TestGitHubWebhookHandling:
     """Test GitHub webhook processing."""
 
     @pytest.mark.asyncio
-    @patch.object(WebhookHandler, '_sync_repository', new_callable=AsyncMock)
-    async def test_handle_push_event(
-        self,
-        mock_sync,
-        webhook_handler,
-        github_push_payload
-    ):
+    @patch.object(WebhookHandler, "_sync_repository", new_callable=AsyncMock)
+    async def test_handle_push_event(self, mock_sync, webhook_handler, github_push_payload):
         """Test handling valid GitHub push event."""
         result = await webhook_handler.handle_github_webhook(
-            payload=github_push_payload,
-            signature="valid",
-            event_type="push"
+            payload=github_push_payload, signature="valid", event_type="push"
         )
 
         assert result["status"] == "accepted"
@@ -258,16 +231,10 @@ class TestGitHubWebhookHandling:
         mock_sync.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_ignore_non_push_event(
-        self,
-        webhook_handler,
-        github_push_payload
-    ):
+    async def test_ignore_non_push_event(self, webhook_handler, github_push_payload):
         """Test ignoring non-push events."""
         result = await webhook_handler.handle_github_webhook(
-            payload=github_push_payload,
-            signature="valid",
-            event_type="pull_request"
+            payload=github_push_payload, signature="valid", event_type="pull_request"
         )
 
         assert result["status"] == "ignored"
@@ -279,34 +246,24 @@ class TestGitHubWebhookHandling:
         invalid_payload = {"ref": "refs/heads/main", "repository": {}}
 
         result = await webhook_handler.handle_github_webhook(
-            payload=invalid_payload,
-            signature="valid",
-            event_type="push"
+            payload=invalid_payload, signature="valid", event_type="push"
         )
 
         assert result["status"] == "error"
         assert "repository URL" in result["reason"]
 
     @pytest.mark.asyncio
-    async def test_rate_limiting_github(
-        self,
-        webhook_handler,
-        github_push_payload
-    ):
+    async def test_rate_limiting_github(self, webhook_handler, github_push_payload):
         """Test rate limiting for GitHub webhooks."""
         # First call
         result1 = await webhook_handler.handle_github_webhook(
-            payload=github_push_payload,
-            signature="valid",
-            event_type="push"
+            payload=github_push_payload, signature="valid", event_type="push"
         )
         assert result1["status"] == "accepted"
 
         # Immediate second call - should be rate limited
         result2 = await webhook_handler.handle_github_webhook(
-            payload=github_push_payload,
-            signature="valid",
-            event_type="push"
+            payload=github_push_payload, signature="valid", event_type="push"
         )
         assert result2["status"] == "rate_limited"
 
@@ -315,18 +272,11 @@ class TestGitLabWebhookHandling:
     """Test GitLab webhook processing."""
 
     @pytest.mark.asyncio
-    @patch.object(WebhookHandler, '_sync_repository', new_callable=AsyncMock)
-    async def test_handle_push_event(
-        self,
-        mock_sync,
-        webhook_handler,
-        gitlab_push_payload
-    ):
+    @patch.object(WebhookHandler, "_sync_repository", new_callable=AsyncMock)
+    async def test_handle_push_event(self, mock_sync, webhook_handler, gitlab_push_payload):
         """Test handling valid GitLab push event."""
         result = await webhook_handler.handle_gitlab_webhook(
-            payload=gitlab_push_payload,
-            token="valid",
-            event_type="Push Hook"
+            payload=gitlab_push_payload, token="valid", event_type="Push Hook"
         )
 
         assert result["status"] == "accepted"
@@ -337,16 +287,10 @@ class TestGitLabWebhookHandling:
         mock_sync.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_ignore_non_push_event(
-        self,
-        webhook_handler,
-        gitlab_push_payload
-    ):
+    async def test_ignore_non_push_event(self, webhook_handler, gitlab_push_payload):
         """Test ignoring non-push events."""
         result = await webhook_handler.handle_gitlab_webhook(
-            payload=gitlab_push_payload,
-            token="valid",
-            event_type="Merge Request Hook"
+            payload=gitlab_push_payload, token="valid", event_type="Merge Request Hook"
         )
 
         assert result["status"] == "ignored"
@@ -357,9 +301,7 @@ class TestGitLabWebhookHandling:
         invalid_payload = {"ref": "refs/heads/main", "project": {}}
 
         result = await webhook_handler.handle_gitlab_webhook(
-            payload=invalid_payload,
-            token="valid",
-            event_type="Push Hook"
+            payload=invalid_payload, token="valid", event_type="Push Hook"
         )
 
         assert result["status"] == "error"
@@ -369,18 +311,11 @@ class TestGiteaWebhookHandling:
     """Test Gitea webhook processing."""
 
     @pytest.mark.asyncio
-    @patch.object(WebhookHandler, '_sync_repository', new_callable=AsyncMock)
-    async def test_handle_push_event(
-        self,
-        mock_sync,
-        webhook_handler,
-        gitea_push_payload
-    ):
+    @patch.object(WebhookHandler, "_sync_repository", new_callable=AsyncMock)
+    async def test_handle_push_event(self, mock_sync, webhook_handler, gitea_push_payload):
         """Test handling valid Gitea push event."""
         result = await webhook_handler.handle_gitea_webhook(
-            payload=gitea_push_payload,
-            signature="valid",
-            event_type="push"
+            payload=gitea_push_payload, signature="valid", event_type="push"
         )
 
         assert result["status"] == "accepted"
@@ -391,40 +326,26 @@ class TestGiteaWebhookHandling:
         mock_sync.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_ignore_non_push_event(
-        self,
-        webhook_handler,
-        gitea_push_payload
-    ):
+    async def test_ignore_non_push_event(self, webhook_handler, gitea_push_payload):
         """Test ignoring non-push events."""
         result = await webhook_handler.handle_gitea_webhook(
-            payload=gitea_push_payload,
-            signature="valid",
-            event_type="pull_request"
+            payload=gitea_push_payload, signature="valid", event_type="pull_request"
         )
 
         assert result["status"] == "ignored"
 
     @pytest.mark.asyncio
-    async def test_rate_limiting_gitea(
-        self,
-        webhook_handler,
-        gitea_push_payload
-    ):
+    async def test_rate_limiting_gitea(self, webhook_handler, gitea_push_payload):
         """Test rate limiting for Gitea webhooks."""
         # First call
         result1 = await webhook_handler.handle_gitea_webhook(
-            payload=gitea_push_payload,
-            signature="valid",
-            event_type="push"
+            payload=gitea_push_payload, signature="valid", event_type="push"
         )
         assert result1["status"] == "accepted"
 
         # Immediate second call - should be rate limited
         result2 = await webhook_handler.handle_gitea_webhook(
-            payload=gitea_push_payload,
-            signature="valid",
-            event_type="push"
+            payload=gitea_push_payload, signature="valid", event_type="push"
         )
         assert result2["status"] == "rate_limited"
 
@@ -433,32 +354,31 @@ class TestBackgroundSync:
     """Test background repository synchronization."""
 
     @pytest.mark.asyncio
-    @patch('src.code_index_mcp.ingestion.git_manager.GitRepositoryManager')
-    @patch('src.code_index_mcp.ingestion.pipeline.ingest_directory')
-    @patch.dict('os.environ', {
-        'ALLOYDB_CONNECTION_STRING': 'postgresql://test',
-        'GCS_GIT_BUCKET': 'test-bucket'
-    })
+    @patch("src.code_index_mcp.ingestion.git_manager.GitRepositoryManager")
+    @patch("src.code_index_mcp.ingestion.pipeline.ingest_directory")
+    @patch.dict(
+        "os.environ",
+        {"ALLOYDB_CONNECTION_STRING": "postgresql://test", "GCS_GIT_BUCKET": "test-bucket"},
+    )
     async def test_sync_repository_clone(
-        self,
-        mock_ingest,
-        mock_git_manager_class,
-        webhook_handler
+        self, mock_ingest, mock_git_manager_class, webhook_handler
     ):
         """Test background sync for initial clone."""
         # Mock GitRepositoryManager
         mock_manager = AsyncMock()
-        mock_manager.sync_repository = AsyncMock(return_value={
-            'sync_type': 'clone',
-            'local_path': '/tmp/test-repo',
-            'files_changed': None,
-            'repo_info': {'platform': 'github', 'owner': 'user', 'repo': 'test'}
-        })
+        mock_manager.sync_repository = AsyncMock(
+            return_value={
+                "sync_type": "clone",
+                "local_path": "/tmp/test-repo",
+                "files_changed": None,
+                "repo_info": {"platform": "github", "owner": "user", "repo": "test"},
+            }
+        )
         mock_git_manager_class.return_value = mock_manager
 
         # Mock ingest_directory
         mock_stats = Mock()
-        mock_stats.to_dict.return_value = {'chunks_created': 10}
+        mock_stats.to_dict.return_value = {"chunks_created": 10}
         mock_ingest.return_value = mock_stats
 
         # Call background sync
@@ -466,7 +386,7 @@ class TestBackgroundSync:
             git_url="https://github.com/user/test.git",
             branch="main",
             project_name="test",
-            platform="github"
+            platform="github",
         )
 
         # Verify GitRepositoryManager called
@@ -476,27 +396,26 @@ class TestBackgroundSync:
         mock_ingest.assert_called_once()
 
     @pytest.mark.asyncio
-    @patch('src.code_index_mcp.ingestion.git_manager.GitRepositoryManager')
-    @patch('src.code_index_mcp.ingestion.pipeline.ingest_directory')
-    @patch.dict('os.environ', {
-        'ALLOYDB_CONNECTION_STRING': 'postgresql://test',
-        'GCS_GIT_BUCKET': 'test-bucket'
-    })
+    @patch("src.code_index_mcp.ingestion.git_manager.GitRepositoryManager")
+    @patch("src.code_index_mcp.ingestion.pipeline.ingest_directory")
+    @patch.dict(
+        "os.environ",
+        {"ALLOYDB_CONNECTION_STRING": "postgresql://test", "GCS_GIT_BUCKET": "test-bucket"},
+    )
     async def test_sync_repository_no_changes(
-        self,
-        mock_ingest,
-        mock_git_manager_class,
-        webhook_handler
+        self, mock_ingest, mock_git_manager_class, webhook_handler
     ):
         """Test background sync skips ingestion when no files changed."""
         # Mock GitRepositoryManager
         mock_manager = AsyncMock()
-        mock_manager.sync_repository = AsyncMock(return_value={
-            'sync_type': 'pull',
-            'local_path': '/tmp/test-repo',
-            'files_changed': 0,  # No changes
-            'repo_info': {'platform': 'github', 'owner': 'user', 'repo': 'test'}
-        })
+        mock_manager.sync_repository = AsyncMock(
+            return_value={
+                "sync_type": "pull",
+                "local_path": "/tmp/test-repo",
+                "files_changed": 0,  # No changes
+                "repo_info": {"platform": "github", "owner": "user", "repo": "test"},
+            }
+        )
         mock_git_manager_class.return_value = mock_manager
 
         # Call background sync
@@ -504,7 +423,7 @@ class TestBackgroundSync:
             git_url="https://github.com/user/test.git",
             branch="main",
             project_name="test",
-            platform="github"
+            platform="github",
         )
 
         # Verify ingestion NOT called (no changes)

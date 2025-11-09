@@ -1,8 +1,8 @@
 # Deployment Test Guide - Google Cloud Run
 
-**Project**: tosinscloud  
-**Region**: us-east1  
-**Environment**: dev (recommended for first deployment)  
+**Project**: tosinscloud
+**Region**: us-east1
+**Environment**: dev (recommended for first deployment)
 **Date**: October 24, 2025
 
 ---
@@ -55,7 +55,7 @@ cd deployment/gcp
 [SUCCESS] Service URL: https://code-index-mcp-dev-xxxxx-uc.a.run.app
 ```
 
-**Time**: ~5-10 minutes (first time)  
+**Time**: ~5-10 minutes (first time)
 **Cost**: ~$0 (Cloud Build free tier: 120 build-minutes/day)
 
 ### Step 2: Test Health Endpoint
@@ -360,9 +360,6 @@ cd deployment/gcp
 
 ---
 
-**Estimated Deployment Time**: 5-10 minutes  
-**Estimated Cost**: $0 (free tier) to $2.50/month (dev usage)  
+**Estimated Deployment Time**: 5-10 minutes
+**Estimated Cost**: $0 (free tier) to $2.50/month (dev usage)
 **Confidence**: 88% (scripts validated, ready for real deployment)
-
-
-

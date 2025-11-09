@@ -1,6 +1,6 @@
 ---
 # Validate deployed MCP Server
-# 
+#
 # This playbook tests the deployed MCP server by calling its tools
 # to validate end-to-end functionality including:
 # - SSE endpoint connectivity
@@ -42,7 +42,7 @@
       ansible.builtin.fail:
         msg: |
           MCP service URL not provided.
-          
+
           Please provide it via:
           1. Inventory variable: cloudrun_service_url
           2. Command line: -e "mcp_service_url=https://your-service.run.app"
@@ -76,10 +76,3 @@
           - "}"
           - ""
           - "==================================="
-
-
-
-
-
-
-

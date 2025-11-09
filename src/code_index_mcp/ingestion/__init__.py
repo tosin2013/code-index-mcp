@@ -10,26 +10,9 @@ Phase 3A - Git-Sync:
 - Auto-sync via webhooks
 """
 
-from .chunker import (
-    CodeChunk,
-    ChunkStrategy,
-    CodeChunker,
-    chunk_file,
-    chunk_directory,
-)
-
-from .pipeline import (
-    IngestionPipeline,
-    IngestionStats,
-    ingest_directory,
-    ingest_files,
-)
-
-from .git_manager import (
-    GitRepositoryManager,
-    GitRepositoryInfo,
-    GitManagerError,
-)
+from .chunker import ChunkStrategy, CodeChunk, CodeChunker, chunk_directory, chunk_file
+from .git_manager import GitManagerError, GitRepositoryInfo, GitRepositoryManager
+from .pipeline import IngestionPipeline, IngestionStats, ingest_directory, ingest_files
 
 __all__ = [
     "CodeChunk",
@@ -45,5 +28,3 @@ __all__ = [
     "GitRepositoryInfo",
     "GitManagerError",
 ]
-
-

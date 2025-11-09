@@ -76,6 +76,3 @@ echo -e "  1. Deploy to Cloud Run: ./deploy.sh dev"
 echo -e "  2. Create some test data in GCS"
 echo -e "  3. Run cleanup job: gcloud run jobs execute code-index-cleanup-dev --region=us-east1"
 echo ""
-
-
-

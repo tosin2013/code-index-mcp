@@ -49,4 +49,3 @@ TOOLS_REQUEST='{
 curl -s -X POST "$BASE_URL/messages/?session_id=$SESSION_ID" \
   -H "Content-Type: application/json" \
   -d "$TOOLS_REQUEST" | jq '.result.tools[] | {name: .name, description: .description}' | head -30
-

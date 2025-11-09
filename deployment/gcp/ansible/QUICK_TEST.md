@@ -22,7 +22,7 @@ gcloud config get-value project
 3. ✅ Verify it all works
 4. ✅ Clean up resources automatically
 
-**Duration**: ~20-25 minutes  
+**Duration**: ~20-25 minutes
 **Cost**: ~$0.50-2.00 (deleted after test)
 
 ---
@@ -243,10 +243,3 @@ cd /Users/tosinakinosho/workspaces/code-index-mcp/deployment/gcp/ansible
 ---
 
 **Ready to run? Just execute the command above!** 🚀
-
-
-
-
-
-
-

@@ -6,10 +6,10 @@ various embedding models (Vertex AI, OpenAI, local models, etc.).
 """
 
 from .vertex_ai import (
+    EmbeddingConfig,
     VertexAIEmbedder,
     generate_embedding,
     generate_embeddings_batch,
-    EmbeddingConfig,
 )
 
 __all__ = [
@@ -18,6 +18,3 @@ __all__ = [
     "generate_embeddings_batch",
     "EmbeddingConfig",
 ]
-
-
-

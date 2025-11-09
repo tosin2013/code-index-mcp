@@ -6,9 +6,6 @@ This module provides administrative functionality including:
 - Maintenance operations
 """
 
-from .cleanup import cleanup_idle_projects, CleanupResult
+from .cleanup import CleanupResult, cleanup_idle_projects
 
 __all__ = ["cleanup_idle_projects", "CleanupResult"]
-
-
-

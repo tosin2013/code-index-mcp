@@ -6,7 +6,7 @@
 
 ## 🚀 Option A: Test Semantic Search NOW (No Auth)
 
-**Time**: 5 minutes  
+**Time**: 5 minutes
 **Recommended for**: Testing and development
 
 ```bash
@@ -41,7 +41,7 @@ gcloud run services describe code-index-mcp-dev \
 
 ## 🔐 Option B: Deploy With Authentication (Secure)
 
-**Time**: 10 minutes  
+**Time**: 10 minutes
 **Recommended for**: Production or security-conscious testing
 
 ```bash
@@ -131,11 +131,11 @@ cd deployment/gcp
 **Fix**: Restart Claude Desktop (session expired)
 
 ### "No data in AlloyDB"
-**Cause**: Ingestion not run yet  
+**Cause**: Ingestion not run yet
 **Fix**: Run `ingest_code_for_search()` in Claude Desktop
 
 ### "Authentication Failed" (when auth is enforced)
-**Fix**: 
+**Fix**:
 1. Check API key in Claude Desktop config
 2. Verify: `gcloud secrets versions access latest --secret=code-index-api-key-demo-user-dev`
 
@@ -169,4 +169,3 @@ gcloud secrets delete code-index-api-key-demo-user-dev
 ---
 
 **Ready to test semantic search?** Just restart Claude Desktop and run `ingest_code_for_search()`! 🚀
-

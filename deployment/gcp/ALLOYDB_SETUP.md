@@ -420,7 +420,7 @@ resource "google_alloydb_instance" "read_replica" {
   machine_config {
     cpu_count = 2
   }
-  
+
   read_pool_config {
     node_count = 2  # 2 read replicas
   }
@@ -496,12 +496,9 @@ After AlloyDB is set up:
 
 ---
 
-**Last Updated**: October 25, 2025  
-**Version**: Development (Phase 3A)  
-**Environment**: Google Cloud  
+**Last Updated**: October 25, 2025
+**Version**: Development (Phase 3A)
+**Environment**: Google Cloud
 **Cost**: ~$100/month (dev), ~$220/month (prod)
 
 **Questions?** Refer to [Troubleshooting](#troubleshooting) or check [ADR 0003](../docs/adrs/0003-google-cloud-code-ingestion-with-alloydb.md).
-
-
-

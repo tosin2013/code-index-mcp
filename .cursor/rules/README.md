@@ -128,6 +128,3 @@ globs: ["**/*.py", "**/*.js"]
 - **Implementation Plan**: `docs/IMPLEMENTATION_PLAN.md` - Feature roadmap
 - **Development Guide**: `CLAUDE.md` - Development workflow documentation
 - **ADRs**: `docs/adrs/` - Architectural decisions
-
-
-

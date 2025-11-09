@@ -10,7 +10,7 @@ TASK [Gathering Facts] *********************************************************
 ok: [localhost]
 
 TASK [Display deployment information] ******************************************
-ok: [localhost] => 
+ok: [localhost] =>
   msg:
   - ===================================
   - Code Index MCP Deployment
@@ -23,11 +23,11 @@ ok: [localhost] =>
   - ===================================
 
 TASK [code-index-mcp : Validate required variables] ****************************
-ok: [localhost] => changed=false 
+ok: [localhost] => changed=false
   msg: Configuration validated for dev environment
 
 TASK [code-index-mcp : Display deployment configuration] ***********************
-ok: [localhost] => 
+ok: [localhost] =>
   msg:
   - Deploying Code Index MCP Server
   - 'Project: tosinscloud'
@@ -70,7 +70,7 @@ TASK [code-index-mcp : Check if VPC connector exists (when AlloyDB enabled)] ***
 ok: [localhost]
 
 TASK [code-index-mcp : Display VPC connector status] ***************************
-ok: [localhost] => 
+ok: [localhost] =>
   msg: VPC connector 'alloydb-connector' will be created by Terraform
 
 TASK [code-index-mcp : Include AlloyDB provisioning tasks (if AlloyDB enabled)] ***
@@ -86,7 +86,7 @@ TASK [code-index-mcp : Check if Terraform state exists] ************************
 ok: [localhost]
 
 TASK [code-index-mcp : Display AlloyDB provisioning information] ***************
-ok: [localhost] => 
+ok: [localhost] =>
   msg:
   - ===================================
   - AlloyDB Provisioning
@@ -111,7 +111,7 @@ TASK [code-index-mcp : Plan Terraform changes] *********************************
 ok: [localhost]
 
 TASK [code-index-mcp : Display Terraform plan summary] *************************
-ok: [localhost] => 
+ok: [localhost] =>
   msg:
   - '        - AlloyDB Instance (2 vCPU, 16 GB): ~$164/month (minimum allowed)'
   - '        - Storage (10 GB SSD): ~$2/month'
@@ -138,7 +138,7 @@ TASK [code-index-mcp : Check if changes are needed] ****************************
 ok: [localhost]
 
 TASK [code-index-mcp : Display Terraform status] *******************************
-ok: [localhost] => 
+ok: [localhost] =>
   msg: Terraform changes detected - will apply
 ASYNC POLL on localhost: jid=j308670423620.70233 started=True finished=False
 ASYNC POLL on localhost: jid=j308670423620.70233 started=True finished=False
@@ -205,7 +205,7 @@ TASK [code-index-mcp : Parse Terraform outputs] ********************************
 ok: [localhost]
 
 TASK [code-index-mcp : Display AlloyDB provisioning results] *******************
-ok: [localhost] => 
+ok: [localhost] =>
   msg:
   - ✅ AlloyDB provisioned successfully
   - 'Cluster: projects/tosinscloud/locations/us-east1/clusters/code-index-cluster-dev'
@@ -217,7 +217,7 @@ TASK [code-index-mcp : Wait for AlloyDB instance to be ready] ******************
 ok: [localhost]
 
 TASK [code-index-mcp : Confirm AlloyDB is ready] *******************************
-ok: [localhost] => 
+ok: [localhost] =>
   msg: ✅ AlloyDB instance is READY and accepting connections
 
 TASK [code-index-mcp : Include schema application tasks (if AlloyDB enabled)] ***
@@ -244,7 +244,7 @@ Origin: /Users/tosinakinosho/workspaces/code-index-mcp/deployment/gcp/ansible/ro
 31 - name: Build schema applier Docker image
      ^ column 3
 
-fatal: [localhost]: FAILED! => changed=false 
+fatal: [localhost]: FAILED! => changed=false
   cmd:
   - docker
   - buildx
@@ -263,7 +263,7 @@ fatal: [localhost]: FAILED! => changed=false
   start: '2025-11-06 13:37:45.055015'
   stderr: |-
     #0 building with "desktop-linux" instance using docker driver
-  
+
     #1 [internal] load build definition from Dockerfile.schema
     #1 transferring dockerfile: 396B done
     #1 ERROR: error from sender: failed to xattr /private/tmp/tmp-mount-8f8Ngx: permission denied
@@ -271,12 +271,11 @@ fatal: [localhost]: FAILED! => changed=false
      > [internal] load build definition from Dockerfile.schema:
     ------
     ERROR: failed to build: failed to solve: failed to read dockerfile: error from sender: failed to xattr /private/tmp/tmp-mount-8f8Ngx: permission denied
-  
+
     View build details: docker-desktop://dashboard/build/desktop-linux/desktop-linux/atci6h3bh290jjqq71fsr28r2
   stderr_lines: <omitted>
   stdout: ''
   stdout_lines: <omitted>
 
 PLAY RECAP *********************************************************************
-localhost                  : ok=34   changed=2    unreachable=0    failed=1    skipped=7    rescued=0    ignored=0   
-
+localhost                  : ok=34   changed=2    unreachable=0    failed=1    skipped=7    rescued=0    ignored=0

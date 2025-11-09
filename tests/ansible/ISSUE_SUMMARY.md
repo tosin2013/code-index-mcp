@@ -24,7 +24,7 @@ when: transport == 'stdio'
 Use distinct variable names:
 
 ```yaml
-# ✅ This pattern works perfectly  
+# ✅ This pattern works perfectly
 register: test_result_sse
 when: transport == 'sse'
 # ... later ...
@@ -41,17 +41,17 @@ Add a section to the documentation showing the best practice for multi-transport
 
 ## What Works Great
 
-✅ All modules (mcp_server_info, mcp_test_tool, mcp_test_resource)  
-✅ Single-transport playbooks (our test-cloud.yml: 100% success)  
-✅ Error handling and return structure  
-✅ Documentation in module docstrings  
+✅ All modules (mcp_server_info, mcp_test_tool, mcp_test_resource)
+✅ Single-transport playbooks (our test-cloud.yml: 100% success)
+✅ Error handling and return structure
+✅ Documentation in module docstrings
 
 ## Our Results
 
 ```
 Cloud Deployment Test: ✅ 7/7 tests passed
 - Server discovery: ✅
-- Tool testing: ✅  
+- Tool testing: ✅
 - Semantic search: ✅
 - Git ingestion: ✅
 ```

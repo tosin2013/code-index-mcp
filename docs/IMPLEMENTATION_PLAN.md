@@ -393,9 +393,9 @@ Start Here: What's your primary requirement?
 
 ### Sequence A: Google Cloud Run Deployment
 
-**Status**: 🚧 **Task 4 Complete (80%)** - Cleanup Implemented  
-**Completed**: October 25, 2025  
-**Service URL**: `https://code-index-mcp-dev-cjshzpy4wq-ue.a.run.app`  
+**Status**: 🚧 **Task 4 Complete (80%)** - Cleanup Implemented
+**Completed**: October 25, 2025
+**Service URL**: `https://code-index-mcp-dev-cjshzpy4wq-ue.a.run.app`
 **Next**: Testing & Documentation (Task 5 - FINAL TASK!)
 
 **Prerequisites**:
@@ -496,11 +496,11 @@ MCP_TRANSPORT=http PORT=8080 uv run code-index-mcp
      # Authentication Test (October 25, 2025)
      $ curl -H "X-API-Key: ci_eb29f98c..." \
        https://code-index-mcp-dev-cjshzpy4wq-ue.a.run.app/sse
-     
+
      event: endpoint
      data: /messages/?session_id=a399cac1f7604eda84c805f4f6896624
      : ping - 2025-10-25 21:30:48.753410+00:00
-     
+
      ✅ SSE connection established
      ✅ API key authentication working
      ✅ Session created successfully
@@ -530,7 +530,7 @@ MCP_TRANSPORT=http PORT=8080 uv run code-index-mcp
      ✓ Script executes in dry-run mode
      ✓ Error handling graceful (credentials not found - expected locally)
      ✓ Logging comprehensive
-     
+
      Result: All tests passed - Ready for cloud deployment
      ```
 
@@ -563,7 +563,7 @@ MCP_TRANSPORT=http PORT=8080 uv run code-index-mcp
    - [ ] Apply schema from [ADR 0003](adrs/0003-google-cloud-code-ingestion-with-alloydb.md#schema-design)
    - [ ] Verify HNSW indexes (auto-created by schema)
    - [ ] Test connection from Cloud Run (via VPC connector)
-   - **Files Created**: 
+   - **Files Created**:
      - `deployment/gcp/alloydb-dev.tf` (229 lines)
      - `deployment/gcp/alloydb-schema.sql` (480 lines)
      - `deployment/gcp/setup-alloydb.sh` (221 lines)

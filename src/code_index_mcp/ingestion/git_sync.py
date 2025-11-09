@@ -7,11 +7,11 @@ This module provides functions to:
 3. Perform incremental updates (insert/delete chunks)
 """
 
-import subprocess
 import logging
-from pathlib import Path
-from typing import List, Dict, Set, Optional
+import subprocess
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Dict, List, Optional, Set
 from uuid import UUID
 
 logger = logging.getLogger(__name__)
@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class GitDiff:
     """Represents changes between two Git commits."""
+
     added_files: List[str]
     modified_files: List[str]
     deleted_files: List[str]
@@ -28,19 +29,12 @@ class GitDiff:
     @property
     def files_needing_reindex(self) -> Set[str]:
         """All files that need re-indexing."""
-        return set(
-            self.added_files +
-            self.modified_files +
-            [new for _, new in self.renamed_files]
-        )
+        return set(self.added_files + self.modified_files + [new for _, new in self.renamed_files])
 
     @property
     def files_to_delete(self) -> Set[str]:
         """All files whose chunks should be deleted."""
-        return set(
-            self.deleted_files +
-            [old for old, _ in self.renamed_files]
-        )
+        return set(self.deleted_files + [old for old, _ in self.renamed_files])
 
 
 def get_git_diff(repo_path: str, old_commit: str, new_commit: str) -> GitDiff:
@@ -56,6 +50,7 @@ def get_git_diff(repo_path: str, old_commit: str, new_commit: str) -> GitDiff:
         GitDiff object with changed files
     """
     import os
+
     original_dir = os.getcwd()
 
     try:
@@ -63,8 +58,8 @@ def get_git_diff(repo_path: str, old_commit: str, new_commit: str) -> GitDiff:
 
         # Get diff with file status
         result = subprocess.check_output(
-            ['git', 'diff', '--name-status', f'{old_commit}..{new_commit}'],
-            stderr=subprocess.STDOUT
+            ["git", "diff", "--name-status", f"{old_commit}..{new_commit}"],
+            stderr=subprocess.STDOUT,
         ).decode()
 
         added = []
@@ -72,20 +67,20 @@ def get_git_diff(repo_path: str, old_commit: str, new_commit: str) -> GitDiff:
         deleted = []
         renamed = []
 
-        for line in result.strip().split('\n'):
+        for line in result.strip().split("\n"):
             if not line:
                 continue
 
-            parts = line.split('\t')
+            parts = line.split("\t")
             status = parts[0]
 
-            if status == 'A':
+            if status == "A":
                 added.append(parts[1])
-            elif status == 'M':
+            elif status == "M":
                 modified.append(parts[1])
-            elif status == 'D':
+            elif status == "D":
                 deleted.append(parts[1])
-            elif status.startswith('R'):
+            elif status.startswith("R"):
                 renamed.append((parts[1], parts[2]))
 
         logger.info(
@@ -95,10 +90,7 @@ def get_git_diff(repo_path: str, old_commit: str, new_commit: str) -> GitDiff:
         )
 
         return GitDiff(
-            added_files=added,
-            modified_files=modified,
-            deleted_files=deleted,
-            renamed_files=renamed
+            added_files=added, modified_files=modified, deleted_files=deleted, renamed_files=renamed
         )
 
     finally:
@@ -117,44 +109,39 @@ def get_git_metadata(repo_path: str, commit: Optional[str] = None) -> Dict[str, 
         Dict with commit_hash, branch_name, author_name, commit_timestamp
     """
     import os
+
     original_dir = os.getcwd()
 
     try:
         os.chdir(repo_path)
-        commit = commit or 'HEAD'
+        commit = commit or "HEAD"
 
-        commit_hash = subprocess.check_output(
-            ['git', 'rev-parse', commit]
-        ).decode().strip()
+        commit_hash = subprocess.check_output(["git", "rev-parse", commit]).decode().strip()
 
-        branch_name = subprocess.check_output(
-            ['git', 'rev-parse', '--abbrev-ref', 'HEAD']
-        ).decode().strip()
+        branch_name = (
+            subprocess.check_output(["git", "rev-parse", "--abbrev-ref", "HEAD"]).decode().strip()
+        )
 
-        author_name = subprocess.check_output(
-            ['git', 'log', '-1', '--format=%an', commit]
-        ).decode().strip()
+        author_name = (
+            subprocess.check_output(["git", "log", "-1", "--format=%an", commit]).decode().strip()
+        )
 
-        commit_timestamp = subprocess.check_output(
-            ['git', 'log', '-1', '--format=%cI', commit]
-        ).decode().strip()
+        commit_timestamp = (
+            subprocess.check_output(["git", "log", "-1", "--format=%cI", commit]).decode().strip()
+        )
 
         return {
-            'commit_hash': commit_hash,
-            'branch_name': branch_name,
-            'author_name': author_name,
-            'commit_timestamp': commit_timestamp
+            "commit_hash": commit_hash,
+            "branch_name": branch_name,
+            "author_name": author_name,
+            "commit_timestamp": commit_timestamp,
         }
 
     finally:
         os.chdir(original_dir)
 
 
-def delete_chunks_for_files(
-    conn,
-    project_id: str,
-    file_paths: List[str]
-) -> int:
+def delete_chunks_for_files(conn, project_id: str, file_paths: List[str]) -> int:
     """
     Delete all chunks for specific files.
 
@@ -173,10 +160,7 @@ def delete_chunks_for_files(
         # Use the helper function from schema
         total_deleted = 0
         for file_path in file_paths:
-            cur.execute(
-                "SELECT delete_old_file_chunks(%s, %s, NULL)",
-                (project_id, file_path)
-            )
+            cur.execute("SELECT delete_old_file_chunks(%s, %s, NULL)", (project_id, file_path))
             deleted = cur.fetchone()[0]
             total_deleted += deleted
             logger.info(f"Deleted {deleted} chunks for {file_path}")
@@ -192,7 +176,7 @@ def delta_sync_repository(
     user_id: UUID,
     project_name: str,
     db_connection_string: str,
-    use_mock_embedder: bool = False
+    use_mock_embedder: bool = False,
 ) -> Dict[str, any]:
     """
     Perform delta-based synchronization between two commits.
@@ -213,6 +197,7 @@ def delta_sync_repository(
         Dict with sync statistics
     """
     import psycopg2
+
     from .pipeline import IngestionPipeline
 
     logger.info(f"Starting delta sync: {old_commit[:8]}..{new_commit[:8]}")
@@ -230,7 +215,7 @@ def delta_sync_repository(
     with conn.cursor() as cur:
         cur.execute(
             "SELECT project_id FROM projects WHERE user_id = %s AND project_name = %s",
-            (str(user_id), project_name)
+            (str(user_id), project_name),
         )
         result = cur.fetchone()
         if not result:
@@ -259,8 +244,7 @@ def delta_sync_repository(
 
         # Then ingest new versions
         pipeline = IngestionPipeline(
-            db_connection_string=db_connection_string,
-            use_mock_embedder=use_mock_embedder
+            db_connection_string=db_connection_string, use_mock_embedder=use_mock_embedder
         )
 
         # Set user context for RLS
@@ -272,36 +256,36 @@ def delta_sync_repository(
             file_paths=files_to_ingest,
             user_id=user_id,
             project_name=project_name,
-            commit_hash=git_meta['commit_hash'],
-            branch_name=git_meta['branch_name'],
-            author_name=git_meta['author_name'],
-            commit_timestamp=git_meta['commit_timestamp']
+            commit_hash=git_meta["commit_hash"],
+            branch_name=git_meta["branch_name"],
+            author_name=git_meta["author_name"],
+            commit_timestamp=git_meta["commit_timestamp"],
         )
 
         conn.close()
 
         return {
-            'success': True,
-            'old_commit': old_commit,
-            'new_commit': new_commit,
-            'files_deleted': len(files_to_delete),
-            'chunks_deleted': deleted_count,
-            'files_reindexed': len(files_to_ingest),
-            'chunks_inserted': stats.chunks_inserted,
-            'chunks_skipped': stats.chunks_skipped,
-            'duration_seconds': stats.duration_seconds
+            "success": True,
+            "old_commit": old_commit,
+            "new_commit": new_commit,
+            "files_deleted": len(files_to_delete),
+            "chunks_deleted": deleted_count,
+            "files_reindexed": len(files_to_ingest),
+            "chunks_inserted": stats.chunks_inserted,
+            "chunks_skipped": stats.chunks_skipped,
+            "duration_seconds": stats.duration_seconds,
         }
     else:
         conn.close()
         logger.info("No files to re-ingest")
         return {
-            'success': True,
-            'old_commit': old_commit,
-            'new_commit': new_commit,
-            'files_deleted': len(files_to_delete),
-            'chunks_deleted': deleted_count,
-            'files_reindexed': 0,
-            'chunks_inserted': 0,
-            'chunks_skipped': 0,
-            'duration_seconds': 0
+            "success": True,
+            "old_commit": old_commit,
+            "new_commit": new_commit,
+            "files_deleted": len(files_to_delete),
+            "chunks_deleted": deleted_count,
+            "files_reindexed": 0,
+            "chunks_inserted": 0,
+            "chunks_skipped": 0,
+            "duration_seconds": 0,
         }

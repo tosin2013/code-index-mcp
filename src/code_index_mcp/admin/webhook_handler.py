@@ -26,16 +26,17 @@ Webhook URLs:
 Confidence: 88% - Core logic solid, needs production testing
 """
 
-import os
-import hmac
-import hashlib
-import logging
 import asyncio
-from typing import Dict, Any, Optional
+import hashlib
+import hmac
+import logging
+import os
 from datetime import datetime
+from typing import Any, Dict, Optional
 
 try:
-    from fastapi import Request, Response, HTTPException
+    from fastapi import HTTPException, Request, Response
+
     FASTAPI_AVAILABLE = True
 except ImportError:
     FASTAPI_AVAILABLE = False
@@ -48,6 +49,7 @@ logger = logging.getLogger(__name__)
 
 class WebhookError(Exception):
     """Base exception for webhook handling errors."""
+
     pass
 
 
@@ -67,7 +69,7 @@ class WebhookHandler:
         self,
         github_secret: Optional[str] = None,
         gitlab_secret: Optional[str] = None,
-        gitea_secret: Optional[str] = None
+        gitea_secret: Optional[str] = None,
     ):
         """
         Initialize webhook handler.
@@ -92,11 +94,7 @@ class WebhookHandler:
             f"gitea={bool(self.gitea_secret)}"
         )
 
-    def verify_github_signature(
-        self,
-        payload_body: bytes,
-        signature_header: str
-    ) -> bool:
+    def verify_github_signature(self, payload_body: bytes, signature_header: str) -> bool:
         """
         Verify GitHub webhook signature (HMAC-SHA256).
 
@@ -116,17 +114,15 @@ class WebhookHandler:
             return False
 
         # GitHub sends: sha256=<hex_digest>
-        if not signature_header.startswith('sha256='):
+        if not signature_header.startswith("sha256="):
             logger.warning(f"Invalid signature format: {signature_header[:20]}")
             return False
 
-        expected_signature = signature_header.split('=')[1]
+        expected_signature = signature_header.split("=")[1]
 
         # Compute HMAC
         computed_signature = hmac.new(
-            self.github_secret.encode('utf-8'),
-            payload_body,
-            hashlib.sha256
+            self.github_secret.encode("utf-8"), payload_body, hashlib.sha256
         ).hexdigest()
 
         # Compare signatures (timing-safe)
@@ -137,10 +133,7 @@ class WebhookHandler:
 
         return is_valid
 
-    def verify_gitlab_token(
-        self,
-        token_header: str
-    ) -> bool:
+    def verify_gitlab_token(self, token_header: str) -> bool:
         """
         Verify GitLab webhook token.
 
@@ -166,11 +159,7 @@ class WebhookHandler:
 
         return is_valid
 
-    def verify_gitea_signature(
-        self,
-        payload_body: bytes,
-        signature_header: str
-    ) -> bool:
+    def verify_gitea_signature(self, payload_body: bytes, signature_header: str) -> bool:
         """
         Verify Gitea webhook signature (HMAC-SHA256, same as GitHub).
 
@@ -191,9 +180,7 @@ class WebhookHandler:
 
         # Compute HMAC
         computed_signature = hmac.new(
-            self.gitea_secret.encode('utf-8'),
-            payload_body,
-            hashlib.sha256
+            self.gitea_secret.encode("utf-8"), payload_body, hashlib.sha256
         ).hexdigest()
 
         # Compare signatures (timing-safe)
@@ -234,10 +221,7 @@ class WebhookHandler:
         self.recent_webhooks[repo_key] = datetime.now()
 
     async def handle_github_webhook(
-        self,
-        payload: Dict[str, Any],
-        signature: str,
-        event_type: str
+        self, payload: Dict[str, Any], signature: str, event_type: str
     ) -> Dict[str, Any]:
         """
         Handle GitHub push webhook.
@@ -258,7 +242,7 @@ class WebhookHandler:
             return {
                 "status": "ignored",
                 "reason": f"Event type '{event_type}' not supported",
-                "supported_events": ["push"]
+                "supported_events": ["push"],
             }
 
         # Extract repository info
@@ -272,8 +256,7 @@ class WebhookHandler:
             return {"status": "error", "reason": "Missing repository URL"}
 
         logger.info(
-            f"[WEBHOOK-GITHUB] Push to {repo_name} on branch {branch} "
-            f"({len(commits)} commits)"
+            f"[WEBHOOK-GITHUB] Push to {repo_name} on branch {branch} " f"({len(commits)} commits)"
         )
 
         # Rate limiting
@@ -282,7 +265,7 @@ class WebhookHandler:
             return {
                 "status": "rate_limited",
                 "repo": repo_name,
-                "min_interval": self.min_interval_seconds
+                "min_interval": self.min_interval_seconds,
             }
 
         # Trigger async sync
@@ -290,8 +273,8 @@ class WebhookHandler:
             self._sync_repository(
                 git_url=repo_url,
                 branch=branch,
-                project_name=repo_name.split('/')[-1],
-                platform="github"
+                project_name=repo_name.split("/")[-1],
+                platform="github",
             )
         )
 
@@ -302,14 +285,11 @@ class WebhookHandler:
             "repo": repo_name,
             "branch": branch,
             "commits": len(commits),
-            "message": "Sync triggered in background"
+            "message": "Sync triggered in background",
         }
 
     async def handle_gitlab_webhook(
-        self,
-        payload: Dict[str, Any],
-        token: str,
-        event_type: str
+        self, payload: Dict[str, Any], token: str, event_type: str
     ) -> Dict[str, Any]:
         """
         Handle GitLab push webhook.
@@ -330,7 +310,7 @@ class WebhookHandler:
             return {
                 "status": "ignored",
                 "reason": f"Event type '{event_type}' not supported",
-                "supported_events": ["Push Hook"]
+                "supported_events": ["Push Hook"],
             }
 
         # Extract repository info
@@ -344,8 +324,7 @@ class WebhookHandler:
             return {"status": "error", "reason": "Missing repository URL"}
 
         logger.info(
-            f"[WEBHOOK-GITLAB] Push to {repo_name} on branch {branch} "
-            f"({len(commits)} commits)"
+            f"[WEBHOOK-GITLAB] Push to {repo_name} on branch {branch} " f"({len(commits)} commits)"
         )
 
         # Rate limiting
@@ -354,7 +333,7 @@ class WebhookHandler:
             return {
                 "status": "rate_limited",
                 "repo": repo_name,
-                "min_interval": self.min_interval_seconds
+                "min_interval": self.min_interval_seconds,
             }
 
         # Trigger async sync
@@ -362,8 +341,8 @@ class WebhookHandler:
             self._sync_repository(
                 git_url=repo_url,
                 branch=branch,
-                project_name=repo_name.split('/')[-1],
-                platform="gitlab"
+                project_name=repo_name.split("/")[-1],
+                platform="gitlab",
             )
         )
 
@@ -374,14 +353,11 @@ class WebhookHandler:
             "repo": repo_name,
             "branch": branch,
             "commits": len(commits),
-            "message": "Sync triggered in background"
+            "message": "Sync triggered in background",
         }
 
     async def handle_gitea_webhook(
-        self,
-        payload: Dict[str, Any],
-        signature: str,
-        event_type: str
+        self, payload: Dict[str, Any], signature: str, event_type: str
     ) -> Dict[str, Any]:
         """
         Handle Gitea push webhook.
@@ -402,7 +378,7 @@ class WebhookHandler:
             return {
                 "status": "ignored",
                 "reason": f"Event type '{event_type}' not supported",
-                "supported_events": ["push"]
+                "supported_events": ["push"],
             }
 
         # Extract repository info
@@ -416,8 +392,7 @@ class WebhookHandler:
             return {"status": "error", "reason": "Missing repository URL"}
 
         logger.info(
-            f"[WEBHOOK-GITEA] Push to {repo_name} on branch {branch} "
-            f"({len(commits)} commits)"
+            f"[WEBHOOK-GITEA] Push to {repo_name} on branch {branch} " f"({len(commits)} commits)"
         )
 
         # Rate limiting
@@ -426,7 +401,7 @@ class WebhookHandler:
             return {
                 "status": "rate_limited",
                 "repo": repo_name,
-                "min_interval": self.min_interval_seconds
+                "min_interval": self.min_interval_seconds,
             }
 
         # Trigger async sync
@@ -434,8 +409,8 @@ class WebhookHandler:
             self._sync_repository(
                 git_url=repo_url,
                 branch=branch,
-                project_name=repo_name.split('/')[-1],
-                platform="gitea"
+                project_name=repo_name.split("/")[-1],
+                platform="gitea",
             )
         )
 
@@ -446,16 +421,10 @@ class WebhookHandler:
             "repo": repo_name,
             "branch": branch,
             "commits": len(commits),
-            "message": "Sync triggered in background"
+            "message": "Sync triggered in background",
         }
 
-    async def _sync_repository(
-        self,
-        git_url: str,
-        branch: str,
-        project_name: str,
-        platform: str
-    ):
+    async def _sync_repository(self, git_url: str, branch: str, project_name: str, platform: str):
         """
         Trigger repository sync in background (async).
 
@@ -475,9 +444,10 @@ class WebhookHandler:
             )
 
             # Import here to avoid circular dependency
+            from uuid import uuid4
+
             from ..ingestion.git_manager import GitRepositoryManager
             from ..ingestion.pipeline import ingest_directory
-            from uuid import uuid4
 
             # Get configuration
             db_conn_str = os.getenv("ALLOYDB_CONNECTION_STRING")
@@ -491,16 +461,13 @@ class WebhookHandler:
             user_id = uuid4()
 
             # Initialize GitRepositoryManager
-            git_manager = GitRepositoryManager(
-                gcs_bucket=git_bucket,
-                user_id=str(user_id)
-            )
+            git_manager = GitRepositoryManager(gcs_bucket=git_bucket, user_id=str(user_id))
 
             # Sync repository (pull changes)
             sync_result = await git_manager.sync_repository(
                 git_url=git_url,
                 branch=branch,
-                auth_token=None  # Webhooks for public repos only (for now)
+                auth_token=None,  # Webhooks for public repos only (for now)
             )
 
             logger.info(
@@ -510,7 +477,7 @@ class WebhookHandler:
             )
 
             # Run ingestion if files changed
-            if sync_result['sync_type'] == 'pull' and sync_result.get('files_changed') == 0:
+            if sync_result["sync_type"] == "pull" and sync_result.get("files_changed") == 0:
                 logger.info("[WEBHOOK-SYNC] No files changed, skipping ingestion")
                 return
 
@@ -520,17 +487,15 @@ class WebhookHandler:
 
             # Ingest directory
             stats = ingest_directory(
-                directory_path=sync_result['local_path'],
+                directory_path=sync_result["local_path"],
                 user_id=user_id,
                 project_name=project_name,
                 db_connection_string=db_conn_str,
                 use_mock_embedder=False,
-                progress_callback=log_progress
+                progress_callback=log_progress,
             )
 
-            logger.info(
-                f"[WEBHOOK-SYNC] Ingestion completed: {stats.to_dict()}"
-            )
+            logger.info(f"[WEBHOOK-SYNC] Ingestion completed: {stats.to_dict()}")
 
         except Exception as e:
             logger.error(f"[WEBHOOK-SYNC] Sync failed: {e}", exc_info=True)
@@ -573,6 +538,7 @@ def setup_webhook_routes(app):
 
         # Parse JSON payload
         import json
+
         try:
             payload = json.loads(body)
         except json.JSONDecodeError:
@@ -580,9 +546,7 @@ def setup_webhook_routes(app):
 
         # Handle webhook
         result = await webhook_handler.handle_github_webhook(
-            payload=payload,
-            signature=signature,
-            event_type=event_type
+            payload=payload, signature=signature, event_type=event_type
         )
 
         return result
@@ -604,9 +568,7 @@ def setup_webhook_routes(app):
 
         # Handle webhook
         result = await webhook_handler.handle_gitlab_webhook(
-            payload=payload,
-            token=token,
-            event_type=event_type
+            payload=payload, token=token, event_type=event_type
         )
 
         return result
@@ -628,6 +590,7 @@ def setup_webhook_routes(app):
 
         # Parse JSON payload
         import json
+
         try:
             payload = json.loads(body)
         except json.JSONDecodeError:
@@ -635,22 +598,13 @@ def setup_webhook_routes(app):
 
         # Handle webhook
         result = await webhook_handler.handle_gitea_webhook(
-            payload=payload,
-            signature=signature,
-            event_type=event_type
+            payload=payload, signature=signature, event_type=event_type
         )
 
         return result
 
-    logger.info(
-        "Webhook routes registered: "
-        "/webhook/github, /webhook/gitlab, /webhook/gitea"
-    )
+    logger.info("Webhook routes registered: " "/webhook/github, /webhook/gitlab, /webhook/gitea")
 
 
 # Export public API
-__all__ = [
-    'WebhookHandler',
-    'WebhookError',
-    'setup_webhook_routes'
-]
+__all__ = ["WebhookHandler", "WebhookError", "setup_webhook_routes"]

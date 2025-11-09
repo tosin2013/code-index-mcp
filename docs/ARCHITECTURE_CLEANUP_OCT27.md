@@ -1,7 +1,7 @@
 # Architecture Cleanup: Removed Redundant Upload Script
 
-**Date**: October 27, 2025  
-**Type**: Refactoring / Architecture Simplification  
+**Date**: October 27, 2025
+**Type**: Refactoring / Architecture Simplification
 **Impact**: Low (removed unused client-side script, improved MCP resource discoverability)
 
 ---
@@ -47,25 +47,25 @@ The MCP resource provides the same guidance but is **accessible via @ reference*
 def get_ingestion_guide() -> str:
     """Get comprehensive guide for semantic search code ingestion."""
     return """# Semantic Search Code Ingestion Guide
-    
+
     ## Overview
     Code Index MCP provides semantic search capabilities using AlloyDB + Vertex AI embeddings.
-    
+
     ## Quick Start (Recommended)
     Use the `ingest_code_for_search` MCP tool directly:
-    
+
     # Option 1: Ingest current project
     ingest_code_for_search(
         use_current_project=True,
         project_name="my-project"
     )
-    
+
     # Option 2: Ingest specific directory
     ingest_code_for_search(
         directory_path="/path/to/project",
         project_name="my-project"
     )
-    
+
     ... (full guide with troubleshooting, cost estimation, etc.)
     """
 ```
@@ -208,7 +208,7 @@ MCP Tool → (stdio: auto-scan | HTTP: pre-uploaded files)
 
 ### Benefits
 1. **Simpler mental model**: One tool for ingestion
-2. **Better separation of concerns**: 
+2. **Better separation of concerns**:
    - MCP tool handles ingestion logic
    - MCP resource provides documentation
    - No intermediate scripts needed
@@ -307,16 +307,8 @@ Documentation that's close to the code (like MCP resources in `server.py`) is le
 
 ---
 
-**Status**: ✅ **Architecture cleanup complete**  
-**Impact**: Low (removed redundant code, improved UX)  
-**Confidence**: 98%  
+**Status**: ✅ **Architecture cleanup complete**
+**Impact**: Low (removed redundant code, improved UX)
+**Confidence**: 98%
 
 **Date**: October 27, 2025
-
-
-
-
-
-
-
-

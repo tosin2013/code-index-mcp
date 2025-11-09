@@ -47,7 +47,7 @@ Integrates Terraform to provision:
 5. Build & Deploy Cloud Run ✅ (Connects to ready AlloyDB)
 
 ### 3. Fixed Schema Application
-**Files**: 
+**Files**:
 - `roles/code-index-mcp/tasks/apply_schema.yml`
 - `roles/code-index-mcp/templates/Dockerfile.schema.j2`
 - `roles/code-index-mcp/templates/apply_schema.py.j2`
@@ -167,10 +167,3 @@ terraform destroy -var="project_id=YOUR_PROJECT_ID"
 ✅ **Integrated**: No manual Terraform commands needed
 
 ✅ **Validated**: Prerequisites check without blocking
-
-
-
-
-
-
-

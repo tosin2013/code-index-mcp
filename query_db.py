@@ -5,7 +5,7 @@ import os
 import sys
 
 # Add src to path
-sys.path.insert(0, 'src')
+sys.path.insert(0, "src")
 
 try:
     import psycopg2
@@ -17,7 +17,7 @@ except ImportError:
 # Connection string
 conn_string = os.getenv(
     "ALLOYDB_CONNECTION_STRING",
-    "postgresql://code_index_admin:***REMOVED***@10.175.0.2:5432/postgres"
+    "postgresql://code_index_admin:***REMOVED***@10.175.0.2:5432/postgres",
 )
 
 print("=" * 60)
@@ -29,30 +29,33 @@ try:
     # This will only work from Cloud Run or a VM in the VPC
     conn = psycopg2.connect(conn_string)
     cursor = conn.cursor()
-    
+
     # Check projects
     print("📊 Projects in database:")
     print("-" * 60)
-    cursor.execute("""
-        SELECT project_id, project_name, language, created_at 
-        FROM projects 
+    cursor.execute(
+        """
+        SELECT project_id, project_name, language, created_at
+        FROM projects
         ORDER BY created_at DESC
-    """)
+    """
+    )
     projects = cursor.fetchall()
-    
+
     if projects:
         for project in projects:
             print(f"  - {project[1]} ({project[2]}) - Created: {project[3]}")
     else:
         print("  ❌ No projects found")
-    
+
     print()
-    
+
     # Check code chunks summary
     print("📦 Code chunks by project:")
     print("-" * 60)
-    cursor.execute("""
-        SELECT 
+    cursor.execute(
+        """
+        SELECT
             p.project_name,
             COUNT(*) as chunk_count,
             COUNT(DISTINCT c.file_path) as file_count,
@@ -60,22 +63,24 @@ try:
         FROM code_chunks c
         JOIN projects p ON c.project_id = p.project_id
         GROUP BY p.project_name
-    """)
+    """
+    )
     chunks = cursor.fetchall()
-    
+
     if chunks:
         for chunk in chunks:
             print(f"  - {chunk[0]}: {chunk[1]} chunks, {chunk[2]} files ({chunk[3]})")
     else:
         print("  ❌ No code chunks found")
-    
+
     print()
-    
+
     # Check for documcp specifically
     print("🔍 Searching for 'documcp' data:")
     print("-" * 60)
-    cursor.execute("""
-        SELECT 
+    cursor.execute(
+        """
+        SELECT
             c.file_path,
             c.function_name,
             c.language,
@@ -84,9 +89,10 @@ try:
         JOIN projects p ON c.project_id = p.project_id
         WHERE p.project_name ILIKE '%documcp%'
         LIMIT 10
-    """)
+    """
+    )
     documcp_chunks = cursor.fetchall()
-    
+
     if documcp_chunks:
         print(f"  ✅ Found {len(documcp_chunks)} documcp chunks:")
         for chunk in documcp_chunks:
@@ -97,10 +103,10 @@ try:
     else:
         print("  ❌ No documcp data found in database")
         print("  💡 You may need to run: ingest_code_for_search()")
-    
+
     cursor.close()
     conn.close()
-    
+
     print()
     print("=" * 60)
     print("✅ Query complete!")
@@ -126,6 +132,6 @@ except psycopg2.OperationalError as e:
 except Exception as e:
     print(f"❌ Error: {e}")
     import traceback
+
     traceback.print_exc()
     sys.exit(1)
-

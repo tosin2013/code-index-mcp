@@ -128,7 +128,7 @@ User working on their project (e.g., documcp)
 def get_cloud_upload_script() -> Dict[str, str]:
     """Get the upload script for cloud ingestion."""
     script_path = Path(__file__).parent.parent.parent / "upload_code_for_ingestion.py"
-    
+
     try:
         script_content = script_path.read_text(encoding='utf-8')
     except FileNotFoundError:
@@ -137,7 +137,7 @@ def get_cloud_upload_script() -> Dict[str, str]:
             "download_url": "...",
             "instructions": "..."
         }
-    
+
     return {
         "status": "success",
         "script": script_content,
@@ -349,4 +349,3 @@ The upload script is now **highly discoverable** through:
 Users have **multiple paths to success**, ensuring they can find and use the script regardless of their workflow or experience level.
 
 **Result:** Zero barrier to cloud ingestion! 🎉
-

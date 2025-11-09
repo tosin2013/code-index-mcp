@@ -16,14 +16,14 @@ Usage:
     # Local mode (default)
     from pathlib import Path
     storage = LocalFileSystem(Path("/path/to/project"))
-    
+
     # Cloud mode (GCS)
     storage = GCSAdapter(
         bucket="code-index-projects",
         user_id="user123",
         project_id="my-gcp-project"
     )
-    
+
     # Operations (same interface for all adapters)
     await storage.upload_file("src/main.py", content)
     content = await storage.download_file("src/main.py")
@@ -33,11 +33,4 @@ Usage:
 from .base_adapter import BaseStorageAdapter, StorageError
 from .gcs_adapter import GCSAdapter
 
-__all__ = [
-    'BaseStorageAdapter',
-    'StorageError',
-    'GCSAdapter'
-]
-
-
-
+__all__ = ["BaseStorageAdapter", "StorageError", "GCSAdapter"]

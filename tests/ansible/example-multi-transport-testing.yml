@@ -11,11 +11,11 @@
   vars:
     # Set this to 'stdio' or 'sse' depending on test target
     transport: sse
-    
+
     # SSE configuration (for cloud deployments)
     mcp_server_url: "https://your-server.run.app"
     api_key: "your_api_key"
-    
+
     # stdio configuration (for local testing)
     mcp_server_command: "python"
     mcp_server_args: ["-m", "your_mcp_server"]
@@ -24,7 +24,7 @@
     # ========================================================================
     # CORRECT PATTERN: Use distinct variable names for each transport
     # ========================================================================
-    
+
     - name: "Test 1: Server Discovery (SSE)"
       tosin2013.mcp_audit.mcp_server_info:
         transport: sse
@@ -33,7 +33,7 @@
           Authorization: "Bearer {{ api_key }}"
       register: server_info_sse  # ✅ Unique name
       when: transport == 'sse'
-    
+
     - name: "Test 1: Server Discovery (stdio)"
       tosin2013.mcp_audit.mcp_server_info:
         transport: stdio
@@ -41,12 +41,12 @@
         server_args: "{{ mcp_server_args }}"
       register: server_info_stdio  # ✅ Unique name
       when: transport == 'stdio'
-    
+
     # Merge results from whichever transport was used
     - name: Select active test result
       ansible.builtin.set_fact:
         server_info: "{{ server_info_sse if transport == 'sse' else server_info_stdio }}"
-    
+
     # Now you can safely access server_info.success
     - name: Display test result
       ansible.builtin.debug:
@@ -55,7 +55,7 @@
           - "Test passed: {{ server_info.success }}"
           - "Server name: {{ server_info.server_info.server_name | default('unknown') }}"
           - "Available tools: {{ server_info.server_info.available_tools | default(0) }}"
-    
+
     # Validate the test passed
     - name: Assert server info retrieved successfully
       ansible.builtin.assert:
@@ -64,11 +64,11 @@
           - server_info.server_info.available_tools | int > 0
         success_msg: "✅ Server discovery test PASSED"
         fail_msg: "❌ Server discovery test FAILED"
-    
+
     # ========================================================================
     # Test 2: Tool Testing (same pattern)
     # ========================================================================
-    
+
     - name: "Test 2: Test set_project_path (SSE)"
       tosin2013.mcp_audit.mcp_test_tool:
         transport: sse
@@ -80,7 +80,7 @@
           path: "/tmp/test-project"
       register: test_tool_sse  # ✅ Unique name
       when: transport == 'sse'
-    
+
     - name: "Test 2: Test set_project_path (stdio)"
       tosin2013.mcp_audit.mcp_test_tool:
         transport: stdio
@@ -91,21 +91,21 @@
           path: "/tmp/test-project"
       register: test_tool_stdio  # ✅ Unique name
       when: transport == 'stdio'
-    
+
     - name: Select active tool test result
       ansible.builtin.set_fact:
         test_tool: "{{ test_tool_sse if transport == 'sse' else test_tool_stdio }}"
-    
+
     - name: Display tool test result
       ansible.builtin.debug:
         msg:
           - "Tool test passed: {{ test_tool.success }}"
           - "Test passed: {{ test_tool.test_passed }}"
-    
+
     # ========================================================================
     # Summary
     # ========================================================================
-    
+
     - name: Display test summary
       ansible.builtin.debug:
         msg:
@@ -120,7 +120,7 @@
 # ============================================================================
 # KEY TAKEAWAYS:
 # ============================================================================
-# 
+#
 # 1. Use DISTINCT variable names when testing multiple transports:
 #    - server_info_sse / server_info_stdio
 #    - test_tool_sse / test_tool_stdio

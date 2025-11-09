@@ -441,6 +441,5 @@ You'll know it's working when:
 - `docs/adrs/0003-google-cloud-code-ingestion-with-alloydb.md` - Architecture decisions
 - `docs/TROUBLESHOOTING_GUIDE.md` - Common issues
 
-**Estimated total time**: 30-40 minutes  
+**Estimated total time**: 30-40 minutes
 **Monthly cost**: ~$102-106/month
-

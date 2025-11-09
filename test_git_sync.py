@@ -8,22 +8,23 @@ This script tests:
 3. Delta-sync simulation
 """
 
-import sys
 import os
+import sys
 from pathlib import Path
 from uuid import UUID
+
 import psycopg2
 
 # Add project to path
-sys.path.insert(0, str(Path(__file__).parent / 'src'))
+sys.path.insert(0, str(Path(__file__).parent / "src"))
 
+from code_index_mcp.ingestion.git_sync import delta_sync_repository, get_git_diff, get_git_metadata
 from code_index_mcp.ingestion.pipeline import ingest_directory
-from code_index_mcp.ingestion.git_sync import get_git_metadata, get_git_diff, delta_sync_repository
 
 # Configuration
 POSTGRES_CONNECTION = "postgresql://code_index_admin:local_dev_password@localhost:5432/code_index"
 REPO_PATH = "/tmp/PocketFlow"
-TEST_USER_ID = UUID('b662bc28-c198-4a0f-b995-a1136bf5ee11')  # dev@localhost
+TEST_USER_ID = UUID("b662bc28-c198-4a0f-b995-a1136bf5ee11")  # dev@localhost
 PROJECT_NAME = "pocketflow-test"
 
 
@@ -57,10 +58,10 @@ def test_initial_ingestion():
         project_name=PROJECT_NAME,
         db_connection_string=POSTGRES_CONNECTION,
         use_mock_embedder=True,
-        commit_hash=git_meta['commit_hash'],
-        branch_name=git_meta['branch_name'],
-        author_name=git_meta['author_name'],
-        commit_timestamp=git_meta['commit_timestamp']
+        commit_hash=git_meta["commit_hash"],
+        branch_name=git_meta["branch_name"],
+        author_name=git_meta["author_name"],
+        commit_timestamp=git_meta["commit_timestamp"],
     )
 
     print(f"\n✅ Ingestion complete!")
@@ -82,7 +83,8 @@ def verify_git_metadata():
 
     # Check git_sync_status view
     print("Querying git_sync_status view...")
-    cur.execute("""
+    cur.execute(
+        """
         SELECT
             project_name,
             current_commit_hash,
@@ -92,7 +94,9 @@ def verify_git_metadata():
             total_chunks
         FROM git_sync_status
         WHERE project_name = %s
-    """, (PROJECT_NAME,))
+    """,
+        (PROJECT_NAME,),
+    )
 
     result = cur.fetchone()
     if result:
@@ -107,7 +111,8 @@ def verify_git_metadata():
 
     # Check sample chunks with Git metadata
     print("\nSample chunks with Git metadata:")
-    cur.execute("""
+    cur.execute(
+        """
         SELECT
             file_path,
             chunk_name,
@@ -122,7 +127,9 @@ def verify_git_metadata():
         )
         ORDER BY created_at DESC
         LIMIT 5
-    """, (PROJECT_NAME,))
+    """,
+        (PROJECT_NAME,),
+    )
 
     for row in cur.fetchall():
         print(f"  {row[0]}")
@@ -131,7 +138,8 @@ def verify_git_metadata():
 
     # Check chunks by file type
     print("\nChunks by language:")
-    cur.execute("""
+    cur.execute(
+        """
         SELECT
             language,
             COUNT(*) as chunk_count
@@ -142,7 +150,9 @@ def verify_git_metadata():
         )
         GROUP BY language
         ORDER BY chunk_count DESC
-    """, (PROJECT_NAME,))
+    """,
+        (PROJECT_NAME,),
+    )
 
     for row in cur.fetchall():
         print(f"  {row[0] or 'unknown':15} {row[1]:5} chunks")
@@ -157,10 +167,11 @@ def test_delta_sync():
 
     # Get previous commit
     import subprocess
+
     os.chdir(REPO_PATH)
-    commits = subprocess.check_output(
-        ['git', 'log', '--format=%H', '-5']
-    ).decode().strip().split('\n')
+    commits = (
+        subprocess.check_output(["git", "log", "--format=%H", "-5"]).decode().strip().split("\n")
+    )
 
     if len(commits) < 2:
         print("❌ Not enough commits for delta-sync test")
@@ -175,6 +186,7 @@ def test_delta_sync():
 
     # Get diff
     from code_index_mcp.ingestion.git_sync import get_git_diff
+
     diff = get_git_diff(REPO_PATH, old_commit, new_commit)
 
     print(f"\nChanges detected:")
@@ -199,7 +211,7 @@ def test_delta_sync():
         user_id=TEST_USER_ID,
         project_name=PROJECT_NAME,
         db_connection_string=POSTGRES_CONNECTION,
-        use_mock_embedder=True
+        use_mock_embedder=True,
     )
 
     print(f"\n✅ Delta-sync complete!")
@@ -221,7 +233,8 @@ def query_by_commit():
     cur = conn.cursor()
 
     # Get distinct commits
-    cur.execute("""
+    cur.execute(
+        """
         SELECT DISTINCT
             commit_hash,
             commit_timestamp,
@@ -234,7 +247,9 @@ def query_by_commit():
         )
         ORDER BY commit_timestamp DESC
         LIMIT 3
-    """, (PROJECT_NAME,))
+    """,
+        (PROJECT_NAME,),
+    )
 
     print("Commits in database:")
     for row in cur.fetchall():
@@ -284,9 +299,10 @@ def main():
     except Exception as e:
         print(f"\n❌ Test failed: {e}")
         import traceback
+
         traceback.print_exc()
         sys.exit(1)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

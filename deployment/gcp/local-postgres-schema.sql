@@ -41,7 +41,7 @@ CREATE INDEX IF NOT EXISTS idx_projects_last_indexed ON projects(last_indexed_at
 CREATE TABLE IF NOT EXISTS code_chunks (
     chunk_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     project_id UUID REFERENCES projects(project_id) ON DELETE CASCADE,
-    
+
     -- File information
     file_path TEXT NOT NULL,
     chunk_type VARCHAR(50) NOT NULL,
@@ -49,21 +49,21 @@ CREATE TABLE IF NOT EXISTS code_chunks (
     line_start INTEGER,
     line_end INTEGER,
     language VARCHAR(50),
-    
+
     -- Code content
     content TEXT NOT NULL,
     content_hash VARCHAR(64) NOT NULL,
-    
+
     -- Vector embedding (768 dimensions for text-embedding-004)
     embedding vector(768),
-    
+
     -- Metadata
     symbols JSONB,
-    
+
     -- Timestamps
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW(),
-    
+
     UNIQUE(project_id, content_hash)
 );
 
@@ -86,8 +86,8 @@ CREATE POLICY user_code_access ON code_chunks
 FOR ALL
 USING (
     project_id IN (
-        SELECT project_id 
-        FROM projects 
+        SELECT project_id
+        FROM projects
         WHERE user_id = current_setting('app.user_id', true)::UUID
     )
 );
@@ -135,7 +135,7 @@ AS $$
 BEGIN
     -- Set user context for RLS
     PERFORM set_user_context(p_user_id);
-    
+
     -- Perform vector similarity search
     RETURN QUERY
     SELECT

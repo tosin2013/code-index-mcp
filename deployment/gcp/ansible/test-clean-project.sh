@@ -51,7 +51,7 @@ confirm() {
 # Phase 1: Pre-Flight Checks
 phase1_preflight() {
     log "=== Phase 1: Pre-Flight Checks ==="
-    
+
     # Check prerequisites
     log_info "Checking prerequisites..."
     check_command ansible
@@ -59,55 +59,55 @@ phase1_preflight() {
     check_command docker
     check_command jq
     check_command curl
-    
+
     # Version checks
     log_info "Ansible version: $(ansible --version | head -1)"
     log_info "gcloud version: $(gcloud version | grep 'Google Cloud SDK' | head -1)"
     log_info "Docker version: $(docker --version)"
-    
+
     # Check Ansible collections
     log_info "Checking Ansible collections..."
     if ! ansible-galaxy collection list | grep -q "google.cloud"; then
         log_warning "google.cloud collection not found. Installing..."
         ansible-galaxy collection install google.cloud
     fi
-    
+
     if ! ansible-galaxy collection list | grep -q "community.docker"; then
         log_warning "community.docker collection not found. Installing..."
         ansible-galaxy collection install community.docker
     fi
-    
+
     log "✅ Pre-flight checks passed"
 }
 
 # Phase 2: Project Setup
 phase2_project_setup() {
     log "=== Phase 2: Project Setup ==="
-    
+
     # Get current project
     CURRENT_PROJECT=$(gcloud config get-value project 2>/dev/null || echo "")
-    
+
     if [ -z "$CURRENT_PROJECT" ]; then
         log_error "No GCP project configured. Please run: gcloud config set project PROJECT_ID"
         exit 1
     fi
-    
+
     log_info "Using GCP project: $CURRENT_PROJECT"
     log_info "Region: us-east1"
-    
+
     # Check billing
     log_info "Checking billing status..."
     BILLING_ENABLED=$(gcloud billing projects describe "$CURRENT_PROJECT" \
         --format='value(billingEnabled)' 2>/dev/null || echo "false")
-    
+
     if [ "$BILLING_ENABLED" != "True" ]; then
         log_error "Billing is not enabled for project: $CURRENT_PROJECT"
         log_info "Enable billing: https://console.cloud.google.com/billing"
         exit 1
     fi
-    
+
     log "✅ Using project: $CURRENT_PROJECT"
-    
+
     # Create/update test inventory
     log_info "Creating test inventory..."
     cat > "$TEST_INVENTORY" <<EOF
@@ -150,16 +150,16 @@ all:
     # Storage
     bucket_lifecycle_days: 1  # Aggressive cleanup
 EOF
-    
+
     log "✅ Project setup complete: $CURRENT_PROJECT"
 }
 
 # Phase 3: Dry-Run Test
 phase3_dryrun() {
     log "=== Phase 3: Dry-Run Test ==="
-    
+
     log_info "Running Ansible in check mode (no changes)..."
-    
+
     if ansible-playbook "$SCRIPT_DIR/deploy.yml" \
         -i "$TEST_INVENTORY" \
         --check \
@@ -175,17 +175,17 @@ phase3_dryrun() {
 # Phase 4: Deploy Base Infrastructure
 phase4_deploy() {
     log "=== Phase 4: Deploy Base Infrastructure ==="
-    
+
     log_warning "This will create GCP resources and incur costs (~$0.50-2.00 for test duration)"
-    
+
     if ! confirm "Proceed with deployment?"; then
         log_info "Deployment cancelled by user"
         exit 0
     fi
-    
+
     log_info "Starting deployment (this may take 12-18 minutes)..."
     log_info "Logs: $LOG_FILE"
-    
+
     # Deploy with detailed logging
     if ansible-playbook "$SCRIPT_DIR/deploy.yml" \
         -i "$TEST_INVENTORY" \
@@ -202,20 +202,20 @@ phase4_deploy() {
 # Phase 5: Verify Deployment
 phase5_verify() {
     log "=== Phase 5: Verify Deployment ==="
-    
+
     # Get service URL
     log_info "Getting Cloud Run service URL..."
     SERVICE_URL=$(gcloud run services describe code-index-mcp-test \
         --region=us-east1 \
         --format='value(status.url)' 2>/dev/null || echo "")
-    
+
     if [ -z "$SERVICE_URL" ]; then
         log_error "Cloud Run service not found"
         exit 1
     fi
-    
+
     log_info "Service URL: $SERVICE_URL"
-    
+
     # Test health endpoint
     log_info "Testing health endpoint..."
     if curl -s -f "$SERVICE_URL/health" | jq . > /dev/null 2>&1; then
@@ -225,7 +225,7 @@ phase5_verify() {
         log_error "Health endpoint not responding"
         exit 1
     fi
-    
+
     # Test SSE endpoint
     log_info "Testing SSE endpoint..."
     if timeout 5 curl -N -H "Accept: text/event-stream" "$SERVICE_URL/sse" 2>/dev/null | head -5 >> "$LOG_FILE"; then
@@ -233,10 +233,10 @@ phase5_verify() {
     else
         log_warning "SSE endpoint test inconclusive (this may be normal)"
     fi
-    
+
     # Verify GCP resources
     log_info "Verifying GCP resources..."
-    
+
     # Check service account
     if gcloud iam service-accounts describe \
         "code-index-cloudrun-test@$CURRENT_PROJECT.iam.gserviceaccount.com" \
@@ -245,7 +245,7 @@ phase5_verify() {
     else
         log_error "Service account not found"
     fi
-    
+
     # Check buckets
     BUCKET_COUNT=$(gcloud storage buckets list | grep -c "code-index.*-test" || true)
     if [ "$BUCKET_COUNT" -eq 2 ]; then
@@ -253,7 +253,7 @@ phase5_verify() {
     else
         log_warning "Expected 2 GCS buckets, found $BUCKET_COUNT"
     fi
-    
+
     # Check secrets
     SECRET_COUNT=$(gcloud secrets list | grep -c "webhook-secret-test" || true)
     if [ "$SECRET_COUNT" -eq 3 ]; then
@@ -261,14 +261,14 @@ phase5_verify() {
     else
         log_warning "Expected 3 webhook secrets, found $SECRET_COUNT"
     fi
-    
+
     log "✅ Deployment verification passed"
 }
 
 # Phase 6: Test Utilities
 phase6_utilities() {
     log "=== Phase 6: Test Utility Operations ==="
-    
+
     # Generate API key
     log_info "Testing API key generation..."
     if ansible-playbook "$SCRIPT_DIR/utilities.yml" \
@@ -277,7 +277,7 @@ phase6_utilities() {
         -e "user_id=test-user" \
         >> "$LOG_FILE" 2>&1; then
         log "✅ API key generation successful"
-        
+
         # Verify API key file exists
         if [ -f "$SCRIPT_DIR/api-key-test-user-test.txt" ]; then
             log_info "API key saved to: api-key-test-user-test.txt"
@@ -290,15 +290,15 @@ phase6_utilities() {
 # Phase 7: Cleanup
 phase7_cleanup() {
     log "=== Phase 7: Cleanup ==="
-    
+
     log_warning "This will delete all test resources"
-    
+
     if ! confirm "Proceed with cleanup?"; then
         log_info "Cleanup cancelled. Manual cleanup required."
         log_info "Run: ansible-playbook utilities.yml -i inventory/test.yml -e 'operation=teardown auto_approve=true delete_buckets=true'"
         return
     fi
-    
+
     log_info "Running teardown..."
     if ansible-playbook "$SCRIPT_DIR/utilities.yml" \
         -i "$TEST_INVENTORY" \
@@ -310,25 +310,25 @@ phase7_cleanup() {
     else
         log_error "Cleanup failed. Manual cleanup may be required."
     fi
-    
+
     # Clean up local files
     log_info "Cleaning up local test files..."
     rm -f "$SCRIPT_DIR/api-key-test-user-test.txt"
     rm -f "$SCRIPT_DIR/deployment-summary-test-"*.md
-    
+
     log "✅ Local cleanup completed"
 }
 
 # Phase 8: Summary
 phase8_summary() {
     log "=== Phase 8: Test Summary ==="
-    
+
     log_info "Test execution log: $LOG_FILE"
-    
+
     # Count successes and failures
     SUCCESS_COUNT=$(grep -c "✅" "$LOG_FILE" || true)
     ERROR_COUNT=$(grep -c "ERROR" "$LOG_FILE" || true)
-    
+
     log_info "Total checks passed: $SUCCESS_COUNT"
     if [ "$ERROR_COUNT" -gt 0 ]; then
         log_warning "Total errors encountered: $ERROR_COUNT"
@@ -336,7 +336,7 @@ phase8_summary() {
     else
         log "✅ All tests passed successfully!"
     fi
-    
+
     # Final recommendations
     echo ""
     log "=== Next Steps ==="
@@ -356,14 +356,14 @@ main() {
     log "Start time: $(date)"
     log "Log file: $LOG_FILE"
     echo ""
-    
+
     # Parse command line arguments
     SKIP_PREFLIGHT=false
     SKIP_DRYRUN=false
     SKIP_DEPLOY=false
     SKIP_UTILITIES=false
     SKIP_CLEANUP=false
-    
+
     while [[ $# -gt 0 ]]; do
         case $1 in
             --skip-preflight)
@@ -405,7 +405,7 @@ main() {
                 ;;
         esac
     done
-    
+
     # Execute phases
     [ "$SKIP_PREFLIGHT" = false ] && phase1_preflight
     [ "$SKIP_PREFLIGHT" = false ] && phase2_project_setup
@@ -415,7 +415,7 @@ main() {
     [ "$SKIP_UTILITIES" = false ] && phase6_utilities
     [ "$SKIP_CLEANUP" = false ] && phase7_cleanup
     phase8_summary
-    
+
     log "=========================================="
     log "Test completed at: $(date)"
     log "=========================================="
@@ -423,4 +423,3 @@ main() {
 
 # Run main function
 main "$@"
-

@@ -115,10 +115,10 @@ async def test_ingestion():
     conn = await asyncpg.connect(
         "postgresql://code_index_admin:local_dev_password@localhost:5432/code_index"
     )
-    
+
     # Get test user
     user = await conn.fetchrow("SELECT user_id FROM users WHERE email = 'dev@localhost'")
-    
+
     # Create project
     project = await conn.fetchrow("""
         INSERT INTO projects (user_id, project_name)
@@ -126,19 +126,19 @@ async def test_ingestion():
         ON CONFLICT (user_id, project_name) DO UPDATE SET updated_at = NOW()
         RETURNING project_id
     """, user['user_id'])
-    
+
     # Insert chunk with embedding
     embedding = [0.1] * 768  # Mock embedding
     await conn.execute("""
-        INSERT INTO code_chunks 
+        INSERT INTO code_chunks
         (project_id, file_path, chunk_type, chunk_name, content, content_hash, embedding)
         VALUES ($1, 'test.py', 'function', 'test_func', 'def test_func(): pass', 'abc123', $2)
     """, project['project_id'], embedding)
-    
+
     # Verify
     count = await conn.fetchval("SELECT COUNT(*) FROM code_chunks WHERE project_id = $1", project['project_id'])
     print(f"✅ Inserted {count} chunk(s)")
-    
+
     await conn.close()
 
 asyncio.run(test_ingestion())
@@ -149,17 +149,17 @@ asyncio.run(test_ingestion())
 ```python
 async def test_search():
     conn = await asyncpg.connect("postgresql://code_index_admin:local_dev_password@localhost:5432/code_index")
-    
+
     user = await conn.fetchrow("SELECT user_id FROM users WHERE email = 'dev@localhost'")
     query_embedding = [0.1] * 768  # Should match our test chunk
-    
+
     results = await conn.fetch("""
         SELECT * FROM semantic_search_code($1, $2, 'test-project', NULL, 5)
     """, user['user_id'], query_embedding)
-    
+
     for row in results:
         print(f"Found: {row['file_path']}:{row['chunk_name']} (score: {row['similarity_score']:.3f})")
-    
+
     await conn.close()
 
 asyncio.run(test_search())
@@ -282,4 +282,3 @@ docker-compose down  # Keeps data
 ---
 
 **Connection String**: `postgresql://code_index_admin:local_dev_password@localhost:5432/code_index`
-

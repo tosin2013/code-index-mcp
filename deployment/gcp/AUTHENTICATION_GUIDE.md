@@ -1,7 +1,7 @@
 # Code Index MCP - Authentication Guide
 
-**Status**: Implemented (Infrastructure Ready, Middleware Integration Pending)  
-**Confidence**: 88% - Scripts and deployment ready, FastMCP integration needed  
+**Status**: Implemented (Infrastructure Ready, Middleware Integration Pending)
+**Confidence**: 88% - Scripts and deployment ready, FastMCP integration needed
 **Date**: October 26, 2025
 
 ---
@@ -94,8 +94,8 @@ Usage in Claude Desktop:
 
 Add the configuration to your `claude_desktop_config.json`:
 
-**macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`  
-**Windows**: `%APPDATA%\Claude\claude_desktop_config.json`  
+**macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+**Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
 **Linux**: `~/.config/Claude/claude_desktop_config.json`
 
 ```json
@@ -177,12 +177,12 @@ API keys are validated using constant-time comparison to prevent timing attacks.
 ## Troubleshooting
 
 ### Issue: "404 Session Not Found"
-**Cause**: Connection timed out (Cloud Run scaled to zero)  
+**Cause**: Connection timed out (Cloud Run scaled to zero)
 **Fix**: Restart Claude Desktop to create a new session
 
 ### Issue: "Authentication Failed"
-**Cause**: Invalid or missing API key  
-**Fix**: 
+**Cause**: Invalid or missing API key
+**Fix**:
 1. Verify API key in Claude Desktop config
 2. Check Secret Manager for the key:
    ```bash
@@ -190,7 +190,7 @@ API keys are validated using constant-time comparison to prevent timing attacks.
    ```
 
 ### Issue: "Permission Denied on Secret"
-**Cause**: Service account lacks access  
+**Cause**: Service account lacks access
 **Fix**:
 ```bash
 gcloud secrets add-iam-policy-binding code-index-api-key-demo-user-dev \
@@ -199,8 +199,8 @@ gcloud secrets add-iam-policy-binding code-index-api-key-demo-user-dev \
 ```
 
 ### Issue: Authentication Not Enforced
-**Cause**: FastMCP SSE middleware integration pending  
-**Status**: Infrastructure ready, integration needed  
+**Cause**: FastMCP SSE middleware integration pending
+**Status**: Infrastructure ready, integration needed
 **Workaround**: Currently deployed with `--no-allow-unauthenticated`, but token validation not yet active
 
 ## Cost Implications
@@ -258,4 +258,3 @@ curl -H "Accept: text/event-stream" \
 ---
 
 **Confidence**: 88% - Infrastructure complete, FastMCP integration needed for full enforcement
-

@@ -8,7 +8,7 @@ TASK [Gathering Facts] *********************************************************
 ok: [localhost]
 
 TASK [Validate required environment variables] *********************************
-ok: [localhost] => changed=false 
+ok: [localhost] => changed=false
   msg: All assertions passed
 
 TASK [Display test configuration] **********************************************
@@ -52,9 +52,8 @@ Origin: /Users/tosinakinosho/workspaces/code-index-mcp/tests/ansible/test-cloud.
 39           - "Transport: {{ transport }}"
                ^ column 13
 
-fatal: [localhost]: FAILED! => 
+fatal: [localhost]: FAILED! =>
   msg: 'Task failed: Finalization of task args for ''ansible.builtin.debug'' failed: Error while resolving value for ''msg'': ''transport'' is undefined'
 
 PLAY RECAP *********************************************************************
-localhost                  : ok=2    changed=0    unreachable=0    failed=1    skipped=0    rescued=0    ignored=0   
-
+localhost                  : ok=2    changed=0    unreachable=0    failed=1    skipped=0    rescued=0    ignored=0

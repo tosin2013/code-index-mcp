@@ -10,7 +10,7 @@ TASK [Gathering Facts] *********************************************************
 ok: [localhost]
 
 TASK [Display utility operation info] ******************************************
-ok: [localhost] => 
+ok: [localhost] =>
   msg:
   - ========================================
   - '  Code Index MCP - Utilities'
@@ -24,7 +24,7 @@ TASK [utilities : Include schema application tasks] ****************************
 included: /Users/tosinakinosho/workspaces/code-index-mcp/deployment/gcp/ansible/roles/utilities/tasks/apply_schema.yml for localhost
 
 TASK [utilities : Display schema application info] *****************************
-ok: [localhost] => 
+ok: [localhost] =>
   msg:
   - ========================================
   - '  Apply AlloyDB Schema'
@@ -47,7 +47,7 @@ TASK [utilities : Execute schema application in Cloud Shell] *******************
 changed: [localhost]
 
 TASK [utilities : Display schema application output] ***************************
-ok: [localhost] => 
+ok: [localhost] =>
   msg:
   - ========================================
   - '  Apply AlloyDB Schema via Cloud Shell'
@@ -63,7 +63,7 @@ ok: [localhost] =>
   - '❌ Error: Invalid IPv6 URL'
 
 TASK [utilities : Display errors if any] ***************************************
-ok: [localhost] => 
+ok: [localhost] =>
   msg:
   - 'Traceback (most recent call last):'
   - '  File "/tmp/apply_schema.py", line 11, in apply_schema'
@@ -80,7 +80,7 @@ TASK [utilities : Cleanup Cloud Shell temp files] ******************************
 ok: [localhost]
 
 TASK [utilities : Final success message] ***************************************
-ok: [localhost] => 
+ok: [localhost] =>
   msg:
   - ''
   - ════════════════════════════════════════
@@ -97,5 +97,4 @@ ok: [localhost] =>
   - ''
 
 PLAY RECAP *********************************************************************
-localhost                  : ok=12   changed=3    unreachable=0    failed=0    skipped=11   rescued=0    ignored=0   
-
+localhost                  : ok=12   changed=3    unreachable=0    failed=0    skipped=11   rescued=0    ignored=0

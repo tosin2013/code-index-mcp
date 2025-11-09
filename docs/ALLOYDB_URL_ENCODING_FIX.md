@@ -1,8 +1,8 @@
 # AlloyDB Connection String URL Encoding Fix
 
-**Date**: October 27, 2025  
-**Issue**: `psycopg2.OperationalError: invalid integer value "..." for connection option "port"`  
-**Root Cause**: Special characters in AlloyDB password not URL-encoded  
+**Date**: October 27, 2025
+**Issue**: `psycopg2.OperationalError: invalid integer value "..." for connection option "port"`
+**Root Cause**: Special characters in AlloyDB password not URL-encoded
 **Status**: ✅ Fixed
 
 ---
@@ -17,7 +17,7 @@ When AlloyDB passwords contain special characters (e.g., `@`, `(`, `:`, `<`, `>`
 psycopg2.OperationalError: invalid integer value "t<H@10.175.0.2:5432" for connection option "port"
 ```
 
-**Original password**: `***REMOVED***`  
+**Original password**: `***REMOVED***`
 **Broken connection string**: `postgresql://code_index_admin:***REMOVED***@10.175.0.2:5432/postgres`
 
 **What went wrong**:
@@ -29,7 +29,7 @@ psycopg2.OperationalError: invalid integer value "t<H@10.175.0.2:5432" for conne
 
 ## The Solution
 
-**1. URL-encode the password** before including it in the connection string.  
+**1. URL-encode the password** before including it in the connection string.
 **2. Use `echo -n` to prevent trailing newlines** when storing in Secret Manager.
 
 ### Manual Fix
@@ -233,4 +233,3 @@ def test_connection_string_format():
 ---
 
 **Confidence**: 99% - Issue identified, fixed, tested, and documented comprehensively.
-

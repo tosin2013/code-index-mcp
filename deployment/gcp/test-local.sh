@@ -92,7 +92,7 @@ while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
     # Exit code 28 (timeout) is OK as long as we got 200 status
     HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 1 "http://localhost:$TEST_PORT/sse" 2>/dev/null)
     CURL_EXIT=$?
-    
+
     # Success if we got 200 status (even if curl timed out waiting for stream)
     if [ "$HTTP_CODE" = "200" ] || [ "$CURL_EXIT" = "28" ]; then
         log_success "SSE endpoint responding! (HTTP $HTTP_CODE)"
@@ -144,4 +144,3 @@ echo ""
 echo -e "${YELLOW}Container is still running for manual testing.${NC}"
 echo -e "${YELLOW}Stop it when done: docker stop $CONTAINER_NAME && docker rm $CONTAINER_NAME${NC}"
 echo ""
-

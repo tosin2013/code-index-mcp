@@ -13,24 +13,25 @@ Run with:
     pytest tests/ingestion/test_git_manager.py -v
 """
 
-import pytest
 import os
-from pathlib import Path
-from unittest.mock import Mock, MagicMock, patch, AsyncMock, call
-import tempfile
 import shutil
+import tempfile
+from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, Mock, call, patch
+
+import pytest
 
 from src.code_index_mcp.ingestion.git_manager import (
-    GitRepositoryManager,
+    GitManagerError,
     GitRepositoryInfo,
-    GitManagerError
+    GitRepositoryManager,
 )
 
 
 @pytest.fixture
 def mock_gcs_client():
     """Mock Google Cloud Storage client."""
-    with patch('src.code_index_mcp.ingestion.git_manager.storage') as mock_storage:
+    with patch("src.code_index_mcp.ingestion.git_manager.storage") as mock_storage:
         # Mock Client
         mock_client = MagicMock()
         mock_storage.Client.return_value = mock_client
@@ -56,9 +57,7 @@ def git_manager(mock_gcs_client):
     temp_dir = Path(tempfile.mkdtemp())
 
     manager = GitRepositoryManager(
-        gcs_bucket="test-bucket",
-        user_id="test-user",
-        local_cache_dir=temp_dir
+        gcs_bucket="test-bucket", user_id="test-user", local_cache_dir=temp_dir
     )
 
     yield manager
@@ -199,7 +198,7 @@ class TestGCSOperations:
             platform="github",
             git_url="https://github.com/user/test.git",
             clone_path="github.com/user/test.git",
-            worktree_path="github.com/user/test"
+            worktree_path="github.com/user/test",
         )
 
         exists = git_manager._repo_exists_in_gcs(repo_info)
@@ -219,7 +218,7 @@ class TestGCSOperations:
             platform="github",
             git_url="https://github.com/user/test.git",
             clone_path="github.com/user/test.git",
-            worktree_path="github.com/user/test"
+            worktree_path="github.com/user/test",
         )
 
         exists = git_manager._repo_exists_in_gcs(repo_info)
@@ -230,50 +229,43 @@ class TestGCSOperations:
 class TestGitCommands:
     """Test Git command execution."""
 
-    @patch('subprocess.run')
+    @patch("subprocess.run")
     def test_run_git_command_success(self, mock_run, git_manager):
         """Test successful git command execution."""
-        mock_run.return_value = Mock(
-            returncode=0,
-            stdout="success output",
-            stderr=""
-        )
+        mock_run.return_value = Mock(returncode=0, stdout="success output", stderr="")
 
-        stdout, stderr = git_manager._run_git_command(['status'])
+        stdout, stderr = git_manager._run_git_command(["status"])
 
         assert stdout == "success output"
         assert stderr == ""
         mock_run.assert_called_once()
-        assert mock_run.call_args[0][0] == ['git', 'status']
+        assert mock_run.call_args[0][0] == ["git", "status"]
 
-    @patch('subprocess.run')
+    @patch("subprocess.run")
     def test_run_git_command_failure(self, mock_run, git_manager):
         """Test failed git command execution."""
-        mock_run.return_value = Mock(
-            returncode=1,
-            stdout="",
-            stderr="fatal: not a git repository"
-        )
+        mock_run.return_value = Mock(returncode=1, stdout="", stderr="fatal: not a git repository")
 
         with pytest.raises(GitManagerError, match="Git command failed"):
-            git_manager._run_git_command(['status'])
+            git_manager._run_git_command(["status"])
 
-    @patch('subprocess.run')
+    @patch("subprocess.run")
     def test_run_git_command_timeout(self, mock_run, git_manager):
         """Test git command timeout."""
         from subprocess import TimeoutExpired
-        mock_run.side_effect = TimeoutExpired(cmd=['git'], timeout=300)
+
+        mock_run.side_effect = TimeoutExpired(cmd=["git"], timeout=300)
 
         with pytest.raises(GitManagerError, match="timed out"):
-            git_manager._run_git_command(['clone', 'huge-repo'])
+            git_manager._run_git_command(["clone", "huge-repo"])
 
 
 class TestCloneOperation:
     """Test repository cloning."""
 
     @pytest.mark.asyncio
-    @patch('subprocess.run')
-    @patch.object(GitRepositoryManager, '_upload_repo_to_gcs', new_callable=AsyncMock)
+    @patch("subprocess.run")
+    @patch.object(GitRepositoryManager, "_upload_repo_to_gcs", new_callable=AsyncMock)
     async def test_clone_public_repo(self, mock_upload, mock_run, git_manager):
         """Test cloning a public repository."""
         # Mock git clone success
@@ -286,7 +278,7 @@ class TestCloneOperation:
             platform="github",
             git_url="https://github.com/user/public-repo.git",
             clone_path="github.com/user/public-repo.git",
-            worktree_path="github.com/user/public-repo"
+            worktree_path="github.com/user/public-repo",
         )
 
         local_path = await git_manager._clone_repo(repo_info, "main", None)
@@ -294,11 +286,11 @@ class TestCloneOperation:
         # Verify git clone was called
         assert mock_run.called
         git_args = mock_run.call_args[0][0]
-        assert 'clone' in git_args
-        assert '--depth' in git_args
-        assert '1' in git_args
-        assert '--branch' in git_args
-        assert 'main' in git_args
+        assert "clone" in git_args
+        assert "--depth" in git_args
+        assert "1" in git_args
+        assert "--branch" in git_args
+        assert "main" in git_args
 
         # Verify upload to GCS was called
         mock_upload.assert_called_once()
@@ -307,8 +299,8 @@ class TestCloneOperation:
         assert str(local_path).endswith("github.com/user/public-repo")
 
     @pytest.mark.asyncio
-    @patch('subprocess.run')
-    @patch.object(GitRepositoryManager, '_upload_repo_to_gcs', new_callable=AsyncMock)
+    @patch("subprocess.run")
+    @patch.object(GitRepositoryManager, "_upload_repo_to_gcs", new_callable=AsyncMock)
     async def test_clone_private_repo_with_token(self, mock_upload, mock_run, git_manager):
         """Test cloning a private repository with auth token."""
         mock_run.return_value = Mock(returncode=0, stdout="", stderr="")
@@ -320,7 +312,7 @@ class TestCloneOperation:
             platform="github",
             git_url="https://github.com/user/private-repo.git",
             clone_path="github.com/user/private-repo.git",
-            worktree_path="github.com/user/private-repo"
+            worktree_path="github.com/user/private-repo",
         )
 
         await git_manager._clone_repo(repo_info, "main", "ghp_token_123")
@@ -331,13 +323,13 @@ class TestCloneOperation:
         assert "ghp_token_123@github.com" in clone_url
 
     @pytest.mark.asyncio
-    @patch('subprocess.run')
+    @patch("subprocess.run")
     async def test_clone_repo_not_found(self, mock_run, git_manager):
         """Test cloning a repository that doesn't exist."""
         mock_run.return_value = Mock(
             returncode=1,
             stdout="",
-            stderr="fatal: repository 'https://github.com/user/nonexistent.git/' not found"
+            stderr="fatal: repository 'https://github.com/user/nonexistent.git/' not found",
         )
 
         repo_info = GitRepositoryInfo(
@@ -347,7 +339,7 @@ class TestCloneOperation:
             platform="github",
             git_url="https://github.com/user/nonexistent.git",
             clone_path="github.com/user/nonexistent.git",
-            worktree_path="github.com/user/nonexistent"
+            worktree_path="github.com/user/nonexistent",
         )
 
         with pytest.raises(GitManagerError, match="not found or not accessible"):
@@ -358,23 +350,18 @@ class TestPullOperation:
     """Test pulling changes from repository."""
 
     @pytest.mark.asyncio
-    @patch('subprocess.run')
-    @patch.object(GitRepositoryManager, '_download_repo_from_gcs', new_callable=AsyncMock)
-    @patch.object(GitRepositoryManager, '_upload_repo_to_gcs', new_callable=AsyncMock)
-    async def test_pull_with_changes(
-        self,
-        mock_upload,
-        mock_download,
-        mock_run,
-        git_manager
-    ):
+    @patch("subprocess.run")
+    @patch.object(GitRepositoryManager, "_download_repo_from_gcs", new_callable=AsyncMock)
+    @patch.object(GitRepositoryManager, "_upload_repo_to_gcs", new_callable=AsyncMock)
+    async def test_pull_with_changes(self, mock_upload, mock_download, mock_run, git_manager):
         """Test pulling changes from repository."""
+
         # Mock git commands
         def git_side_effect(*args, **kwargs):
             cmd = args[0]
-            if 'rev-parse' in cmd:
+            if "rev-parse" in cmd:
                 # Return different commits before/after pull
-                if not hasattr(git_side_effect, 'call_count'):
+                if not hasattr(git_side_effect, "call_count"):
                     git_side_effect.call_count = 0
                 git_side_effect.call_count += 1
 
@@ -382,7 +369,7 @@ class TestPullOperation:
                     return Mock(returncode=0, stdout="abc123\n", stderr="")
                 else:
                     return Mock(returncode=0, stdout="def456\n", stderr="")
-            elif 'diff' in cmd:
+            elif "diff" in cmd:
                 return Mock(returncode=0, stdout="file1.py\nfile2.py\n", stderr="")
             else:
                 return Mock(returncode=0, stdout="", stderr="")
@@ -396,16 +383,14 @@ class TestPullOperation:
             platform="github",
             git_url="https://github.com/user/test-repo.git",
             clone_path="github.com/user/test-repo.git",
-            worktree_path="github.com/user/test-repo"
+            worktree_path="github.com/user/test-repo",
         )
 
         # Create mock local repo directory
         local_path = git_manager.local_cache_dir / repo_info.worktree_path
         local_path.mkdir(parents=True, exist_ok=True)
 
-        result_path, changed_files = await git_manager._pull_changes(
-            repo_info, "main", None
-        )
+        result_path, changed_files = await git_manager._pull_changes(repo_info, "main", None)
 
         # Verify changed files detected
         assert len(changed_files) == 2
@@ -416,21 +401,16 @@ class TestPullOperation:
         mock_upload.assert_called_once()
 
     @pytest.mark.asyncio
-    @patch('subprocess.run')
-    @patch.object(GitRepositoryManager, '_download_repo_from_gcs', new_callable=AsyncMock)
-    @patch.object(GitRepositoryManager, '_upload_repo_to_gcs', new_callable=AsyncMock)
-    async def test_pull_no_changes(
-        self,
-        mock_upload,
-        mock_download,
-        mock_run,
-        git_manager
-    ):
+    @patch("subprocess.run")
+    @patch.object(GitRepositoryManager, "_download_repo_from_gcs", new_callable=AsyncMock)
+    @patch.object(GitRepositoryManager, "_upload_repo_to_gcs", new_callable=AsyncMock)
+    async def test_pull_no_changes(self, mock_upload, mock_download, mock_run, git_manager):
         """Test pulling when no changes exist."""
+
         # Mock git commands - same commit before/after
         def git_side_effect(*args, **kwargs):
             cmd = args[0]
-            if 'rev-parse' in cmd:
+            if "rev-parse" in cmd:
                 return Mock(returncode=0, stdout="abc123\n", stderr="")
             else:
                 return Mock(returncode=0, stdout="", stderr="")
@@ -444,16 +424,14 @@ class TestPullOperation:
             platform="github",
             git_url="https://github.com/user/test-repo.git",
             clone_path="github.com/user/test-repo.git",
-            worktree_path="github.com/user/test-repo"
+            worktree_path="github.com/user/test-repo",
         )
 
         # Create mock local repo directory
         local_path = git_manager.local_cache_dir / repo_info.worktree_path
         local_path.mkdir(parents=True, exist_ok=True)
 
-        result_path, changed_files = await git_manager._pull_changes(
-            repo_info, "main", None
-        )
+        result_path, changed_files = await git_manager._pull_changes(repo_info, "main", None)
 
         # Verify no changes detected
         assert len(changed_files) == 0
@@ -466,23 +444,14 @@ class TestSyncRepository:
     """Test main sync_repository method."""
 
     @pytest.mark.asyncio
-    @patch.object(GitRepositoryManager, '_clone_repo', new_callable=AsyncMock)
-    @patch.object(GitRepositoryManager, '_repo_exists_in_gcs')
-    async def test_sync_clone_new_repo(
-        self,
-        mock_exists,
-        mock_clone,
-        git_manager
-    ):
+    @patch.object(GitRepositoryManager, "_clone_repo", new_callable=AsyncMock)
+    @patch.object(GitRepositoryManager, "_repo_exists_in_gcs")
+    async def test_sync_clone_new_repo(self, mock_exists, mock_clone, git_manager):
         """Test syncing a new repository (clone)."""
         mock_exists.return_value = False
         mock_clone.return_value = Path("/tmp/test-repo")
 
-        result = await git_manager.sync_repository(
-            "https://github.com/user/new-repo",
-            "main",
-            None
-        )
+        result = await git_manager.sync_repository("https://github.com/user/new-repo", "main", None)
 
         assert result["sync_type"] == "clone"
         assert result["local_path"] == "/tmp/test-repo"
@@ -494,22 +463,15 @@ class TestSyncRepository:
         mock_clone.assert_called_once()
 
     @pytest.mark.asyncio
-    @patch.object(GitRepositoryManager, '_pull_changes', new_callable=AsyncMock)
-    @patch.object(GitRepositoryManager, '_repo_exists_in_gcs')
-    async def test_sync_pull_existing_repo(
-        self,
-        mock_exists,
-        mock_pull,
-        git_manager
-    ):
+    @patch.object(GitRepositoryManager, "_pull_changes", new_callable=AsyncMock)
+    @patch.object(GitRepositoryManager, "_repo_exists_in_gcs")
+    async def test_sync_pull_existing_repo(self, mock_exists, mock_pull, git_manager):
         """Test syncing an existing repository (pull)."""
         mock_exists.return_value = True
         mock_pull.return_value = (Path("/tmp/test-repo"), ["file1.py", "file2.py"])
 
         result = await git_manager.sync_repository(
-            "https://github.com/user/existing-repo",
-            "main",
-            None
+            "https://github.com/user/existing-repo", "main", None
         )
 
         assert result["sync_type"] == "pull"
