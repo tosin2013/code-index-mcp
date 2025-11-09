@@ -27,7 +27,9 @@ COPY src ./src
 RUN pip install --no-cache-dir uv
 
 # Install dependencies (including GCP extras)
-RUN uv pip install --system --no-cache ".[gcp]"
+# Note: Explicitly install google-cloud-secret-manager to ensure it's available
+RUN uv pip install --system --no-cache ".[gcp]" && \
+    uv pip install --system --no-cache google-cloud-secret-manager>=2.16.0
 
 # Stage 2: Runtime
 FROM python:3.11-slim
