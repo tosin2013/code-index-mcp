@@ -1,8 +1,13 @@
-# CI/CD Pipeline Setup Guide
+# CI/CD Pipeline Setup Guide - Google Cloud Platform
 
+**Platform**: Google Cloud Platform (GCP)
 **Reference**: [ADR 0011 - CI/CD Pipeline and Security Architecture](adrs/0011-cicd-pipeline-and-security-architecture.md)
 
-This guide walks you through setting up the automated CI/CD pipeline for Code Index MCP on Google Cloud Platform using GitHub Actions.
+> **Note**: This guide is specific to GCP deployments. For other platforms, see:
+> - [AWS Setup Guide](CI_CD_SETUP_GUIDE_AWS.md) *(Coming Soon)*
+> - [OpenShift Setup Guide](CI_CD_SETUP_GUIDE_OPENSHIFT.md) *(Coming Soon)*
+
+This guide walks you through setting up the automated CI/CD pipeline for Code Index MCP on **Google Cloud Platform** using GitHub Actions with OIDC Workload Identity (keyless authentication).
 
 ## Table of Contents
 
