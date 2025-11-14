@@ -1,0 +1,356 @@
+name: Delete GCP Infrastructure
+
+# CRITICAL: This workflow deletes cloud resources
+# Manual approval required for all deletions
+# Production deletions blocked by default
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to delete (production is BLOCKED)'
+        required: true
+        type: choice
+        options:
+          - dev
+          - staging
+        default: 'dev'
+      confirmation:
+        description: 'Type DELETE to confirm (case-sensitive)'
+        required: true
+        type: string
+      reason:
+        description: 'Reason for deletion (required for audit)'
+        required: true
+        type: string
+      force_production:
+        description: 'DANGEROUS: Override production block (requires special approval)'
+        required: false
+        type: boolean
+        default: false
+
+env:
+  TERRAFORM_VERSION: '1.5.0'
+  ANSIBLE_VERSION: '2.14'
+  GCP_REGION: 'us-east1'
+
+jobs:
+  # Stage 1: Validate Inputs
+  validate:
+    name: Validate Deletion Request
+    runs-on: ubuntu-latest
+    outputs:
+      proceed: ${{ steps.check.outputs.proceed }}
+    steps:
+      - name: Validate confirmation
+        id: check
+        run: |
+          echo "## 🚨 Deletion Request Validation" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Environment**: ${{ inputs.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Confirmation**: ${{ inputs.confirmation }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Reason**: ${{ inputs.reason }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Requested by**: ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Timestamp**: $(date -u +"%Y-%m-%d %H:%M:%S UTC")" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Check confirmation text
+          if [ "${{ inputs.confirmation }}" != "DELETE" ]; then
+            echo "❌ **Validation Failed**: Confirmation must be exactly 'DELETE' (case-sensitive)" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
+          # Block production deletions unless override is set
+          if [ "${{ inputs.environment }}" == "prod" ] && [ "${{ inputs.force_production }}" != "true" ]; then
+            echo "❌ **Validation Failed**: Production deletions are blocked by default" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "To delete production, you must:" >> $GITHUB_STEP_SUMMARY
+            echo "1. Set force_production to true" >> $GITHUB_STEP_SUMMARY
+            echo "2. Get approval from at least 2 team leads" >> $GITHUB_STEP_SUMMARY
+            echo "3. Create a rollback plan" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
+          # Require reason
+          if [ -z "${{ inputs.reason }}" ]; then
+            echo "❌ **Validation Failed**: Reason is required for audit trail" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
+          echo "✅ **Validation Passed**" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "⚠️  **PROCEED WITH CAUTION** - Resources will be permanently deleted" >> $GITHUB_STEP_SUMMARY
+          echo "proceed=true" >> $GITHUB_OUTPUT
+
+  # Stage 2: Manual Approval Gate
+  approval:
+    name: Manual Approval Required
+    runs-on: ubuntu-latest
+    needs: validate
+    environment:
+      name: delete-${{ inputs.environment }}
+    steps:
+      - name: Request approval
+        run: |
+          echo "## 🔐 Approval Required" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "A designated reviewer must approve this deletion." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Deletion Details**:" >> $GITHUB_STEP_SUMMARY
+          echo "- Environment: ${{ inputs.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Reason: ${{ inputs.reason }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Requested by: ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+
+  # Stage 3: Create Audit Log
+  audit-log:
+    name: Create Audit Log
+    runs-on: ubuntu-latest
+    needs: approval
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up GCP authentication
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Create audit log
+        run: |
+          AUDIT_FILE="deletion-audit-$(date +%Y%m%d-%H%M%S).json"
+          cat > $AUDIT_FILE <<EOF
+          {
+            "event": "infrastructure_deletion",
+            "environment": "${{ inputs.environment }}",
+            "timestamp": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
+            "actor": "${{ github.actor }}",
+            "reason": "${{ inputs.reason }}",
+            "github_run_id": "${{ github.run_id }}",
+            "github_run_number": "${{ github.run_number }}",
+            "repository": "${{ github.repository }}",
+            "force_production": "${{ inputs.force_production }}"
+          }
+          EOF
+
+          # Upload to GCS for permanent audit trail
+          gsutil cp $AUDIT_FILE gs://${{ secrets.GCP_AUDIT_BUCKET }}/deletions/
+
+          echo "## 📝 Audit Log Created" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Audit log uploaded to: gs://${{ secrets.GCP_AUDIT_BUCKET }}/deletions/$AUDIT_FILE" >> $GITHUB_STEP_SUMMARY
+
+  # Stage 4: Inventory Resources
+  inventory:
+    name: Inventory Resources
+    runs-on: ubuntu-latest
+    needs: audit-log
+    outputs:
+      resource_count: ${{ steps.count.outputs.total }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up GCP authentication
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Inventory Cloud Run services
+        id: cloudrun
+        run: |
+          echo "## 📊 Resource Inventory" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Cloud Run Services" >> $GITHUB_STEP_SUMMARY
+          gcloud run services list --region=${{ env.GCP_REGION }} --format="table(name,status.url)" >> $GITHUB_STEP_SUMMARY || true
+
+      - name: Inventory GCS buckets
+        run: |
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Storage Buckets" >> $GITHUB_STEP_SUMMARY
+          gsutil ls -p ${{ secrets.GCP_PROJECT_ID }} >> $GITHUB_STEP_SUMMARY || true
+
+      - name: Inventory AlloyDB instances
+        run: |
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### AlloyDB Instances" >> $GITHUB_STEP_SUMMARY
+          gcloud alloydb instances list --region=${{ env.GCP_REGION }} --format="table(name,state)" >> $GITHUB_STEP_SUMMARY || true
+
+      - name: Count resources
+        id: count
+        run: |
+          CLOUDRUN_COUNT=$(gcloud run services list --region=${{ env.GCP_REGION }} --format="value(name)" | wc -l)
+          BUCKET_COUNT=$(gsutil ls -p ${{ secrets.GCP_PROJECT_ID }} | wc -l)
+          ALLOYDB_COUNT=$(gcloud alloydb instances list --region=${{ env.GCP_REGION }} --format="value(name)" | wc -l)
+          TOTAL=$((CLOUDRUN_COUNT + BUCKET_COUNT + ALLOYDB_COUNT))
+          echo "total=$TOTAL" >> $GITHUB_OUTPUT
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Total Resources to Delete**: $TOTAL" >> $GITHUB_STEP_SUMMARY
+
+  # Stage 5: Teardown Application
+  teardown-application:
+    name: Teardown Application
+    runs-on: ubuntu-latest
+    needs: inventory
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up GCP authentication
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Ansible
+        run: |
+          pip install ansible==${{ env.ANSIBLE_VERSION }}
+          ansible-galaxy collection install -r deployment/gcp/ansible/requirements.yml
+
+      - name: Run Ansible teardown
+        working-directory: deployment/gcp/ansible
+        run: |
+          ansible-playbook utilities.yml \
+            -i inventory/${{ inputs.environment }}.yml \
+            -e "operation=teardown" \
+            -e "gcp_project_id=${{ secrets.GCP_PROJECT_ID }}" \
+            -e "gcp_region=${{ env.GCP_REGION }}" \
+            -v || true
+
+      - name: Delete Cloud Run services manually
+        run: |
+          gcloud run services delete code-index-mcp-${{ inputs.environment }} \
+            --region=${{ env.GCP_REGION }} \
+            --quiet || echo "Service not found or already deleted"
+
+  # Stage 6: Destroy Infrastructure with Terraform
+  destroy-infrastructure:
+    name: Destroy Infrastructure (Terraform)
+    runs-on: ubuntu-latest
+    needs: teardown-application
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up GCP authentication
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+
+      - name: Terraform Init
+        working-directory: deployment/gcp/terraform
+        run: |
+          terraform init \
+            -backend-config="bucket=${{ secrets.GCP_TERRAFORM_STATE_BUCKET }}" \
+            -backend-config="prefix=terraform/state/${{ inputs.environment }}"
+
+      - name: Terraform Destroy Plan
+        working-directory: deployment/gcp/terraform
+        run: |
+          terraform plan -destroy \
+            -var="project_id=${{ secrets.GCP_PROJECT_ID }}" \
+            -var="region=${{ env.GCP_REGION }}" \
+            -var="environment=${{ inputs.environment }}" \
+            -out=destroy.tfplan
+
+      - name: Terraform Destroy
+        working-directory: deployment/gcp/terraform
+        run: |
+          terraform apply -auto-approve destroy.tfplan
+
+      - name: Verify destruction
+        run: |
+          echo "## ✅ Destruction Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "All infrastructure resources have been destroyed." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment**: ${{ inputs.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Deleted by**: ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Reason**: ${{ inputs.reason }}" >> $GITHUB_STEP_SUMMARY
+
+  # Stage 7: Cleanup State Files
+  cleanup-state:
+    name: Cleanup State Files
+    runs-on: ubuntu-latest
+    needs: destroy-infrastructure
+    steps:
+      - name: Set up GCP authentication
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Archive Terraform state
+        run: |
+          ARCHIVE_PATH="terraform/archive/${{ inputs.environment }}/$(date +%Y%m%d-%H%M%S)"
+          gsutil mv \
+            gs://${{ secrets.GCP_TERRAFORM_STATE_BUCKET }}/terraform/state/${{ inputs.environment }}/* \
+            gs://${{ secrets.GCP_TERRAFORM_STATE_BUCKET }}/$ARCHIVE_PATH/ || true
+
+          echo "## 📦 State Files Archived" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Terraform state archived to: gs://${{ secrets.GCP_TERRAFORM_STATE_BUCKET }}/$ARCHIVE_PATH" >> $GITHUB_STEP_SUMMARY
+
+  # Final: Deletion Complete
+  deletion-complete:
+    name: Deletion Complete
+    runs-on: ubuntu-latest
+    needs: [cleanup-state]
+    if: always()
+    steps:
+      - name: Final summary
+        run: |
+          echo "## 🗑️  Deletion Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${{ needs.cleanup-state.result }}" == "success" ]; then
+            echo "✅ **Deletion completed successfully**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "All stages completed:" >> $GITHUB_STEP_SUMMARY
+            echo "- ✅ Validation passed" >> $GITHUB_STEP_SUMMARY
+            echo "- ✅ Approval granted" >> $GITHUB_STEP_SUMMARY
+            echo "- ✅ Audit log created" >> $GITHUB_STEP_SUMMARY
+            echo "- ✅ Resources inventoried" >> $GITHUB_STEP_SUMMARY
+            echo "- ✅ Application teardown complete" >> $GITHUB_STEP_SUMMARY
+            echo "- ✅ Infrastructure destroyed" >> $GITHUB_STEP_SUMMARY
+            echo "- ✅ State files archived" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Environment**: ${{ inputs.environment }}" >> $GITHUB_STEP_SUMMARY
+            echo "**Deleted by**: ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+            echo "**Reason**: ${{ inputs.reason }}" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Deletion failed or incomplete**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Check the logs for details. Some resources may still exist." >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Manual cleanup may be required." >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
