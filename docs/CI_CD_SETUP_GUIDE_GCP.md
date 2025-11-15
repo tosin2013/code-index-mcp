@@ -128,12 +128,44 @@ gcloud artifacts repositories create code-index-mcp \
 
 **IMPORTANT**: This enables keyless authentication from GitHub Actions to GCP (no service account keys needed).
 
-### 1.1 Create Workload Identity Pool
+### 1.1 Set Environment Variables
+
+> **⚠️ CRITICAL**: Use your **Project ID** (string), NOT your **Project Number** (numeric)!
+
+**Understanding GCP Project Identifiers**:
+- **Project ID**: A unique string like `my-project-123` ✅ **Use this**
+- **Project Number**: A numeric ID like `123456789012` ❌ **Don't use this**
+
+**Find your Project ID**:
 
 ```bash
-export GCP_PROJECT_ID="your-project-id"
-export GITHUB_REPO="your-github-username/code-index-mcp"
+# Method 1: Get current project ID
+gcloud config get-value project
 
+# Method 2: List all projects (shows both ID and Number)
+gcloud projects list --format="table(projectId,projectNumber,name)"
+
+# Method 3: If you only have the project number
+gcloud projects describe PROJECT_NUMBER --format="value(projectId)"
+```
+
+**Set the variables** (replace with your actual values):
+
+```bash
+# CRITICAL: Use Project ID (string), not Project Number (number)
+export GCP_PROJECT_ID="your-project-id"           # Example: "code-index-mcp-prod"
+export GCP_REGION="us-east1"                      # Or your preferred region
+export GITHUB_REPO="your-username/code-index-mcp" # Your GitHub repository
+
+# Verify the values
+echo "Project ID: $GCP_PROJECT_ID"
+echo "Region: $GCP_REGION"
+echo "Repository: $GITHUB_REPO"
+```
+
+### 1.2 Create Workload Identity Pool
+
+```bash
 # Create pool
 gcloud iam workload-identity-pools create "github-actions-pool" \
   --project="${GCP_PROJECT_ID}" \
@@ -149,7 +181,7 @@ export WORKLOAD_IDENTITY_POOL_ID=$(gcloud iam workload-identity-pools describe "
 echo "Workload Identity Pool ID: $WORKLOAD_IDENTITY_POOL_ID"
 ```
 
-### 1.2 Create OIDC Provider
+### 1.3 Create OIDC Provider
 
 ```bash
 # Create OIDC provider
@@ -171,7 +203,7 @@ export WORKLOAD_IDENTITY_PROVIDER=$(gcloud iam workload-identity-pools providers
 echo "Workload Identity Provider: $WORKLOAD_IDENTITY_PROVIDER"
 ```
 
-### 1.3 Create Service Account for GitHub Actions
+### 1.4 Create Service Account for GitHub Actions
 
 ```bash
 # Create service account
@@ -215,7 +247,7 @@ gcloud projects add-iam-policy-binding $GCP_PROJECT_ID \
   --role="roles/iam.serviceAccountUser"
 ```
 
-### 1.4 Allow GitHub Actions to Impersonate Service Account
+### 1.5 Allow GitHub Actions to Impersonate Service Account
 
 ```bash
 # Allow GitHub Actions from your repository to impersonate the service account
@@ -455,6 +487,36 @@ The workflow will:
 - State files archived (not deleted)
 
 ## Troubleshooting
+
+### Error: "The value of `--project` flag was set to Project number. To use this command, set it to PROJECT ID instead."
+
+**Cause**: You're using the **project number** (numeric) instead of the **project ID** (string).
+
+**Solution**:
+
+```bash
+# Get your project ID (not number!)
+gcloud config get-value project
+
+# Or list all projects to find the right one
+gcloud projects list --format="table(projectId,projectNumber,name)"
+
+# Set the CORRECT variable (use the string ID, not the number)
+export GCP_PROJECT_ID="your-project-id-here"  # Example: "code-index-mcp-dev"
+
+# Verify it's correct (should be a string, not a number)
+echo $GCP_PROJECT_ID
+
+# Retry the command
+gcloud iam workload-identity-pools create "github-actions-pool" \
+  --project="${GCP_PROJECT_ID}" \
+  --location="global" \
+  --display-name="GitHub Actions Pool"
+```
+
+**Example**:
+- ✅ Correct: `export GCP_PROJECT_ID="my-code-index-project"`
+- ❌ Wrong: `export GCP_PROJECT_ID="123456789012"`
 
 ### Error: "Failed to authenticate with GCP"
 
