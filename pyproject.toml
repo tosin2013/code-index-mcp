@@ -31,7 +31,7 @@ gcp = [
     "google-cloud-secret-manager>=2.16.0",
     "google-cloud-storage>=2.10.0",
     "google-cloud-aiplatform>=1.38.0",  # For Vertex AI embeddings (ADR 0003)
-    "psycopg2-binary>=2.9.0",  # For AlloyDB connection (ADR 0003)
+    "psycopg2-binary>=2.9.11",  # For AlloyDB connection (ADR 0003) - CVE-2024-52802/52803/52804 fixed in 2.9.11
 ]
 # AWS deployment (ADR 0004, 0006) - future
 aws = [
