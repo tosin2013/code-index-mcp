@@ -1,0 +1,136 @@
+name: Dependabot Auto-Merge
+
+# Reference: ADR 0011 - CI/CD Pipeline and Security Architecture
+# Auto-merge Dependabot PRs after security scans pass
+# Only merges patch/minor updates; major updates require manual review
+
+on:
+  pull_request:
+    branches: [master, main, develop]
+
+permissions:
+  contents: write
+  pull-requests: write
+  checks: read
+
+jobs:
+  auto-merge:
+    name: Auto-merge Dependabot PRs
+    runs-on: ubuntu-latest
+
+    # Only run for Dependabot PRs
+    if: github.actor == 'dependabot[bot]'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Fetch Dependabot metadata
+        id: metadata
+        uses: dependabot/fetch-metadata@v2
+        with:
+          github-token: "${{ secrets.GITHUB_TOKEN }}"
+
+      - name: Display update information
+        run: |
+          echo "## Dependabot Update Information" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Dependency:** ${{ steps.metadata.outputs.dependency-names }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Update Type:** ${{ steps.metadata.outputs.update-type }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Previous Version:** ${{ steps.metadata.outputs.previous-version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **New Version:** ${{ steps.metadata.outputs.new-version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Package Ecosystem:** ${{ steps.metadata.outputs.package-ecosystem }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+      - name: Wait for security scans to complete
+        uses: lewagon/wait-on-check-action@v1.3.4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          check-name: 'Security Scan Summary'
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          wait-interval: 10
+          allowed-conclusions: success
+
+      - name: Approve PR (security patches only)
+        if: |
+          steps.metadata.outputs.update-type == 'version-update:semver-patch' ||
+          steps.metadata.outputs.update-type == 'version-update:semver-minor'
+        run: |
+          gh pr review --approve "$PR_URL" --body "✅ **Auto-approved by Dependabot Auto-Merge Workflow**
+
+          This is a **${{ steps.metadata.outputs.update-type }}** update that has passed all security scans:
+          - ✅ Gitleaks: No secrets detected
+          - ✅ Trivy: No CRITICAL/HIGH vulnerabilities
+          - ✅ Bandit: No security issues
+
+          **Update Details:**
+          - Dependency: ${{ steps.metadata.outputs.dependency-names }}
+          - Version: ${{ steps.metadata.outputs.previous-version }} → ${{ steps.metadata.outputs.new-version }}
+          - Type: ${{ steps.metadata.outputs.update-type }}
+
+          Safe to auto-merge per ADR 0011 security policy."
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Enable auto-merge (security patches only)
+        if: |
+          steps.metadata.outputs.update-type == 'version-update:semver-patch' ||
+          steps.metadata.outputs.update-type == 'version-update:semver-minor'
+        run: |
+          gh pr merge --auto --squash "$PR_URL"
+
+          echo "## ✅ Auto-Merge Enabled" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "This PR will automatically merge after all required checks pass." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Merge Strategy:** Squash and merge" >> $GITHUB_STEP_SUMMARY
+          echo "**Reason:** Security patch (${{ steps.metadata.outputs.update-type }})" >> $GITHUB_STEP_SUMMARY
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Comment on major version updates
+        if: steps.metadata.outputs.update-type == 'version-update:semver-major'
+        run: |
+          gh pr comment "$PR_URL" --body "⚠️ **Major Version Update Detected**
+
+          This PR updates **${{ steps.metadata.outputs.dependency-names }}** from **${{ steps.metadata.outputs.previous-version }}** to **${{ steps.metadata.outputs.new-version }}**.
+
+          **Action Required:** Manual review and approval needed for major version updates.
+
+          **Review Checklist:**
+          - [ ] Check changelog for breaking changes
+          - [ ] Review migration guide (if available)
+          - [ ] Test locally before merging
+          - [ ] Update documentation if API changes
+          - [ ] Verify all tests pass
+
+          **Why Manual Review?**
+          Major version updates may introduce breaking changes. Per ADR 0011 security policy, these require human verification to prevent deployment issues.
+
+          **To merge this PR:**
+          1. Review the changes carefully
+          2. Test locally: \`git fetch && git checkout ${{ github.event.pull_request.head.ref }}\`
+          3. Run tests: \`pytest tests/\`
+          4. If everything works, approve and merge manually"
+
+          echo "## ⚠️ Manual Review Required" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "This is a **major version update** and requires manual review." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Auto-merge is disabled for major updates per ADR 0011 security policy." >> $GITHUB_STEP_SUMMARY
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Summary
+        run: |
+          echo "## Dependabot Auto-Merge Workflow Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [[ "${{ steps.metadata.outputs.update-type }}" == "version-update:semver-major" ]]; then
+            echo "🔴 **Status:** Manual review required (major update)" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "🟢 **Status:** Auto-merge enabled (security patch)" >> $GITHUB_STEP_SUMMARY
+          fi
