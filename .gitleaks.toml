@@ -87,6 +87,7 @@ regexes = [
     '''postgresql://.*:ALLOYDB_PASSWORD.*''',
     '''postgresql://user:pass@.*''',    # Example credentials in docs
     '''postgresql://.*:\{\{.*\}\}.*''',  # Jinja2 template variables
+    '''postgresql://.*:\*\*\*REMOVED\*\*\*@.*''',  # git-filter-repo replaced secrets
 
     # Documentation examples
     '''ghp_xxxx+''',
