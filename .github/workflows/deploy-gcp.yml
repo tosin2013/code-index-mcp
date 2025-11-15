@@ -26,6 +26,7 @@ on:
 permissions:
   contents: read
   id-token: write  # Required for Workload Identity Federation (OIDC)
+  security-events: write  # Required for uploading SARIF results to GitHub Security
 
 env:
   PYTHON_VERSION: '3.11'
