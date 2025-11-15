@@ -64,7 +64,7 @@ jobs:
           uv run pytest tests/ -v --tb=short
 
       - name: Upload test results
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         if: always()
         with:
           name: test-results
@@ -212,7 +212,7 @@ jobs:
           echo "alloydb_instance=$(terraform output -raw alloydb_instance_name)" >> $GITHUB_OUTPUT
 
       - name: Upload Terraform outputs
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: terraform-outputs
           path: deployment/gcp/terraform/terraform-outputs.json
@@ -259,7 +259,7 @@ jobs:
           fi
 
       - name: Download Terraform outputs
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: terraform-outputs
           path: /tmp/
@@ -340,7 +340,7 @@ jobs:
             -v
 
       - name: Upload test results
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         if: always()
         with:
           name: mcp-test-results
