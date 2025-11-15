@@ -105,7 +105,7 @@ class ProjectSettings:
         try:
             if base_path:
                 # Use hash of project path as unique identifier
-                path_hash = hashlib.md5(base_path.encode()).hexdigest()
+                path_hash = hashlib.md5(base_path.encode(), usedforsecurity=False).hexdigest()
                 self.settings_path = os.path.join(temp_base_dir, path_hash)
             else:
                 # If no base path provided, use a default directory
@@ -116,13 +116,19 @@ class ProjectSettings:
             # If error occurs, use .code_indexer in project or home directory as fallback
             if base_path and os.path.exists(base_path):
                 fallback_dir = os.path.join(
-                    base_path, ".code_indexer", hashlib.md5(base_path.encode()).hexdigest()
+                    base_path,
+                    ".code_indexer",
+                    hashlib.md5(base_path.encode(), usedforsecurity=False).hexdigest(),
                 )
             else:
                 fallback_dir = os.path.join(
                     os.path.expanduser("~"),
                     ".code_indexer",
-                    "default" if not base_path else hashlib.md5(base_path.encode()).hexdigest(),
+                    (
+                        "default"
+                        if not base_path
+                        else hashlib.md5(base_path.encode(), usedforsecurity=False).hexdigest()
+                    ),
                 )
 
             self.settings_path = fallback_dir
@@ -166,7 +172,7 @@ class ProjectSettings:
                 fallback_dir = os.path.join(
                     self.base_path,
                     ".code_indexer",
-                    hashlib.md5(self.base_path.encode()).hexdigest(),
+                    hashlib.md5(self.base_path.encode(), usedforsecurity=False).hexdigest(),
                 )
             else:
                 fallback_dir = os.path.join(
@@ -175,7 +181,7 @@ class ProjectSettings:
                     (
                         "default"
                         if not self.base_path
-                        else hashlib.md5(self.base_path.encode()).hexdigest()
+                        else hashlib.md5(self.base_path.encode(), usedforsecurity=False).hexdigest()
                     ),
                 )
 

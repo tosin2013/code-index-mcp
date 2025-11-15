@@ -48,7 +48,9 @@ class ShallowIndexManager:
                 self.project_path = project_path
                 self.index_builder = JSONIndexBuilder(project_path)
 
-                project_hash = hashlib.md5(project_path.encode()).hexdigest()[:12]
+                project_hash = hashlib.md5(
+                    project_path.encode(), usedforsecurity=False
+                ).hexdigest()[:12]
                 self.temp_dir = os.path.join(tempfile.gettempdir(), SETTINGS_DIR, project_hash)
                 os.makedirs(self.temp_dir, exist_ok=True)
                 self.index_path = os.path.join(self.temp_dir, INDEX_FILE_SHALLOW)

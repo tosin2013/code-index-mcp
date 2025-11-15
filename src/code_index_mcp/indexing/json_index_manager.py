@@ -57,7 +57,9 @@ class JSONIndexManager:
                 self.index_builder = JSONIndexBuilder(project_path)
 
                 # Create temp directory for index storage
-                project_hash = hashlib.md5(project_path.encode()).hexdigest()[:12]
+                project_hash = hashlib.md5(
+                    project_path.encode(), usedforsecurity=False
+                ).hexdigest()[:12]
                 self.temp_dir = os.path.join(tempfile.gettempdir(), SETTINGS_DIR, project_hash)
                 os.makedirs(self.temp_dir, exist_ok=True)
 
@@ -395,7 +397,9 @@ class JSONIndexManager:
 
             # If expected project path provided, try to find its cache
             if expected_project_path:
-                project_hash = hashlib.md5(expected_project_path.encode()).hexdigest()[:12]
+                project_hash = hashlib.md5(
+                    expected_project_path.encode(), usedforsecurity=False
+                ).hexdigest()[:12]
                 temp_dir = os.path.join(tempfile.gettempdir(), SETTINGS_DIR, project_hash)
                 index_path = os.path.join(temp_dir, INDEX_FILE)
 
