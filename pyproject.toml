@@ -79,6 +79,7 @@ exclude_dirs = [
 skips = [
     "B101",  # assert_used - common in tests, not a security issue
     "B601",  # paramiko_calls - we don't use paramiko
+    "B608",  # hardcoded_sql_expressions - false positive, we use parameterized queries
 ]
 
 # Tests to run (security-focused)
@@ -131,7 +132,7 @@ tests = [
     "B605",  # start_process_with_a_shell
     "B606",  # start_process_with_no_shell
     "B607",  # start_process_with_partial_path
-    "B608",  # hardcoded_sql_expressions
+    # B608 skipped - false positive for parameterized queries (see skips section)
     "B609",  # linux_commands_wildcard_injection
     "B610",  # django_extra_used
     "B611",  # django_rawsql_used

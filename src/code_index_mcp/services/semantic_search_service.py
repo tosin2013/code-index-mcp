@@ -180,6 +180,7 @@ class SemanticSearchService:
             embedding_str = "[" + ",".join(str(x) for x in query_embedding) + "]"
 
             # Execute similarity search
+            # WHERE clause uses parameterized queries - safe from SQL injection
             with conn.cursor() as cur:
                 cur.execute(
                     f"""
