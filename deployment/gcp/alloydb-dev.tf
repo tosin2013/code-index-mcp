@@ -51,6 +51,13 @@ resource "google_compute_subnetwork" "alloydb_subnet" {
   ip_cidr_range = "10.0.0.0/24"
   region        = var.region
   network       = google_compute_network.alloydb_network.id
+
+  # Enable VPC Flow Logs for security monitoring (ADR 0011)
+  log_config {
+    aggregation_interval = "INTERVAL_5_SEC"
+    flow_sampling        = 0.5
+    metadata             = "INCLUDE_ALL_METADATA"
+  }
 }
 
 # Private Service Connection for AlloyDB

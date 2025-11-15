@@ -8,11 +8,16 @@
 #   gcloud run jobs execute code-index-cleanup-dev --region=us-east1
 #
 # ADR Reference: ADR 0002 - Automatic Resource Cleanup
+#
+# Note: This is a Cloud Run Job, not standard Kubernetes
+# - Cloud Run doesn't use namespaces; isolation is at the project/region level
+# - KSV110 warning about "default namespace" is not applicable to Cloud Run
 
 apiVersion: run.googleapis.com/v1
 kind: Job
 metadata:
   name: code-index-cleanup-dev
+  # Cloud Run Jobs don't support namespaces - isolation is via GCP project/region
   labels:
     app: code-index-mcp
     component: cleanup
@@ -55,6 +60,16 @@ spec:
             env:
             - name: GCS_BUCKET_NAME
               value: code-index-projects-tosinscloud
+
+            # Security context - run as non-root user
+            securityContext:
+              runAsNonRoot: true
+              runAsUser: 1000
+              allowPrivilegeEscalation: false
+              capabilities:
+                drop:
+                  - ALL
+              readOnlyRootFilesystem: false  # Needed for temp files during cleanup
 
             # Resource limits
             resources:
