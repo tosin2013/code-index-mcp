@@ -1,0 +1,100 @@
+# Dependabot configuration for Code Index MCP
+# Reference: ADR 0011 - CI/CD Pipeline and Security Architecture
+# https://docs.github.com/en/code-security/dependabot/dependabot-version-updates
+
+version: 2
+updates:
+  # Python dependencies (pyproject.toml)
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "America/New_York"
+
+    # Security-focused configuration
+    open-pull-requests-limit: 10
+
+    # Only update to secure versions
+    versioning-strategy: increase-if-necessary
+
+    # Labels for easy filtering
+    labels:
+      - "dependencies"
+      - "security"
+      - "automated"
+
+    # Commit message prefix
+    commit-message:
+      prefix: "chore(deps)"
+      prefix-development: "chore(deps-dev)"
+      include: "scope"
+
+    # Group updates by type to reduce PR noise
+    groups:
+      security-patches:
+        patterns:
+          - "*"
+        update-types:
+          - "patch"
+          - "minor"
+
+      # Separate group for major updates (require manual review)
+      major-updates:
+        patterns:
+          - "*"
+        update-types:
+          - "major"
+
+    # Ignore specific dependencies if needed
+    ignore:
+      # Example: Ignore major version updates for critical packages
+      # - dependency-name: "mcp"
+      #   update-types: ["version-update:semver-major"]
+
+    # Reviewers (optional - add team members)
+    # reviewers:
+    #   - "tosin2013"
+
+    # Assignees (optional)
+    # assignees:
+    #   - "tosin2013"
+
+  # GitHub Actions workflows
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "America/New_York"
+
+    labels:
+      - "dependencies"
+      - "github-actions"
+      - "automated"
+
+    commit-message:
+      prefix: "chore(actions)"
+
+  # Terraform (if you add infrastructure as code)
+  - package-ecosystem: "terraform"
+    directory: "/deployment/gcp"
+    schedule:
+      interval: "weekly"
+
+    labels:
+      - "dependencies"
+      - "terraform"
+      - "infrastructure"
+
+    commit-message:
+      prefix: "chore(terraform)"
+
+# Notes:
+# 1. Security updates will be created automatically as PRs
+# 2. All PRs trigger security-scan.yml workflow
+# 3. Only merge if Trivy/Bandit/Gitleaks pass
+# 4. Review major version updates manually
+# 5. Weekly schedule reduces PR noise
