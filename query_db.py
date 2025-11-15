@@ -11,13 +11,13 @@ try:
     import psycopg2
 except ImportError:
     print("Installing psycopg2-binary...")
-    os.system("pip install psycopg2-binary")
+    os.system("pip install psycopg2-binary")  # nosec
     import psycopg2
 
 # Connection string
 conn_string = os.getenv(
     "ALLOYDB_CONNECTION_STRING",
-    "postgresql://code_index_admin:***REMOVED***@10.175.0.2:5432/postgres",
+    "postgresql://code_index_admin:YOUR_PASSWORD_HERE@ALLOYDB_IP:5432/postgres",
 )
 
 print("=" * 60)

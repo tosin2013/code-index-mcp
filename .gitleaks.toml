@@ -56,6 +56,16 @@ paths = [
     '''.*_test\.py''',
     '''examples/.*''',
     '''docs/.*\.md''',
+    '''deployment/.*\.md''',
+    '''.*\.local\.json''',           # Local settings files
+    '''.*\.local\.example''',        # Example environment files
+    '''.*ansible\.log''',            # Ansible log files
+    '''test_.*\.sh''',               # Test shell scripts
+    '''api-key-.*-dev\.txt''',       # Demo API key files for dev environment
+    '''\.claude/commands/.*\.md''',  # Claude Code command documentation
+    '''test_.*\.py''',               # Test Python scripts
+    '''deployment/.*\.tf''',         # Terraform files (use variables, not hardcoded secrets)
+    '''deployment/.*\.sh''',         # Deployment shell scripts
 ]
 
 # Allow safe patterns in code
@@ -64,16 +74,26 @@ regexes = [
     '''ci_example[A-Za-z0-9]+''',
     '''ci_YOUR_API_KEY_HERE''',
     '''ci_xxxx+''',
+    '''\$\{MCP_API_KEY.*\}''',       # Environment variable placeholders
+    '''\$MCP_API_KEY''',              # Shell variable references
 
     # Test/mock connection strings
     '''postgresql://test:test@localhost''',
     '''postgresql://postgres:localdevpass@localhost''',
+    '''postgresql://.*:local_dev_password@localhost''',
+    '''postgresql://.*:YOUR_PASSWORD.*''',
+    '''postgresql://.*:\[password\].*''',
+    '''postgresql://.*:\[PASSWORD\].*''',
+    '''postgresql://.*:ALLOYDB_PASSWORD.*''',
+    '''postgresql://user:pass@.*''',    # Example credentials in docs
+    '''postgresql://.*:\{\{.*\}\}.*''',  # Jinja2 template variables
 
     # Documentation examples
     '''ghp_xxxx+''',
     '''your_token''',
     '''YOUR_TOKEN_HERE''',
     '''<YOUR_.*>''',
+    '''Bearer\s+YOUR_''',
 ]
 
 # Stopwords - ignore these

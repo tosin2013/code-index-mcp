@@ -21,7 +21,7 @@ all:
 
     # Authentication
     # Get API key from: ansible-playbook utilities.yml -i inventory/dev.yml -e "operation=generate_api_key user_id=test-user"
-    api_key: "{{ lookup('ansible.builtin.env', 'MCP_API_KEY_DEV') | default('***REMOVED***', true) }}"
+    api_key: "{{ lookup('ansible.builtin.env', 'MCP_API_KEY_DEV') | default('${MCP_API_KEY_TEST}', true) }}"
 
     # Feature Flags
     with_alloydb: true  # AlloyDB is deployed in dev environment

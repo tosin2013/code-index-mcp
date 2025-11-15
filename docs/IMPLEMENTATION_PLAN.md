@@ -4,21 +4,22 @@ This document provides a comprehensive roadmap for implementing all features des
 
 ## 📊 Implementation Status
 
-**Last Updated**: October 29, 2025
+**Last Updated**: November 14, 2025
 
 | Phase | Status | Progress | Timeline |
 |-------|--------|----------|----------|
 | **Phase 1: Foundation** | ✅ Complete | 100% | Completed |
 | **Phase 2A: GCP HTTP Deploy** | ✅ Complete | 100% | **COMPLETED October 25, 2025** 🎉 |
-| **Phase 2A.1: Ansible Validation** | 🔥 **PRIORITY** | 0% | **Started October 29, 2025** |
-| **Phase 2A.2: Third-Party Testing** | 🔥 **PRIORITY** | 0% | After 2A.1 |
-| **Phase 2B: AWS HTTP Deploy** | 📋 Planned | 0% | After Phase 2A validation |
-| **Phase 2C: OpenShift HTTP Deploy** | 📋 Planned | 0% | After Phase 2A validation |
+| **Phase 2A.1: Ansible Validation** | ✅ Complete | 100% | Completed October 29, 2025 |
+| **Phase 2A.2: Third-Party Testing** | 📋 Planned | 0% | Future |
+| **Phase 2B: AWS HTTP Deploy** | 📋 Planned | 0% | After CI/CD |
+| **Phase 2C: OpenShift HTTP Deploy** | 📋 Planned | 0% | After CI/CD |
 | **Phase 3A: GCP Semantic Search** | 🚧 In Progress | **83%** | Started October 25, 2025 |
+| **Phase 4: CI/CD & Security (GCP)** | 🔥 **PRIORITY** | **10%** | **Started November 14, 2025** |
 | **Phase 3B: AWS Semantic Search** | 📋 Planned | 0% | After Phase 2B |
 | **Phase 3C: OpenShift Semantic Search** | 📋 Planned | 0% | After Phase 2C |
 
-**Current Focus**: 🔥 **PRIORITY: Phase 2A Validation** - Ansible Deployment + Third-Party Testing
+**Current Focus**: 🔥 **PRIORITY: Phase 4 - CI/CD Pipeline** - GitHub Actions for Automated GCP Deployment + Security Scanning
 
 **Recent Completions**:
 - ✅ October 25, 2025: **Task 10 Complete** - Semantic Search Tool + MCP Integration
@@ -719,6 +720,205 @@ MCP_TRANSPORT=http PORT=8080 uv run code-index-mcp
     - [ ] Security review (RLS, API key rotation)
     - [ ] Update documentation and user guides
     - **Prerequisites**: AlloyDB cluster + Tasks 11 complete
+
+---
+
+### Phase 4: CI/CD Pipeline and Security Architecture (GCP Focus)
+
+**Status**: 🔥 **IN PROGRESS** (10% complete)
+**Started**: November 14, 2025
+**ADR Reference**: [ADR 0011 - CI/CD Pipeline and Security Architecture](adrs/0011-cicd-pipeline-and-security-architecture.md)
+**Objective**: Implement automated, secure deployments to GCP with multi-layer security scanning
+
+**Timeline**: 2-3 weeks
+
+**Prerequisites**:
+- ✅ Phase 2A (GCP HTTP) complete
+- ✅ Ansible deployment automation (ADR 0009) complete
+- ✅ MCP testing framework (ADR 0010) complete
+- ✅ CI/CD architecture documented (ADR 0011)
+
+**Week 1: Security Scanning Pipeline** (November 14-20, 2025)
+
+13. **Security Configuration** (3 days) - 🔥 **CURRENT**
+    - [ ] Create `.github/workflows/security-scan.yml`
+      - [ ] Gitleaks job for secret detection
+      - [ ] Trivy job for vulnerability scanning
+      - [ ] Bandit job for Python security linting
+      - [ ] Run on every push and pull request
+    - [ ] Create `.gitleaks.toml` configuration
+      - [ ] API key detection patterns
+      - [ ] GCP/GitHub token patterns
+      - [ ] Allowlist for docs/ and tests/
+    - [ ] Create `trivy.yaml` configuration
+      - [ ] Dependency scanning (requirements.txt, pyproject.toml)
+      - [ ] Docker image scanning
+      - [ ] CRITICAL/HIGH severity thresholds
+    - [ ] Configure Bandit in `pyproject.toml`
+      - [ ] Security checks for SQL injection, hardcoded passwords
+      - [ ] Skip assert_used in tests
+    - [ ] Test security scanning with intentional violations
+    - **Reference**: [ADR 0011 - Security Features](adrs/0011-cicd-pipeline-and-security-architecture.md#security-features)
+    - **Success Criteria**: All security scans run on PR, block merges if violations found
+
+14. **OIDC Workload Identity Setup** (2 days) - ⏳ **NEXT**
+    - [ ] Create Workload Identity Pool in GCP
+      ```bash
+      gcloud iam workload-identity-pools create "github-pool" \
+        --location="global" \
+        --project="$GCP_PROJECT_ID"
+      ```
+    - [ ] Create Workload Identity Provider
+      ```bash
+      gcloud iam workload-identity-pools providers create-oidc "github-provider" \
+        --workload-identity-pool="github-pool" \
+        --issuer-uri="https://token.actions.githubusercontent.com" \
+        --attribute-mapping="google.subject=assertion.sub,attribute.repository=assertion.repository" \
+        --location="global"
+      ```
+    - [ ] Grant permissions to service account
+    - [ ] Configure GitHub Secrets:
+      - [ ] `GCP_WORKLOAD_IDENTITY_PROVIDER`
+      - [ ] `GCP_SERVICE_ACCOUNT`
+      - [ ] `GCP_PROJECT_ID`
+      - [ ] `GCP_REGION`
+      - [ ] `CLOUDRUN_SERVICE_URL`
+    - [ ] Test keyless authentication
+    - **Reference**: [ADR 0011 - OIDC Workload Identity](adrs/0011-cicd-pipeline-and-security-architecture.md#4-oidc-workload-identity-keyless-authentication)
+    - **Success Criteria**: GitHub Actions can authenticate to GCP without service account keys
+
+**Week 2: Deployment Pipeline** (November 21-27, 2025)
+
+15. **GCP Deployment Workflow** (4 days) - 📋 **PLANNED**
+    - [ ] Create `.github/workflows/deploy-gcp.yml`
+      - [ ] Multi-stage pipeline:
+        1. Security scans (reuse security-scan.yml)
+        2. Run unit and integration tests
+        3. Build Docker image with commit SHA tag
+        4. Push to Artifact Registry
+        5. Deploy infrastructure with Terraform
+        6. Deploy application with Ansible
+        7. Run MCP validation tests (ADR 0010)
+      - [ ] Environment input (dev/staging/prod)
+      - [ ] Manual trigger support
+      - [ ] Auto-trigger on push to main (staging only)
+    - [ ] Integrate Terraform deployment
+      - [ ] `terraform init` with backend config
+      - [ ] `terraform plan` for review
+      - [ ] `terraform apply` with auto-approve
+    - [ ] Integrate Ansible deployment
+      - [ ] Call `deploy.yml` playbook
+      - [ ] Pass container image tag
+      - [ ] Environment-specific inventory
+    - [ ] Add MCP testing verification
+      - [ ] Run `test-cloud.yml` after deployment
+      - [ ] Fail pipeline if MCP tools don't work
+    - [ ] Test deployment to dev environment
+    - **Reference**: [ADR 0011 - GCP Deployment Workflow](adrs/0011-cicd-pipeline-and-security-architecture.md#2-gcp-deployment-workflow-deploy-gcpyml)
+    - **Success Criteria**: Push to main triggers automated deployment to dev, all stages pass
+
+16. **Safe Deletion Workflow** (2 days) - 📋 **PLANNED**
+    - [ ] Create `.github/workflows/delete-gcp.yml`
+      - [ ] Manual trigger only (workflow_dispatch)
+      - [ ] Environment input with restrictions (dev/staging only)
+      - [ ] Confirmation input (must type "DELETE")
+      - [ ] Reason input (required)
+      - [ ] Validation job (confirm inputs)
+      - [ ] Manual approval gate (requires reviewer)
+      - [ ] Terraform destroy with audit logging
+    - [ ] Create interactive deletion script
+      - [ ] `deployment/gcp/scripts/delete-infrastructure.sh`
+      - [ ] Multiple confirmation prompts
+      - [ ] Resource inventory display
+      - [ ] Audit log file creation
+      - [ ] Countdown before execution
+    - [ ] Block production deletion
+    - [ ] Test deletion workflow on dev environment
+    - **Reference**: [ADR 0011 - Manual Deletion Workflow](adrs/0011-cicd-pipeline-and-security-architecture.md#3-manual-deletion-workflow-delete-gcpyml)
+    - **Success Criteria**: Cannot delete prod without override, all deletions logged
+
+**Week 3: Documentation & Testing** (November 28 - December 4, 2025)
+
+17. **CI/CD Documentation** (2 days) - 📋 **PLANNED**
+    - [ ] Create `docs/CI_CD_GUIDE.md`
+      - [ ] OIDC setup instructions
+      - [ ] GitHub Secrets configuration
+      - [ ] Workflow trigger documentation
+      - [ ] Troubleshooting common issues
+    - [ ] Update `deployment/gcp/README.md`
+      - [ ] Add CI/CD deployment section
+      - [ ] Reference GitHub Actions workflows
+      - [ ] Manual vs automated deployment
+    - [ ] Create `docs/SECURITY_SCANNING.md`
+      - [ ] Gitleaks configuration
+      - [ ] Trivy usage and thresholds
+      - [ ] Bandit security checks
+      - [ ] How to handle false positives
+    - **Success Criteria**: External developer can set up CI/CD following docs
+
+18. **End-to-End Pipeline Testing** (3 days) - 📋 **PLANNED**
+    - [ ] Test security scanning workflow
+      - [ ] Commit test secret (should be blocked)
+      - [ ] Add vulnerable dependency (should be blocked)
+      - [ ] Fix violations and verify merge
+    - [ ] Test deployment workflow
+      - [ ] Push to develop (should deploy to dev)
+      - [ ] Verify all pipeline stages
+      - [ ] Confirm service health
+      - [ ] Validate MCP tools working
+    - [ ] Test deletion workflow
+      - [ ] Attempt prod deletion (should be blocked)
+      - [ ] Delete dev environment successfully
+      - [ ] Verify audit logs created
+    - [ ] Load testing
+      - [ ] Multiple concurrent deployments
+      - [ ] Pipeline performance benchmarks
+    - **Success Criteria**: All workflows tested and working, no critical bugs
+
+**Implementation Status**:
+
+**✅ Completed**:
+- [x] ADR 0011 documentation (November 10, 2025)
+- [x] CI/CD architecture design
+- [x] GitHub Actions workflow designs
+- [x] Terraform + Ansible integration planned
+
+**⏳ In Progress**:
+- [ ] Task 13: Security configuration (0%)
+- [ ] Task 14: OIDC setup (0%)
+
+**📋 Pending**:
+- [ ] Task 15: Deployment workflow
+- [ ] Task 16: Deletion workflow
+- [ ] Task 17: Documentation
+- [ ] Task 18: End-to-end testing
+
+**Dependencies**:
+- Terraform infrastructure (ready)
+- Ansible playbooks (ready - ADR 0009)
+- MCP testing (ready - ADR 0010)
+- GCP project with APIs enabled
+
+**Success Criteria**:
+- [ ] Every push triggers security scans
+- [ ] CRITICAL/HIGH vulnerabilities block deployment
+- [ ] No secrets ever committed (Gitleaks pre-commit + CI)
+- [ ] Deployments fully automated via GitHub Actions
+- [ ] Manual approval required for deletion
+- [ ] Complete audit trail of all operations
+- [ ] OIDC authentication (no service account keys)
+- [ ] Pipeline completes in <15 minutes
+
+**Estimated Cost**:
+- GitHub Actions: $0 (free tier for public repos)
+- GCP resources: Existing (~$220/month for AlloyDB)
+- No additional costs for CI/CD
+
+**Next Steps**:
+1. **TODAY (Nov 14)**: Create security scanning workflow
+2. **This Week**: Complete security configuration + OIDC setup
+3. **Next Week**: Implement deployment workflow
+4. **Week 3**: Testing and documentation
 
 ---
 

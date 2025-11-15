@@ -4,7 +4,7 @@
 
 **Service URL:** `https://code-index-mcp-dev-cjshzpy4wq-ue.a.run.app`
 **SSE Endpoint:** `https://code-index-mcp-dev-cjshzpy4wq-ue.a.run.app/sse`
-**API Key:** `***REMOVED***`
+**API Key:** `${MCP_API_KEY_DEV}`
 
 ---
 
@@ -19,7 +19,7 @@
       "url": "https://code-index-mcp-dev-cjshzpy4wq-ue.a.run.app/sse",
       "transport": "sse",
       "headers": {
-        "X-API-Key": "***REMOVED***"
+        "X-API-Key": "${MCP_API_KEY_DEV}"
       }
     }
   }

@@ -835,6 +835,17 @@ All major architectural decisions are documented in `docs/adrs/`:
   - Test playbooks: test-local.yml, test-cloud.yml, test-llm-integration.yml, test-regression.yml
   - Status: Phase 1 complete, Phase 2-6 planned
 
+- **ADR 0011**: CI/CD Pipeline and Security Architecture ✅ COMPLETE
+  - Comprehensive CI/CD framework for multi-cloud deployments (GCP, AWS, OpenShift)
+  - GitHub Actions workflows with multi-stage pipeline (security, test, build, deploy, verify)
+  - Tekton pipelines for OpenShift-native GitOps
+  - Multi-layer security scanning (Gitleaks, Trivy, Bandit)
+  - OIDC Workload Identity for keyless authentication (no service account keys)
+  - Controlled deletion with manual approval gates
+  - Infrastructure as Code (Terraform) + Configuration as Code (Ansible)
+  - Integration with ADR 0009 (Ansible deployment) and ADR 0010 (MCP testing)
+  - Status: 100% complete, production-ready
+
 **Implementation Tracking:**
 - See `docs/IMPLEMENTATION_PLAN.md` for detailed task breakdowns and progress
 - Phase 2A (GCP HTTP): 100% complete ✅

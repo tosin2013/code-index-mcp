@@ -9,7 +9,7 @@
         transport: sse
         server_url: "https://code-index-mcp-dev-920209401641.us-east1.run.app/sse"
         server_headers:
-          Authorization: "Bearer ***REMOVED***"
+          Authorization: "Bearer ${MCP_API_KEY_TEST}"
       register: test_result
 
     - name: Display test result

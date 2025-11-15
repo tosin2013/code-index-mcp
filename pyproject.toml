@@ -92,7 +92,7 @@ tests = [
     "B306",  # mktemp_q
     "B307",  # eval usage
     "B308",  # mark_safe usage
-    "B309",  # httpsconnection
+    # B309 removed - deprecated test
     "B310",  # urllib_urlopen
     "B311",  # random usage
     "B312",  # telnetlib usage
@@ -124,7 +124,7 @@ tests = [
     "B505",  # weak_cryptographic_key
     "B506",  # yaml_load
     "B507",  # ssh_no_host_key_verification
-    "B601",  # paramiko_calls
+    # B601 skipped in skips section (paramiko not used)
     "B602",  # subprocess_popen_with_shell_equals_true
     "B603",  # subprocess_without_shell_equals_true
     "B604",  # any_other_function_with_shell_equals_true

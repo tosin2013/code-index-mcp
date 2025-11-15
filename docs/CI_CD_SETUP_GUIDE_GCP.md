@@ -173,10 +173,14 @@ gcloud iam workload-identity-pools create "github-actions-pool" \
   --display-name="GitHub Actions Pool"
 
 # Get the pool ID (save this for later)
-export WORKLOAD_IDENTITY_POOL_ID=$(gcloud iam workload-identity-pools describe "github-actions-pool" \
+export WORKLOAD_IDENTITY_POOL_ID=$(gcloud iam workload-identity-pools providers create-oidc "github-actions-provider" \
   --project="${GCP_PROJECT_ID}" \
   --location="global" \
-  --format="value(name)")
+  --workload-identity-pool="github-actions-pool" \
+  --display-name="GitHub Actions Provider" \
+  --attribute-mapping="google.subject=assertion.sub,attribute.actor=assertion.actor,attribute.repository=assertion.repository,attribute.repository_owner=assertion.repository_owner" \
+  --issuer-uri="https://token.actions.githubusercontent.com" \
+--attribute-condition="assertion.repository=='yout-username/code-index-mcp'")
 
 echo "Workload Identity Pool ID: $WORKLOAD_IDENTITY_POOL_ID"
 ```

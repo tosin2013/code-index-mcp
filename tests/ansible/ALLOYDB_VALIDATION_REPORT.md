@@ -216,7 +216,7 @@ env:
 **Test Command**:
 ```bash
 export CLOUDRUN_SERVICE_URL_DEV="https://code-index-mcp-dev-cjshzpy4wq-ue.a.run.app"
-export MCP_API_KEY_DEV="***REMOVED***"
+export MCP_API_KEY_DEV="${MCP_API_KEY_TEST}"
 cd tests/ansible
 ansible-playbook test-cloud.yml -i inventory/gcp-dev.yml
 ```
@@ -599,7 +599,7 @@ gcloud compute networks vpc-access connectors list --region=us-east1
 ```bash
 # Run MCP tests with AlloyDB
 export CLOUDRUN_SERVICE_URL_DEV="https://code-index-mcp-dev-cjshzpy4wq-ue.a.run.app"
-export MCP_API_KEY_DEV="***REMOVED***"
+export MCP_API_KEY_DEV="${MCP_API_KEY_TEST}"
 cd tests/ansible
 ansible-playbook test-cloud.yml -i inventory/gcp-dev.yml
 ```

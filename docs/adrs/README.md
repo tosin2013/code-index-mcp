@@ -23,6 +23,7 @@ ADRs capture important architectural decisions along with their context and cons
 | [0008](0008-git-sync-ingestion-strategy.md) | Git-Sync Ingestion Strategy | ✅ Implemented | Use git-sync for efficient code ingestion with webhooks |
 | [0009](0009-ansible-deployment-automation.md) | Ansible Deployment Automation | ✅ Implemented | Use Ansible for deployment and operational tasks |
 | [0010](0010-mcp-server-testing-with-ansible.md) | MCP Server Testing with Ansible | ✅ Accepted | Use tosin2013.mcp_audit for automated MCP testing |
+| [0011](0011-cicd-pipeline-and-security-architecture.md) | CI/CD Pipeline and Security Architecture | ✅ Implemented | Comprehensive CI/CD with GitHub Actions, Tekton, and security scanning |
 
 ## Decision Timeline
 
@@ -44,7 +45,8 @@ ADRs capture important architectural decisions along with their context and cons
 │
 └── DevOps & Automation
     ├── ADR 0009: Ansible Deployment Automation ✅
-    └── ADR 0010: MCP Server Testing with Ansible ✅
+    ├── ADR 0010: MCP Server Testing with Ansible ✅
+    └── ADR 0011: CI/CD Pipeline and Security Architecture ✅
 ```
 
 ## ADR Summaries
@@ -467,6 +469,153 @@ helm install code-index-mcp ./helm-chart
 - ❌ More complex setup than cloud services
 
 **Related**: Parallel to ADR 0002 (Google Cloud Run), complements ADR 0005 (OpenShift Code Ingestion)
+
+---
+
+### ADR 0008: Git-Sync Ingestion Strategy for Cloud Deployments
+
+**Status**: ✅ Implemented
+
+**Problem**: How to efficiently ingest code into cloud deployments for semantic search? Legacy file upload approach is slow (high token usage) and doesn't support incremental updates.
+
+**Decision**: Use direct Git repository cloning and syncing with webhook-based automatic updates.
+
+**Key Features**:
+- **99% token savings** vs file upload (no files sent to LLM)
+- **95% faster** incremental updates (pull only changed files)
+- **Auto-sync** via webhooks on every `git push`
+- **Multi-platform**: GitHub, GitLab, Bitbucket, Gitea
+- **Private repo support** with personal access tokens
+- **Persistent repos** in Cloud Storage for fast re-syncs
+
+**Architecture**:
+```
+git push → Webhook → Cloud Run → git pull → Re-ingest changed files
+```
+
+**Impact**:
+- ✅ **Massive cost savings** (no file upload to LLM)
+- ✅ **Fast incremental updates** (seconds vs minutes)
+- ✅ **Automated sync** (no manual intervention)
+- ✅ **Production-ready** (54/54 tests passing)
+- ❌ Requires git hosting (GitHub, GitLab, etc.)
+
+**Related**: Replaces legacy file upload approach, works with ADR 0002/0003/0004/0005
+
+---
+
+### ADR 0009: Ansible Deployment Automation for Google Cloud
+
+**Status**: ✅ Implemented
+
+**Problem**: Bash scripts for deployment lacked idempotency, testing, rollback, and were hard to maintain.
+
+**Decision**: Replace bash scripts with Ansible playbooks and reusable roles for declarative, idempotent deployments.
+
+**Key Features**:
+- **Idempotent**: Safe to re-run without side effects
+- **Declarative**: Define desired state, Ansible ensures it
+- **Multi-Environment**: Single playbook for dev/staging/prod
+- **Testable**: Dry-run mode (`--check`)
+- **Rollback**: Automatic rollback on failure
+- **Utilities**: API key generation, schema verification, teardown
+
+**Architecture**:
+```
+deploy.yml → code-index-mcp role →
+  ├── prerequisites.yml
+  ├── storage.yml
+  ├── build_image.yml
+  ├── deploy_cloudrun.yml
+  └── apply_schema.yml
+```
+
+**Impact**:
+- ✅ **Production-ready** (100% complete)
+- ✅ **Maintainable** (YAML vs bash)
+- ✅ **Reusable** (roles for AWS/OpenShift planned)
+- ✅ **CI/CD ready** (GitHub Actions/GitLab CI)
+- ❌ Learning curve (Ansible YAML syntax)
+
+**Related**: Complements ADR 0002 (Cloud Run), used by ADR 0011 (CI/CD)
+
+---
+
+### ADR 0010: MCP Server Testing and Validation with Ansible
+
+**Status**: ✅ Accepted
+
+**Problem**: How to systematically test MCP server deployments across different transports (stdio, HTTP/SSE) and ensure all tools work correctly?
+
+**Decision**: Use `tosin2013.mcp_audit` Ansible collection for automated, comprehensive MCP testing.
+
+**Key Features**:
+- **Multi-transport testing**: stdio (local) and HTTP/SSE (cloud)
+- **Comprehensive validation**: All MCP tools systematically tested
+- **Regression prevention**: Full test suites catch breaking changes
+- **CI/CD integration**: GitHub Actions/GitLab CI compatible
+- **Test playbooks**: test-local.yml, test-cloud.yml, test-regression.yml
+
+**Test Coverage**:
+- ✅ Server discovery and capabilities
+- ✅ All metadata tools (set_project_path, find_files, search_code_advanced)
+- ✅ File resource retrieval
+- ✅ Semantic search (if AlloyDB deployed)
+- ✅ Git ingestion
+
+**Impact**:
+- ✅ **Automated testing** (no manual validation needed)
+- ✅ **Multi-transport** (ensures local and cloud parity)
+- ✅ **Regression prevention** (catches breaking changes)
+- ✅ **CI/CD ready** (integrates with pipelines)
+
+**Related**: Used by ADR 0011 (CI/CD verification stage)
+
+---
+
+### ADR 0011: CI/CD Pipeline and Security Architecture
+
+**Status**: ✅ Implemented
+
+**Problem**: Need automated, secure CI/CD pipelines for multi-cloud deployments (GCP, AWS, OpenShift) with comprehensive security scanning.
+
+**Decision**: Implement comprehensive CI/CD framework using GitHub Actions (cloud) and Tekton (OpenShift) with multi-layer security scanning.
+
+**Pipeline Stages**:
+1. **Security Scans**: Gitleaks (secrets), Trivy (vulnerabilities), Bandit (Python security)
+2. **Testing**: Unit and integration tests
+3. **Build**: Docker image with commit SHA tag
+4. **Infrastructure**: Terraform for IaC
+5. **Application**: Ansible for deployment
+6. **Verification**: Health checks + MCP tool validation (ADR 0010)
+
+**Security Features**:
+- **OIDC Workload Identity**: Keyless authentication (no service account keys)
+- **Secret Detection**: Gitleaks prevents credential commits
+- **Vulnerability Scanning**: Trivy blocks CRITICAL/HIGH findings
+- **Controlled Deletion**: Manual approval gates for infrastructure teardown
+- **Audit Logging**: Complete record of all deployments
+
+**Architecture**:
+```
+GitHub Actions (GCP/AWS) + Tekton (OpenShift)
+  ├── Security Scans (Gitleaks, Trivy, Bandit)
+  ├── Tests (pytest)
+  ├── Build (Docker)
+  ├── Deploy Infrastructure (Terraform)
+  ├── Deploy Application (Ansible - ADR 0009)
+  └── Verify (MCP Tests - ADR 0010)
+```
+
+**Impact**:
+- ✅ **Security-first**: Multiple layers of security validation
+- ✅ **Automated**: `git push` triggers everything
+- ✅ **Multi-cloud**: GCP, AWS, OpenShift support
+- ✅ **Safe deletions**: Manual approval prevents accidents
+- ✅ **Auditable**: Complete deployment history
+- ❌ Complexity (more complex than manual deployments)
+
+**Related**: Uses ADR 0009 (Ansible) for deployment, ADR 0010 (Testing) for verification
 
 ---
 

@@ -102,7 +102,7 @@ gcloud iam service-accounts describe \
 **Command**:
 ```bash
 export CLOUDRUN_SERVICE_URL="https://code-index-mcp-test-cjshzpy4wq-ue.a.run.app"
-export MCP_API_KEY_TEST="***REMOVED***"
+export MCP_API_KEY_TEST="${MCP_API_KEY_TEST}"
 ansible-playbook test-cloud.yml -i inventory/gcp-test.yml
 ```
 
@@ -125,7 +125,7 @@ ansible-playbook test-cloud.yml -i inventory/gcp-test.yml
 **Command**:
 ```bash
 export CLOUDRUN_SERVICE_URL="https://code-index-mcp-test-cjshzpy4wq-ue.a.run.app"
-export MCP_API_KEY_TEST="***REMOVED***"
+export MCP_API_KEY_TEST="${MCP_API_KEY_TEST}"
 ansible-playbook test-claude-desktop-readiness.yml -i inventory/gcp-test.yml
 ```
 
@@ -395,7 +395,7 @@ ansible-playbook deploy.yml -i inventory/test.yml -e "confirm_deployment=yes"
 ### Run MCP Tests
 ```bash
 export CLOUDRUN_SERVICE_URL="https://code-index-mcp-test-cjshzpy4wq-ue.a.run.app"
-export MCP_API_KEY_TEST="***REMOVED***"
+export MCP_API_KEY_TEST="${MCP_API_KEY_TEST}"
 cd tests/ansible
 ansible-playbook test-cloud.yml -i inventory/gcp-test.yml
 ```

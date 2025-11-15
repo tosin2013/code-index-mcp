@@ -18,7 +18,7 @@ psycopg2.OperationalError: invalid integer value "t<H@10.175.0.2:5432" for conne
 ```
 
 **Original password**: `***REMOVED***`
-**Broken connection string**: `postgresql://code_index_admin:***REMOVED***@10.175.0.2:5432/postgres`
+**Broken connection string**: `postgresql://code_index_admin:YOUR_PASSWORD@10.175.0.2:5432/postgres`
 
 **What went wrong**:
 - The `@` in the password was interpreted as the user/host separator
@@ -108,7 +108,7 @@ postgresql://code_index_admin:u0kJ6MZX%40eAzCuw%28Hr1-JkogKiDB%3At%3CH@10.175.0.
 
 **Bad** (not encoded):
 ```
-postgresql://code_index_admin:***REMOVED***@10.175.0.2:5432/postgres
+postgresql://code_index_admin:YOUR_PASSWORD@10.175.0.2:5432/postgres
 ```
 
 ### 2. Test Connection

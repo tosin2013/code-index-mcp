@@ -1,4 +1,4 @@
-API_KEY=***REMOVED***
+API_KEY=${MCP_API_KEY_DEV}
 SECRET_NAME=code-index-api-key-demo-user-dev
 USER_ID=demo-user
 ENVIRONMENT=dev
@@ -11,7 +11,7 @@ PROJECT_ID=tosinscloud
       "url": "https://code-index-mcp-dev-*.run.app/sse",
       "transport": "sse",
       "headers": {
-        "X-API-Key": "***REMOVED***"
+        "X-API-Key": "${MCP_API_KEY_DEV}"
       }
     }
   }
