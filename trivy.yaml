@@ -52,7 +52,8 @@ vulnerability:
   type: os,library
 
 # Exit code configuration
-exit-code: 1  # Exit with error if vulnerabilities found
+# Disabled: Let GitHub Actions summary job handle failure detection
+# exit-code: 1
 
 # Timeout for scanning
 timeout: 10m
