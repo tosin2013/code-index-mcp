@@ -77,7 +77,12 @@ jobs:
     name: Build Container Image
     runs-on: ubuntu-latest
     needs: [security, test]
-    if: always() && (needs.security.result == 'success') && (needs.test.result == 'success' || inputs.skip_tests)
+    # Only run on main/develop branches or manual dispatch (requires GCP secrets)
+    if: |
+      always() &&
+      (needs.security.result == 'success') &&
+      (needs.test.result == 'success' || inputs.skip_tests) &&
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop' || github.event_name == 'workflow_dispatch')
     outputs:
       image_tag: ${{ steps.meta.outputs.tags }}
       image_digest: ${{ steps.build.outputs.digest }}
@@ -151,6 +156,8 @@ jobs:
     name: Deploy Infrastructure (Terraform)
     runs-on: ubuntu-latest
     needs: build
+    # Inherits conditional from build job
+    if: always() && needs.build.result == 'success'
     environment:
       name: ${{ needs.build.outputs.environment || 'dev' }}
     steps:
@@ -222,6 +229,8 @@ jobs:
     name: Deploy Application (Ansible)
     runs-on: ubuntu-latest
     needs: [build, deploy-infrastructure]
+    # Inherits conditional from build job
+    if: always() && needs.build.result == 'success' && needs.deploy-infrastructure.result == 'success'
     environment:
       name: ${{ needs.build.outputs.environment || 'dev' }}
     steps:
@@ -302,6 +311,8 @@ jobs:
     name: Verify Deployment (MCP Tests)
     runs-on: ubuntu-latest
     needs: [deploy-application]
+    # Inherits conditional from build job
+    if: always() && needs.deploy-application.result == 'success'
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -350,7 +361,7 @@ jobs:
   deployment-complete:
     name: Deployment Complete
     runs-on: ubuntu-latest
-    needs: [verify]
+    needs: [security, test, build, verify]
     if: always()
     steps:
       - name: Check deployment status
@@ -358,7 +369,16 @@ jobs:
           echo "## 🚀 Deployment Status" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
-          if [ "${{ needs.verify.result }}" == "success" ]; then
+          # Check if deployment was skipped (not running on main/develop)
+          if [ "${{ needs.build.result }}" == "skipped" ]; then
+            echo "ℹ️ **Deployment skipped**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "GCP deployment only runs on \`main\` or \`develop\` branches." >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "✅ Security scans passed" >> $GITHUB_STEP_SUMMARY
+            echo "✅ Tests passed (or skipped)" >> $GITHUB_STEP_SUMMARY
+            exit 0
+          elif [ "${{ needs.verify.result }}" == "success" ]; then
             echo "✅ **Deployment successful!**" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "All stages completed successfully:" >> $GITHUB_STEP_SUMMARY
