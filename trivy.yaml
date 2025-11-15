@@ -1,0 +1,58 @@
+# Trivy configuration for Code Index MCP
+# Reference: ADR 0011 - CI/CD Pipeline and Security Architecture
+# https://aquasecurity.github.io/trivy/
+
+# Scan configuration
+scan:
+  # Security checks to perform
+  security-checks:
+    - vuln      # Vulnerabilities in dependencies
+    - config    # Misconfiguration in IaC files
+
+  # Severity levels to report
+  severity:
+    - CRITICAL
+    - HIGH
+    - MEDIUM
+
+  # Directories to skip
+  skip-dirs:
+    - tests/
+    - test/
+    - docs/
+    - .git/
+    - .github/
+    - __pycache__/
+    - "*.egg-info/"
+    - .venv/
+    - venv/
+    - node_modules/
+
+  # Files to skip
+  skip-files:
+    - "*.md"
+    - "*.txt"
+    - ".gitignore"
+
+  # Don't skip unfixed vulnerabilities
+  ignore-unfixed: false
+
+# Cache configuration
+cache:
+  backend: fs
+  dir: .trivy/
+
+# Output configuration
+output:
+  format: table
+  severity: CRITICAL,HIGH
+
+# Vulnerability database
+vulnerability:
+  type: os,library
+
+# Exit code configuration
+exit-code: 1  # Exit with error if vulnerabilities found
+
+# Timeout for scanning
+timeout: 10m
