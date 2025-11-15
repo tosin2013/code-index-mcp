@@ -1,0 +1,10 @@
+# Trivy Ignore File
+# Reference: ADR 0011 - CI/CD Pipeline and Security Architecture
+# https://aquasecurity.github.io/trivy/latest/docs/configuration/filtering/
+
+# Cloud Run Job Security Context False Positive
+# KSV-0118: Cloud Run uses run.googleapis.com/v1 API with its own security model
+# The check expects standard Kubernetes batch/v1 format
+# Security contexts ARE configured (both pod-level and container-level)
+# but Trivy's K8s scanner doesn't recognize Cloud Run's YAML format
+AVD-KSV-0118
