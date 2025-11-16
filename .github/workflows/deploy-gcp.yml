@@ -207,6 +207,11 @@ jobs:
           pip install ${{ env.ANSIBLE_VERSION }}
           ansible-galaxy collection install -r deployment/gcp/ansible/requirements.yml
 
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+
       - name: Determine environment
         id: env
         run: |
