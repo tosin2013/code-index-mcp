@@ -531,7 +531,7 @@ ansible-playbook deploy.yml -i inventory/dev.yml
 - [x] Git repository
 - [x] Docker for local testing
 - [x] gcloud CLI authenticated
-- [x] Ansible installed (>=2.14)
+- [x] Ansible installed (>=2.16.14, LTS stable)
 - [x] Terraform installed (>=1.5.0)
 
 ### Security Requirements
