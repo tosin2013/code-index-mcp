@@ -6,7 +6,7 @@ collections:
     version: ">=1.0.0"
 
   - name: community.general
-    version: ">=7.0.0"  # Required for yaml callback plugin
+    version: ">=7.0.0,<12.0.0"  # Pin to 11.x for ansible-core 2.14 compatibility
 
   - name: community.docker
     version: ">=3.0.0"
