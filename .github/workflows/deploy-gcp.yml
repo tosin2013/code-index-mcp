@@ -31,7 +31,7 @@ permissions:
 env:
   PYTHON_VERSION: '3.11'
   TERRAFORM_VERSION: '1.5.0'
-  ANSIBLE_VERSION: '2.14'
+  ANSIBLE_VERSION: 'ansible-core==2.14.17'  # Use ansible-core (2.14 series ended at 2.14.17)
   GCP_REGION: 'us-east1'
 
 jobs:
@@ -194,7 +194,7 @@ jobs:
 
       - name: Install Ansible
         run: |
-          pip install ansible==${{ env.ANSIBLE_VERSION }}
+          pip install ${{ env.ANSIBLE_VERSION }}
           ansible-galaxy collection install -r deployment/gcp/ansible/requirements.yml
 
       - name: Determine environment
@@ -259,7 +259,7 @@ jobs:
 
       - name: Install Ansible and MCP Audit Collection
         run: |
-          pip install ansible==${{ env.ANSIBLE_VERSION }}
+          pip install ${{ env.ANSIBLE_VERSION }}
           ansible-galaxy collection install tosin2013.mcp_audit
 
       - name: Determine environment
