@@ -125,7 +125,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/code-index-mcp/server
+          images: ${{ env.GCP_REGION }}-docker.pkg.dev/${{ secrets.PROJECT_ID || secrets.GCP_PROJECT_ID }}/code-index-mcp/server
           tags: |
             type=ref,event=branch
             type=ref,event=pr
@@ -199,14 +199,14 @@ jobs:
         working-directory: deployment/gcp/terraform
         run: |
           terraform init \
-            -backend-config="bucket=${{ secrets.GCP_TERRAFORM_STATE_BUCKET }}" \
+            -backend-config="bucket=${{ secrets.TERRAFORM_STATE_BUCKET || secrets.GCP_TERRAFORM_STATE_BUCKET }}" \
             -backend-config="prefix=terraform/state/${{ steps.env.outputs.environment }}"
 
       - name: Terraform Plan
         working-directory: deployment/gcp/terraform
         run: |
           terraform plan \
-            -var="project_id=${{ secrets.GCP_PROJECT_ID }}" \
+            -var="project_id=${{ secrets.PROJECT_ID || secrets.GCP_PROJECT_ID }}" \
             -var="region=${{ env.GCP_REGION }}" \
             -var="environment=${{ steps.env.outputs.environment }}" \
             -out=tfplan
@@ -282,13 +282,13 @@ jobs:
       - name: Run Ansible deployment
         working-directory: deployment/gcp/ansible
         env:
-          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          GCP_PROJECT_ID: ${{ secrets.PROJECT_ID || secrets.GCP_PROJECT_ID }}
           GCP_REGION: ${{ env.GCP_REGION }}
           CONTAINER_IMAGE: ${{ needs.build.outputs.image_tag }}
         run: |
           ansible-playbook deploy.yml \
             -i inventory/${{ steps.env.outputs.environment }}.yml \
-            -e "gcp_project_id=${{ secrets.GCP_PROJECT_ID }}" \
+            -e "gcp_project_id=${{ secrets.PROJECT_ID || secrets.GCP_PROJECT_ID }}" \
             -e "gcp_region=${{ env.GCP_REGION }}" \
             -e "container_image=${{ needs.build.outputs.image_tag }}" \
             -e "environment=${{ steps.env.outputs.environment }}" \
