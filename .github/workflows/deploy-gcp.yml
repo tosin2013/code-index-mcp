@@ -92,6 +92,7 @@ jobs:
     outputs:
       image_tag: ${{ steps.meta.outputs.tags }}
       image_digest: ${{ steps.build.outputs.digest }}
+      environment: ${{ steps.env.outputs.environment }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4

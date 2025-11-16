@@ -5,6 +5,9 @@ collections:
   - name: google.cloud
     version: ">=1.0.0"
 
+  - name: community.general
+    version: ">=7.0.0"  # Required for yaml callback plugin
+
   - name: community.docker
     version: ">=3.0.0"
 
