@@ -90,7 +90,7 @@ jobs:
       (needs.test.result == 'success' || inputs.skip_tests) &&
       (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || github.ref == 'refs/heads/develop' || github.event_name == 'workflow_dispatch')
     outputs:
-      image_tag: ${{ steps.meta.outputs.tags }}
+      image_tag: ${{ steps.deployment-image.outputs.tag }}
       image_digest: ${{ steps.build.outputs.digest }}
       environment: ${{ steps.env.outputs.environment }}
     steps:
@@ -153,9 +153,18 @@ jobs:
             COMMIT_SHA=${{ github.sha }}
             BUILD_DATE=${{ github.event.head_commit.timestamp }}
 
+      - name: Set deployment image tag
+        id: deployment-image
+        run: |
+          # Construct the specific tag for deployment (environment-sha format)
+          IMAGE_TAG="${{ env.GCP_REGION }}-docker.pkg.dev/${{ secrets.PROJECT_ID || secrets.GCP_PROJECT_ID }}/code-index-mcp/server:${{ steps.env.outputs.environment }}-${{ github.sha }}"
+          echo "tag=${IMAGE_TAG}" >> $GITHUB_OUTPUT
+          echo "Deployment image tag: ${IMAGE_TAG}"
+
       - name: Output image details
         run: |
-          echo "Image: ${{ steps.meta.outputs.tags }}"
+          echo "All tags: ${{ steps.meta.outputs.tags }}"
+          echo "Deployment tag: ${{ steps.deployment-image.outputs.tag }}"
           echo "Digest: ${{ steps.build.outputs.digest }}"
 
   # Stage 4: Deploy with Ansible (handles both infrastructure and application)
@@ -222,6 +231,7 @@ jobs:
             -e "gcp_region=${{ env.GCP_REGION }}" \
             -e "container_image=${{ needs.build.outputs.image_tag }}" \
             -e "environment=${{ steps.env.outputs.environment }}" \
+            -e "confirm_deployment=yes" \
             -v
 
       - name: Get service URL
