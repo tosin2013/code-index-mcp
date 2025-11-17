@@ -49,13 +49,12 @@
     path: "{{ terraform_dir }}/.terraform"
   register: terraform_init_check
 
-- name: Initialize Terraform
+- name: Initialize Terraform (with backend reconfiguration)
   ansible.builtin.command:
-    cmd: terraform init
+    cmd: terraform init -reconfigure
     chdir: "{{ terraform_dir }}"
   register: terraform_init
   changed_when: "'Terraform has been successfully initialized' in terraform_init.stdout"
-  when: not terraform_init_check.stat.exists
 
 - name: Plan Terraform changes
   ansible.builtin.command:

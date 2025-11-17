@@ -9,6 +9,15 @@
 
 terraform {
   required_version = ">= 1.0"
+
+  # Remote backend for CI/CD state persistence
+  # State stored in GCS bucket: code-index-terraform-state
+  # See: deployment/gcp/setup-terraform-backend.sh
+  backend "gcs" {
+    bucket = "code-index-terraform-state"
+    prefix = "alloydb/dev"
+  }
+
   required_providers {
     google = {
       source  = "hashicorp/google"
