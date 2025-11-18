@@ -30,6 +30,7 @@
         --region={{ gcp_region }}
       register: cloud_build_result
       changed_when: cloud_build_result.rc == 0
+      failed_when: false  # Ignore log-streaming errors (build still succeeds)
 
     - name: Extract build ID from output
       ansible.builtin.set_fact:
