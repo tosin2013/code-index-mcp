@@ -172,7 +172,7 @@
 
 - name: Build connection string
   ansible.builtin.set_fact:
-    connection_string: "postgresql://code_index_admin:{{ alloydb_password.stdout }}@{{ alloydb_ip }}:5432/postgres"
+    connection_string: "postgresql://code_index_admin:{{ alloydb_password.stdout | urlencode }}@{{ alloydb_ip }}:5432/postgres"
   no_log: true
 
 - name: Check if connection string secret exists
