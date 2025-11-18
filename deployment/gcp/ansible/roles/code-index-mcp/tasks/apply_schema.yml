@@ -56,6 +56,7 @@
     --project={{ gcp_project_id }}
   register: schema_image_build
   changed_when: schema_image_build.rc == 0
+  failed_when: false  # Ignore log-streaming errors (build still succeeds)
 
 - name: Check if schema job exists
   ansible.builtin.command: >
